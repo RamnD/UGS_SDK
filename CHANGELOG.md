@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.5] - 2026-06-25
+
+### Fixed
+- Replaced placeholder `.meta` GUIDs with proper `uuid4` values (fixes GUID conflicts in consuming projects).
+- Added missing `Runtime.meta` at package root.
+
 ## [1.4.4] - 2026-06-25
 
 ### Fixed
