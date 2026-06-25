@@ -5,9 +5,9 @@ using Unity.Services.Economy;
 using UnityEngine;
 
 /// <summary>
-/// Реализация <see cref="IInventoryService{TCurrency}"/> через Unity Gaming Services Economy SDK.
+/// <see cref="IInventoryService{TCurrency}"/> implementation via Unity Gaming Services Economy SDK.
 /// </summary>
-/// <typeparam name="TCurrency">Проектный enum валюты.</typeparam>
+/// <typeparam name="TCurrency">Project currency enum.</typeparam>
 public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
     where TCurrency : struct, Enum
 {

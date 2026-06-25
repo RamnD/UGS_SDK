@@ -1,6 +1,6 @@
 # Cloud Save
 
-← [Back to README](../README.md) | 🇷🇺 [Русская версия](ru/cloud-save-ru.md)
+← [Back to README](../README.md)
 
 ---
 

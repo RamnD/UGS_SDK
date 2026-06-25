@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using UnityEngine;
 
 /// <summary>
-/// Mock-реализация <see cref="ILeaderboardService"/>.
+/// Mock <see cref="ILeaderboardService"/> implementation.
 /// </summary>
 public sealed class MockLeaderboardService : ILeaderboardService
 {

@@ -8,7 +8,7 @@ using Unity.Services.Leaderboards.Models;
 using UnityEngine;
 
 /// <summary>
-/// Реализация <see cref="ILeaderboardService"/> через Unity Gaming Services Leaderboards SDK 2.x.
+/// <see cref="ILeaderboardService"/> implementation via Unity Gaming Services Leaderboards SDK 2.x.
 /// </summary>
 public sealed class UGSLeaderboardService : ILeaderboardService
 {

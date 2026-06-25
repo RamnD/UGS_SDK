@@ -3,12 +3,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using Unity.Services.Authentication;
 
-/// <summary>Внутренний шаг между успешным Sign-In и включением зависимых UGS-сервисов.</summary>
+/// <summary>Internal step between successful sign-in and enabling dependent UGS services.</summary>
 internal static class AuthenticationSdkReadiness
 {
     /// <summary>
-    /// Дожидается стабильно заполненного PlayerId в Unity Authentication после входа
-    /// вместо фиксированного Task.Delay в один тик.
+    /// Waits for a stable PlayerId in Unity Authentication after sign-in
+    /// instead of a fixed one-tick Task.Delay.
     /// </summary>
     public static async Task WaitForPlayerSessionStableAsync(CancellationToken cancellationToken,
         TimeSpan? timeout = null)

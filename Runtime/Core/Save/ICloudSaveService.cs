@@ -3,72 +3,72 @@ using System.Threading;
 using System.Threading.Tasks;
 
 /// <summary>
-/// Сервис облачных сохранений с локальным кэшем. TKey — проектный enum ключей (например, SaveKey).
+/// Cloud save service with a local cache. TKey is the project key enum (e.g. SaveKey).
 /// <para>
-/// <b>Стратегия синхронизации:</b>
+/// <b>Sync strategy:</b>
 /// <list type="bullet">
-/// <item><see cref="Set{TValue}"/> — пишет только в локальный кэш (память + PlayerPrefs).</item>
-/// <item><see cref="PushToCloudAsync"/> — отправляет локальный кэш в облако. Вызывается
-///   при сворачивании/закрытии приложения.</item>
-/// <item><see cref="LoadAsync"/> — загружает облачные данные при старте. Если временны́е
-///   метки расходятся — возвращает <see cref="SaveConflict"/> для разрешения пользователем.</item>
+/// <item><see cref="Set{TValue}"/> — writes to local cache only (memory + PlayerPrefs).</item>
+/// <item><see cref="PushToCloudAsync"/> — uploads local cache to the cloud. Call
+///   on app background/quit.</item>
+/// <item><see cref="LoadAsync"/> — loads cloud data at start. If timestamps
+///   differ — returns <see cref="SaveConflict"/> for the user to resolve.</item>
 /// </list>
 /// </para>
 /// <para>
-/// Сетевые ошибки приводят к <see cref="CloudSaveOperationException"/> (игра может показать retry).
+/// Network errors throw <see cref="CloudSaveOperationException"/> (the game can show retry).
 /// </para>
 /// </summary>
-/// <typeparam name="TKey">Проектный enum ключей сохранений.</typeparam>
+/// <typeparam name="TKey">Project enum of save keys.</typeparam>
 public interface ICloudSaveService<TKey> where TKey : struct, Enum
 {
-    // ── Локальный доступ ──────────────────────────────────────────────────────
+    // ── Local access ──────────────────────────────────────────────────────
 
-    /// <summary>Дата последнего локального изменения (UTC). Null если данных ещё нет.</summary>
+    /// <summary>UTC time of the last local change. Null if no data yet.</summary>
     DateTime? LocalTimestamp { get; }
 
     /// <summary>
-    /// Читает значение из локального кэша. Безопасно вызывать синхронно из UI/Update.
+    /// Reads a value from the local cache. Safe to call synchronously from UI/Update.
     /// </summary>
-    /// <typeparam name="TValue">Тип значения (int, long, bool, string или сериализуемый класс).</typeparam>
-    /// <param name="key">Ключ сохранения.</param>
-    /// <param name="defaultValue">Возвращается если ключ не найден.</param>
+    /// <typeparam name="TValue">Value type (int, long, bool, string, or a serializable class).</typeparam>
+    /// <param name="key">Save key.</param>
+    /// <param name="defaultValue">Returned if the key is missing.</param>
     TValue Get<TValue>(TKey key, TValue defaultValue = default);
 
     /// <summary>
-    /// Записывает значение в локальный кэш и PlayerPrefs. В облако не отправляет.
-    /// Для отправки вызовите <see cref="PushToCloudAsync"/>.
+    /// Writes a value to the local cache and PlayerPrefs. Does not upload to the cloud.
+    /// Call <see cref="PushToCloudAsync"/> to upload.
     /// </summary>
     void Set<TValue>(TKey key, TValue value);
 
-    // ── Облачная синхронизация ────────────────────────────────────────────────
+    // ── Cloud sync ────────────────────────────────────────────────
 
     /// <summary>
-    /// Загружает данные из облака.
+    /// Loads data from the cloud.
     /// <list type="bullet">
-    /// <item>Нет облачных данных → возвращает null, локальные данные без изменений.</item>
-    /// <item>Нет локальных данных → применяет облако, возвращает null.</item>
-    /// <item>Обе версии существуют с разными метками → возвращает <see cref="SaveConflict"/>.</item>
+    /// <item>No cloud data → returns null, local data unchanged.</item>
+    /// <item>No local data → applies cloud, returns null.</item>
+    /// <item>Both versions exist with different timestamps → returns <see cref="SaveConflict"/>.</item>
     /// </list>
-    /// При конфликте данные не изменяются до явного вызова
-    /// <see cref="ApplyCloud"/> или <see cref="KeepLocal"/>.
+    /// On conflict, data is unchanged until you explicitly call
+    /// <see cref="ApplyCloud"/> or <see cref="KeepLocal"/>.
     /// </summary>
     Task<SaveConflict?> LoadAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Отправляет локальный кэш в облако с текущей временно́й меткой.
-    /// Вызывать при OnApplicationPause/OnApplicationQuit.
+    /// Uploads the local cache to the cloud with the current timestamp.
+    /// Call from OnApplicationPause/OnApplicationQuit.
     /// </summary>
     Task PushToCloudAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Применяет загруженный облачный снимок как локальные данные.
-    /// Вызывать после того как игрок выбрал "использовать облачное сохранение".
+    /// Applies the loaded cloud snapshot as local data.
+    /// Call after the player chooses "use cloud save".
     /// </summary>
     void ApplyCloud();
 
     /// <summary>
-    /// Оставляет локальные данные без изменений, отбрасывает облачный снимок.
-    /// Вызывать после того как игрок выбрал "использовать локальное сохранение".
+    /// Keeps local data unchanged and discards the cloud snapshot.
+    /// Call after the player chooses "use local save".
     /// </summary>
     void KeepLocal();
 }

@@ -1,6 +1,6 @@
 # Leaderboard
 
-← [Back to README](../README.md) | 🇷🇺 [Русская версия](ru/leaderboard-ru.md)
+← [Back to README](../README.md)
 
 ---
 

@@ -1,6 +1,6 @@
 # Analytics
 
-← [Back to README](../README.md) | 🇷🇺 [Русская версия](ru/analytics-ru.md)
+← [Back to README](../README.md)
 
 ---
 

@@ -6,11 +6,11 @@ using Unity.Services.Core;
 using UnityEngine;
 
 /// <summary>
-/// Строитель всех UGS-сервисов. Выполняет полную инициализацию за один вызов
-/// BuildAsync: Unity Services → Auth → Analytics → колбэк проекта → Ads.
+/// Builder for all UGS services. Performs full initialization in one
+/// BuildAsync call: Unity Services → Auth → Analytics → project callback → Ads.
 /// <para>
-/// <b>Расширяемость:</b> для другого SDK (Firebase, PlayFab и т.д.) создайте аналогичный
-/// builder, реализующий тот же паттерн. Интерфейсы из Core останутся без изменений.
+/// <b>Extensibility:</b> for another SDK (Firebase, PlayFab, etc.) create a similar
+/// builder following the same pattern. Core interfaces stay unchanged.
 /// </para>
 /// </summary>
 public sealed class UGSServicesBuilder
@@ -24,8 +24,8 @@ public sealed class UGSServicesBuilder
     private GameServicesAuthProviderConfig            _authCredentials = GameServicesAuthProviderConfig.Empty;
 
     /// <summary>
-    /// Принудительный анонимный вход на всех платформах.
-    /// Удобно на этапе разработки, пока Google/Apple авторизация не готова.
+    /// Force anonymous sign-in on all platforms.
+    /// Convenient during development while Google/Apple auth is not ready.
     /// </summary>
     public UGSServicesBuilder WithForceAnonymous(bool force = true)
     {
@@ -34,8 +34,8 @@ public sealed class UGSServicesBuilder
     }
 
     /// <summary>
-    /// Необязательные ключи/идентификаторы платформенных провайдеров (Google Play Games, Sign in with Apple → UGS).
-    /// Если не заданы, соответствующие методы привязки должны сообщать об ошибке без падения приложения — см. <see cref="UGSAuthService"/>.
+    /// Optional platform provider keys/identifiers (Google Play Games, Sign in with Apple → UGS).
+    /// If unset, linking methods should report an error without crashing — see <see cref="UGSAuthService"/>.
     /// </summary>
     public UGSServicesBuilder WithAuthProviderCredentials(GameServicesAuthProviderConfig credentials)
     {
@@ -44,8 +44,8 @@ public sealed class UGSServicesBuilder
     }
 
     /// <summary>
-    /// Целиком задаёт конфиг антицензора ника (например из ScriptableObject на стороне игры через ToValidatorConfig()).
-    /// Имеет приоритет над отдельными вызовами WithProfanityFilter, если указан не null.
+    /// Sets the full nickname profanity-filter config (e.g. from a game-side ScriptableObject via ToValidatorConfig()).
+    /// Takes priority over separate WithProfanityFilter calls when non-null.
     /// </summary>
     public UGSServicesBuilder WithNameValidator(NameValidatorConfig config)
     {
@@ -54,9 +54,9 @@ public sealed class UGSServicesBuilder
     }
 
     /// <summary>
-    /// Устанавливает список запрещённых слов/подстрок для проверки никнейма.
-    /// Проверка выполняется без учёта регистра.
-    /// <para>Совмещается с <see cref="WithProfanityFilter(Regex)"/> в один конфиг если WithNameValidator не задан.</para>
+    /// Sets banned words/substrings for nickname validation.
+    /// Matching is case-insensitive.
+    /// <para>Combined with <see cref="WithProfanityFilter(Regex)"/> into one config if WithNameValidator is not set.</para>
     /// </summary>
     public UGSServicesBuilder WithProfanityFilter(params string[] bannedWords)
     {
@@ -65,8 +65,8 @@ public sealed class UGSServicesBuilder
     }
 
     /// <summary>
-    /// Устанавливает регулярное выражение для проверки никнейма.
-    /// Выполняется после проверки запрещённых слов.
+    /// Sets a regex for nickname validation.
+    /// Runs after the banned-word check.
     /// </summary>
     public UGSServicesBuilder WithProfanityFilter(Regex bannedPattern)
     {
@@ -75,8 +75,8 @@ public sealed class UGSServicesBuilder
     }
 
     /// <summary>
-    /// Устанавливает реализацию рекламного менеджера.
-    /// По умолчанию используется <see cref="TestAdsManager"/> (stub без реального SDK).
+    /// Sets the ads manager implementation.
+    /// Default is <see cref="TestAdsManager"/> (stub without a real SDK).
     /// </summary>
     public UGSServicesBuilder WithAds(IAdsManager adsManager)
     {
@@ -85,10 +85,10 @@ public sealed class UGSServicesBuilder
     }
 
     /// <summary>
-    /// Регистрирует колбэк, вызываемый сразу после успешной авторизации.
+    /// Registers a callback invoked immediately after successful auth.
     /// <para>
-    /// Здесь следует инициализировать Economy и Items-сервисы, так как они требуют
-    /// активной сессии UGS. Колбэк не вызывается, если авторизация провалилась.
+    /// Initialize Economy and Items services here — they require an active UGS session.
+    /// The callback is not invoked if auth fails.
     /// </para>
     /// </summary>
     public UGSServicesBuilder OnAuthenticated(Func<IAuthService, Task> callback)
@@ -98,13 +98,13 @@ public sealed class UGSServicesBuilder
     }
 
     /// <summary>
-    /// Выполняет полную инициализацию в следующем порядке:
+    /// Runs full initialization in this order:
     /// <list type="number">
     /// <item>UnityServices.InitializeAsync()</item>
-    /// <item>Авторизация через <see cref="UGSAuthService"/></item>
-    /// <item>UGS Analytics (только при успешной авторизации)</item>
-    /// <item>Колбэк OnAuthenticated (Economy, Items и прочее)</item>
-    /// <item>Реклама (не зависит от авторизации)</item>
+    /// <item>Auth via <see cref="UGSAuthService"/></item>
+    /// <item>UGS Analytics (only on successful auth)</item>
+    /// <item>OnAuthenticated callback (Economy, Items, etc.)</item>
+    /// <item>Ads (independent of auth)</item>
     /// </list>
     /// </summary>
     public async Task<IGameServices> BuildAsync(CancellationToken cancellationToken = default)
@@ -128,7 +128,7 @@ public sealed class UGSServicesBuilder
             cancellationToken.ThrowIfCancellationRequested();
             await AuthenticationSdkReadiness.WaitForPlayerSessionStableAsync(cancellationToken);
 
-            // TODO(analytics-consent): UGS Analytics v6 — перейти с устаревшего StartDataCollection на EndUserConsent / политики магазинов.
+            // TODO(analytics-consent): UGS Analytics v6 — migrate from deprecated StartDataCollection to EndUserConsent / store policies.
             analytics = new UGSAnalyticSystem(
                 auth.GetPlayerId(),
                 Unity.Services.Analytics.AnalyticsService.Instance);

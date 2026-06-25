@@ -1,14 +1,14 @@
 using UnityEngine;
 
 /// <summary>
-/// Единая точка входа ко всем сервисам после инициализации (UGSServicesBuilder или тестовый MockGameServices).
-/// Вызывайте Set из bootstrap один раз перед использованием.
+/// Single entry point to all services after initialization (UGSServicesBuilder or test MockGameServices).
+/// Call Set from bootstrap once before use.
 /// </summary>
 public static class GameServicesLocator
 {
     private static IGameServices _services;
 
-    /// <summary>Активный фасад. Null если <see cref="Set"/> ещё не вызывался.</summary>
+    /// <summary>Active façade. Null if <see cref="Set"/> has not been called yet.</summary>
     public static IGameServices Services => _services;
 
     /// <inheritdoc cref="Services"/>
@@ -23,7 +23,7 @@ public static class GameServicesLocator
     }
 
     /// <summary>
-    /// Устанавливает фасад. Вызывайте из bootstrap-билдера после успешной асинхронной сборки сервисов.
+    /// Sets the façade. Call from the bootstrap builder after a successful async service build.
     /// </summary>
     public static void Set(IGameServices services)
     {
@@ -32,6 +32,6 @@ public static class GameServicesLocator
         _services = services;
     }
 
-    /// <summary>Сброс при перезапуске домена (тесты, Editor). Обычно не нужен в рантайме.</summary>
+    /// <summary>Reset on domain reload (tests, Editor). Usually not needed at runtime.</summary>
     public static void Clear() => _services = null;
 }

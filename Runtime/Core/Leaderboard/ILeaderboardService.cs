@@ -3,34 +3,34 @@ using System.Threading;
 using System.Threading.Tasks;
 
 /// <summary>
-/// Сервис таблицы лидеров. Абстрагирован от конкретного бэкенда.
+/// Leaderboard service. Abstracted from the concrete backend.
 /// <para>
-/// ID лидербордов — строковые константы из проектного класса (например LeaderboardIds).
-/// Score передаётся как <c>double</c> (нативный тип UGS).
+/// Leaderboard IDs are string constants from a project class (e.g. LeaderboardIds).
+/// Score is passed as <c>double</c> (native UGS type).
 /// </para>
-/// <para>Сетевые ошибки → <see cref="LeaderboardOperationException"/>.</para>
+/// <para>Network errors → <see cref="LeaderboardOperationException"/>.</para>
 /// </summary>
 public interface ILeaderboardService
 {
     /// <summary>
-    /// Отправляет результат забега на сервер. Вызывать после завершения уровня/забега.
+    /// Submits a run score to the server. Call after level/run completion.
     /// </summary>
-    /// <exception cref="LeaderboardOperationException">Сеть, UGS или конфигурация.</exception>
+    /// <exception cref="LeaderboardOperationException">Network, UGS, or configuration error.</exception>
     Task SubmitScoreAsync(string leaderboardId, double score, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Возвращает топ-N записей лидерборда, отсортированных по убыванию счёта.
-    /// Пустой список — легитимное «нет записей». Ошибки — исключением.
+    /// Returns the top-N leaderboard entries, sorted by score descending.
+    /// An empty list is a valid "no entries" response. Errors throw.
     /// </summary>
-    /// <exception cref="LeaderboardOperationException">Сеть, UGS или конфигурация.</exception>
+    /// <exception cref="LeaderboardOperationException">Network, UGS, or configuration error.</exception>
     Task<IReadOnlyList<LeaderboardEntry>> GetTopScoresAsync(string leaderboardId, int count = 100,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Возвращает запись текущего игрока с его позицией в таблице.
-    /// Null если игрок ещё не отправлял результат или отсутствует в таблице.
+    /// Returns the current player's entry with their rank.
+    /// Null if the player has not submitted a score or is not on the board.
     /// </summary>
-    /// <exception cref="LeaderboardOperationException">Сеть, UGS или конфигурация.</exception>
+    /// <exception cref="LeaderboardOperationException">Network, UGS, or configuration error.</exception>
     Task<LeaderboardEntry?> GetPlayerEntryAsync(string leaderboardId,
         CancellationToken cancellationToken = default);
 }

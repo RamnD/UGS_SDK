@@ -1,21 +1,21 @@
 using UnityEngine;
 
 /// <summary>
-/// Утилита для проверки наличия сетевого подключения.
-/// Используется сервисами SDK для переключения между онлайн и офлайн режимами.
+/// Utility for checking network connectivity.
+/// Used by SDK services to switch between online and offline modes.
 /// </summary>
 public static class NetworkStatus
 {
     /// <summary>
-    /// Можно выставить true для симуляции «без сети» во время отладки / UI «только офлайн».
-    /// Имеет приоритет над <see cref="Application.internetReachability"/>.
+    /// Set to true to simulate "no network" during debugging / offline-only UI.
+    /// Takes precedence over <see cref="Application.internetReachability"/>.
     /// </summary>
     public static bool ForceOffline { get; set; }
 
     /// <summary>
-    /// True если устройство имеет активное подключение (по умолчанию через
-    /// <see cref="Application.internetReachability"/>) и не включено <see cref="ForceOffline"/>.
-    /// Эвристика: не выполняет реальный запрос к серверу.
+    /// True if the device has an active connection (by default via
+    /// <see cref="Application.internetReachability"/>) and <see cref="ForceOffline"/> is not set.
+    /// Heuristic only — does not perform an actual server request.
     /// </summary>
     public static bool IsOnline =>
         !ForceOffline && Application.internetReachability != NetworkReachability.NotReachable;

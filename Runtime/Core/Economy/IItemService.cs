@@ -3,31 +3,31 @@ using System.Threading;
 using System.Threading.Tasks;
 
 /// <summary>
-/// Сервис предметов игрока (инвентарь — не расходуемые ресурсы, а постоянно хранимые предметы).
-/// TItem — проектный enum предметов (например, ItemId).
-/// Весь маппинг и логика стоимости делегируется в <see cref="IItemMapper{TItem,TCurrency}"/>.
-/// <para>Сбой синхронизации при активной сети → <see cref="InventoryOperationException"/>.</para>
+/// Player item service (inventory — non-consumable, permanently owned items).
+/// TItem is the project item enum (e.g. ItemId).
+/// All mapping and cost logic is delegated to <see cref="IItemMapper{TItem,TCurrency}"/>.
+/// <para>Sync failure while online → <see cref="InventoryOperationException"/>.</para>
 /// </summary>
-/// <typeparam name="TItem">Проектный enum с идентификаторами предметов.</typeparam>
+/// <typeparam name="TItem">Project enum of item identifiers.</typeparam>
 public interface IItemService<TItem> where TItem : struct, Enum
 {
     /// <summary>
-    /// Есть ли предмет у игрока (проверяет локальный кэш, без обращения к серверу).
+    /// Whether the player owns the item (checks local cache, no server call).
     /// </summary>
     bool IsOwned(TItem id);
 
     /// <summary>
-    /// Синхронизирует список предметов с сервером.
-    /// Если офлайн — загружает последний кэш из PlayerPrefs без исключений.
+    /// Syncs the item list with the server.
+    /// If offline — loads the last cache from PlayerPrefs without throwing.
     /// </summary>
     Task RefreshAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Покупает предмет: списывает валюту → выдаёт предмет на сервере → обновляет кэш.
+    /// Purchases an item: debits currency → grants the item on the server → updates cache.
     /// <para>
-    /// Если списание прошло, но выдача предмета упала — валюта возвращается автоматически (rollback).
+    /// If debit succeeded but grant failed — currency is rolled back automatically.
     /// </para>
     /// </summary>
-    /// <returns>True если покупка успешно завершена.</returns>
+    /// <returns>True if the purchase completed successfully.</returns>
     Task<bool> TryPurchaseAsync(TItem id, CancellationToken cancellationToken = default);
 }

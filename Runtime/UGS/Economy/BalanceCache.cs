@@ -4,11 +4,11 @@ using Unity.Services.Economy.Model;
 using UnityEngine;
 
 /// <summary>
-/// Персистентный кэш балансов в PlayerPrefs.
-/// Хранит последние известные значения для офлайн-доступа и быстрого старта UI.
+/// Persistent balance cache in PlayerPrefs.
+/// Stores last known values for offline access and fast UI startup.
 /// <para>
-/// Используется внутри <see cref="UGSEconomyService{TCurrency}"/> — не предназначен для
-/// прямого использования из игровых систем. Доступ к балансам — через ваш игровой мост (например MonoBehaviour + <see cref="IInventoryService{TCurrency}"/>).
+/// Used inside <see cref="UGSEconomyService{TCurrency}"/> — not intended for
+/// direct use from game systems. Access balances via your game bridge (e.g. MonoBehaviour + <see cref="IInventoryService{TCurrency}"/>).
 /// </para>
 /// </summary>
 internal sealed class BalanceCache<TCurrency> where TCurrency : struct, Enum
@@ -19,19 +19,19 @@ internal sealed class BalanceCache<TCurrency> where TCurrency : struct, Enum
 
     // ── Read ──────────────────────────────────────────────────────────────────
 
-    /// <summary>Возвращает кэшированный баланс. 0 если данных нет.</summary>
+    /// <summary>Returns cached balance. 0 if no data.</summary>
     public long Get(TCurrency type) => _data.TryGetValue(type, out var val) ? val : 0L;
 
     // ── Write ─────────────────────────────────────────────────────────────────
 
-    /// <summary>Обновляет одно значение в памяти (без записи на диск).</summary>
+    /// <summary>Updates one in-memory value (no disk write).</summary>
     public void Set(TCurrency type, long value) => _data[type] = value;
 
     // ── Persistence ───────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Записывает весь кэш из памяти в PlayerPrefs.
-    /// Вызывать после каждого серверного ответа и после офлайн-операций.
+    /// Writes the full in-memory cache to PlayerPrefs.
+    /// Call after every server response and after offline operations.
     /// </summary>
     public void Save()
     {
@@ -43,8 +43,8 @@ internal sealed class BalanceCache<TCurrency> where TCurrency : struct, Enum
     }
 
     /// <summary>
-    /// Загружает кэш из PlayerPrefs в память.
-    /// Вызывать в начале сессии (офлайн-старт) или при RefreshBalancesAsync в офлайн-режиме.
+    /// Loads cache from PlayerPrefs into memory.
+    /// Call at session start (offline boot) or during RefreshBalancesAsync in offline mode.
     /// </summary>
     public void Load()
     {
@@ -58,8 +58,8 @@ internal sealed class BalanceCache<TCurrency> where TCurrency : struct, Enum
     }
 
     /// <summary>
-    /// Обновляет кэш из серверного ответа и немедленно сохраняет на диск.
-    /// Вызывать после каждого успешного GetBalancesAsync().
+    /// Updates cache from a server response and saves to disk immediately.
+    /// Call after every successful GetBalancesAsync().
     /// </summary>
     public void UpdateFromServer(List<PlayerBalance> serverBalances, ICurrencyMapper<TCurrency> mapper)
     {
@@ -71,7 +71,7 @@ internal sealed class BalanceCache<TCurrency> where TCurrency : struct, Enum
         Save();
     }
 
-    /// <summary>Выводит все кэшированные балансы в Console.</summary>
+    /// <summary>Logs all cached balances to the Console.</summary>
     public void LogAll()
     {
         var sb = new System.Text.StringBuilder("[Economy] Balances after sync:\n");

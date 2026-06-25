@@ -1,29 +1,29 @@
 using System;
 
 /// <summary>
-/// Сервис рекламы. Абстрагирован от конкретного SDK (AdMob, IronSource, Unity Ads…).
+/// Ads service. Abstracted from the concrete SDK (AdMob, IronSource, Unity Ads…).
 /// <para>
-/// Placement ID строкой — см. конфиг вашего медиаторa (LevelPlay, Unity Ads legacy и т.д.).
-/// На стороне игры удобно держать enum и маппинг в строку (например AdsKeysExtensions.ToPlacementId).
+/// Placement ID as a string — see your mediator config (LevelPlay, legacy Unity Ads, etc.).
+/// On the game side, an enum plus string mapping is convenient (e.g. AdsKeysExtensions.ToPlacementId).
 /// </para>
 /// </summary>
 public interface IAdsManager
 {
     /// <summary>
-    /// Инициализирует рекламный SDK. Вызывается один раз при старте приложения.
+    /// Initializes the ads SDK. Call once at app start.
     /// </summary>
     void Initialize();
 
     /// <summary>
-    /// Показывает Rewarded рекламу (за вознаграждение).
+    /// Shows rewarded video (for a reward).
     /// </summary>
-    /// <param name="placementId">Идентификатор места показа (Ad Unit Id / placement).</param>
-    /// <param name="onSuccess">Игрок досмотрел ролик до конца — выдайте награду.</param>
-    /// <param name="onFailed">Ролик закрыт раньше или ошибка загрузки — не выдавайте награду.</param>
+    /// <param name="placementId">Placement identifier (Ad Unit Id / placement).</param>
+    /// <param name="onSuccess">Player watched to the end — grant the reward.</param>
+    /// <param name="onFailed">Closed early or load error — do not grant the reward.</param>
     void ShowRewardedAd(string placementId, Action onSuccess, Action onFailed = null);
 
     /// <summary>
-    /// Показывает полноэкранный Interstitial (без вознаграждения).
+    /// Shows a full-screen interstitial (no reward).
     /// </summary>
     void ShowInterstitial(string placementId);
 }

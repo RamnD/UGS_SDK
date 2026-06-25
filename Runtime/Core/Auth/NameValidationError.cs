@@ -1,47 +1,47 @@
 /// <summary>
-/// Причина отказа при установке никнейма.
-/// Возвращается из <see cref="IAuthService.ValidatePlayerName"/> (клиентская проверка)
-/// и из <see cref="IAuthService.SetPlayerNameAsync"/> (полный цикл включая сервер).
+/// Reason a player name was rejected.
+/// Returned from <see cref="IAuthService.ValidatePlayerName"/> (client-side check)
+/// and from <see cref="IAuthService.SetPlayerNameAsync"/> (full flow including server).
 /// <para>
-/// null (nullable) означает успех — имя принято.
-/// SDK намеренно не содержит локализованных строк — маппинг на UI-текст выполняет игра.
+/// null (nullable) means success — name accepted.
+/// The SDK intentionally has no localized strings — map to UI text in your game.
 /// </para>
 /// </summary>
 public enum NameValidationError
 {
-    // ── Клиентская валидация (ValidatePlayerName) ─────────────────────────────
+    // ── Client validation (ValidatePlayerName) ─────────────────────────────
 
-    /// <summary>Строка null, пустая или состоит только из пробелов.</summary>
+    /// <summary>String is null, empty, or whitespace only.</summary>
     Empty,
 
-    /// <summary>Длина меньше минимально допустимой (3 символа).</summary>
+    /// <summary>Length below minimum (3 characters).</summary>
     TooShort,
 
-    /// <summary>Длина превышает максимально допустимую (50 символов).</summary>
+    /// <summary>Length exceeds maximum (50 characters).</summary>
     TooLong,
 
-    /// <summary>Содержит недопустимый символ (разрешены: буквы, цифры, пробел, -, _, .).</summary>
+    /// <summary>Contains an invalid character (allowed: letters, digits, space, -, _, .).</summary>
     InvalidCharacter,
 
-    /// <summary>Совпадение с бан-листом (<see cref="NameValidatorConfig"/>).</summary>
+    /// <summary>Matches the ban list (<see cref="NameValidatorConfig"/>).</summary>
     Profanity,
 
-    // ── Серверные / сетевые ошибки (SetPlayerNameAsync) ──────────────────────
+    // ── Server / network errors (SetPlayerNameAsync) ──────────────────────
 
     /// <summary>
-    /// Игрок не авторизован. Нужно сначала вызвать <see cref="IAuthService.SignInAsync"/>.
+    /// Player is not signed in. Call <see cref="IAuthService.SignInAsync"/> first.
     /// </summary>
     NotSignedIn,
 
     /// <summary>
-    /// Сервер UGS отклонил имя (HTTP 422 / error code 10009).
-    /// Имя прошло клиентскую валидацию, но нарушает серверные ограничения формата.
+    /// UGS server rejected the name (HTTP 422 / error code 10009).
+    /// Name passed client validation but violates server format rules.
     /// </summary>
     ServerRejected,
 
     /// <summary>
-    /// Сетевая ошибка или непредвиденное исключение при обращении к серверу.
-    /// Следует предложить игроку повторить попытку.
+    /// Network error or unexpected exception when contacting the server.
+    /// Prompt the player to retry.
     /// </summary>
     NetworkError,
 }

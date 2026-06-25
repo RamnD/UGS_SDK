@@ -1,8 +1,8 @@
 using System;
 
 /// <summary>
-/// Конкретная реализация <see cref="IGameServices"/>.
-/// Создаётся только внутри <see cref="UGSServicesBuilder.BuildAsync"/> — не инстанциируйте напрямую.
+/// Concrete <see cref="IGameServices"/> implementation.
+/// Created only inside <see cref="UGSServicesBuilder.BuildAsync"/> — do not instantiate directly.
 /// </summary>
 public sealed class UGSGameServices : IGameServices
 {
@@ -28,9 +28,9 @@ public sealed class UGSGameServices : IGameServices
         ILeaderboardService leaderboards)
     {
         Auth            = auth          ?? throw new ArgumentNullException(nameof(auth));
-        Analytics       = analytics;     // null допустим (нет авторизации)
+        Analytics       = analytics;     // null allowed (not authenticated)
         Ads             = ads            ?? throw new ArgumentNullException(nameof(ads));
-        Leaderboards    = leaderboards;  // null допустим (нет авторизации)
+        Leaderboards    = leaderboards;  // null allowed (not authenticated)
         IsAuthenticated = auth.IsSignedIn;
     }
 }

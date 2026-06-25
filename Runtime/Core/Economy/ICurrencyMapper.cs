@@ -1,18 +1,18 @@
 using System;
 
 /// <summary>
-/// Адаптер между проектным enum валюты и строковым ID для внешних сервисов.
+/// Adapter between the project currency enum and string IDs for external services.
 /// <para>
-/// Каждый проект создаёт одну реализацию этого интерфейса и передаёт её в
-/// <see cref="UGSEconomyService{TCurrency}"/> через конструктор.
+/// Each project implements this once and passes it to
+/// <see cref="UGSEconomyService{TCurrency}"/> via the constructor.
 /// </para>
 /// </summary>
-/// <typeparam name="TCurrency">Проектный enum с типами валюты.</typeparam>
+/// <typeparam name="TCurrency">Project enum of currency types.</typeparam>
 /// <example>
 /// <code>
 /// public class CurrencyMapper : ICurrencyMapper&lt;CurrencyType&gt;
 /// {
-///     public string ToServiceId(CurrencyType c) => c.ToUGSId(); // проектный extension-метод
+///     public string ToServiceId(CurrencyType c) => c.ToUGSId(); // project extension method
 ///     public bool IsOfflineAllowed(CurrencyType c, InventoryOperation op) => c.IsOfflineAllowed(op);
 /// }
 /// </code>
@@ -20,14 +20,14 @@ using System;
 public interface ICurrencyMapper<TCurrency> where TCurrency : struct, Enum
 {
     /// <summary>
-    /// Конвертирует проектный enum в строковый ID для SDK.
-    /// Значение ДОЛЖНО совпадать с ID ресурса в бэкенде (UGS Dashboard и т.д.).
+    /// Converts the project enum to a string ID for the SDK.
+    /// MUST match the resource ID in the backend (UGS Dashboard, etc.).
     /// </summary>
     string ToServiceId(TCurrency currency);
 
     /// <summary>
-    /// Определяет, разрешена ли данная операция без подключения к сети.
-    /// Единая точка истины для офлайн-логики — не дублируйте правила в других местах.
+    /// Whether this operation is allowed without a network connection.
+    /// Single source of truth for offline logic — do not duplicate rules elsewhere.
     /// </summary>
     bool IsOfflineAllowed(TCurrency currency, InventoryOperation op);
 }

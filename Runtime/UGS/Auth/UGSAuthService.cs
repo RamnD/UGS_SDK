@@ -11,13 +11,13 @@ using GooglePlayGames.BasicApi;
 #endif
 
 /// <summary>
-/// Реализация <see cref="IAuthService"/> через Unity Gaming Services Authentication SDK.
+/// <see cref="IAuthService"/> implementation via Unity Gaming Services Authentication SDK.
 /// <para>
-/// Стратегия входа:
+/// Sign-in strategy:
 /// <list type="bullet">
-/// <item>Anonymous (или forceAnonymous) — всегда анонимный вход, prefs не трогаем.</item>
-/// <item>Первый визит (нет session token) — анонимный вход, сохраняем "Anonymous".</item>
-/// <item>Повторный визит — берём сохранённый метод из PlayerPrefs, игнорируем platform.</item>
+/// <item>Anonymous (or forceAnonymous) — always anonymous sign-in, prefs untouched.</item>
+/// <item>First visit (no session token) — anonymous sign-in, save "Anonymous".</item>
+/// <item>Return visit — use saved method from PlayerPrefs, ignore platform.</item>
 /// </list>
 /// </para>
 /// </summary>
@@ -29,10 +29,10 @@ public class UGSAuthService : IAuthService
     private readonly GameServicesAuthProviderConfig _providerConfig;
 
     /// <param name="config">
-    /// Конфигурация антицензора. Передаётся из <see cref="UGSServicesBuilder"/>.
-    /// Null равнозначен <see cref="NameValidatorConfig.Empty"/>.
+    /// Profanity-filter configuration. Passed from <see cref="UGSServicesBuilder"/>.
+    /// Null is equivalent to <see cref="NameValidatorConfig.Empty"/>.
     /// </param>
-    /// <param name="providerConfig">Необязательные ключи GPGS / Apple (см. <see cref="GameServicesAuthProviderConfig"/>).</param>
+    /// <param name="providerConfig">Optional GPGS / Apple keys (see <see cref="GameServicesAuthProviderConfig"/>).</param>
     public UGSAuthService(
         NameValidatorConfig            config         = null,
         GameServicesAuthProviderConfig providerConfig = null)
@@ -190,7 +190,7 @@ public class UGSAuthService : IAuthService
 #if UNITY_ANDROID
                     if (string.IsNullOrWhiteSpace(_providerConfig.GooglePlayGamesOAuthWebClientId))
                     {
-                        // TODO(GPGS→UGS): использовать GooglePlayGamesOAuthWebClientId, когда сборка действительно зависит от передачи ключа через SDK (сейчас GPGS часто задаёт клиент через ресурсы Android).
+                        // TODO(GPGS→UGS): use GooglePlayGamesOAuthWebClientId when the build actually depends on passing the key through the SDK (GPGS often sets the client via Android resources today).
                         Debug.LogWarning(
                             "[Auth] TODO(GPGS→UGS): GooglePlayGamesOAuthWebClientId not passed via WithAuthProviderCredentials; add Web Client Id from GCP / game config if linking fails.");
                     }
@@ -333,7 +333,7 @@ public class UGSAuthService : IAuthService
             throw new InvalidOperationException("Apple Sign-In: AppleServicesId missing in builder config.");
         }
 
-        // TODO(iOS→UGS): получить identityToken из нативного Apple Sign-In (напр. после Apple-плагина Unity / нативного bridge).
+        // TODO(iOS→UGS): obtain identityToken from native Apple Sign-In (e.g. after Unity Apple plugin / native bridge).
         // string identityToken = await NativeAppleSignIn.GetIdentityTokenAsync(cancellationToken);
         // await AuthenticationService.Instance.SignInWithAppleAsync(identityToken);
 

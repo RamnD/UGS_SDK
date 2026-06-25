@@ -4,16 +4,16 @@ using Unity.Services.LevelPlay;
 using UnityEngine;
 
 /// <summary>
-/// Реализация <see cref="IAdsManager"/> через Unity LevelPlay SDK 8.x (бывший IronSource).
-/// Рекомендуемый путь для новых проектов — поддерживает медиацию (Unity Ads, Meta, AppLovin и др.).
+/// <see cref="IAdsManager"/> implementation via Unity LevelPlay SDK 8.x (formerly IronSource).
+/// Recommended path for new projects — supports mediation (Unity Ads, Meta, AppLovin, etc.).
 /// <para>
-/// Требует: Package Manager → <c>com.unity.services.levelplay</c> версии 8.x или новее.
-/// App Key берётся из LevelPlay Dashboard (не из Project Settings).
+/// Requires: Package Manager → <c>com.unity.services.levelplay</c> version 8.x or newer.
+/// App Key comes from the LevelPlay Dashboard (not Project Settings).
 /// </para>
 /// <para>
-/// Ad Unit IDs задаются строками (как в LevelPlay Dashboard). На стороне игры удобно держать enum и маппинг в строку.
+/// Ad Unit IDs are strings (as in the LevelPlay Dashboard). On the game side, an enum plus string mapping is convenient.
 /// </para>
-/// Использование в bootstrap:
+/// Bootstrap usage:
 /// <code>
 /// new UGSServicesBuilder()
 ///     .WithAds(new LevelPlayAdsManager("your-app-key"))
@@ -25,16 +25,16 @@ public sealed class LevelPlayAdsManager : IAdsManager
     private readonly string _appKey;
     private bool _initialized;
 
-    // Кэшированные экземпляры рекламных блоков — создаются при первом обращении
+    // Cached ad unit instances — created on first use
     private readonly Dictionary<string, LevelPlayRewardedAd>    _rewardedAds    = new();
     private readonly Dictionary<string, LevelPlayInterstitialAd> _interstitials  = new();
 
-    // Состояние текущего rewarded показа (одновременно может быть только один)
+    // Current rewarded show state (only one at a time)
     private Action _pendingSuccess;
     private Action _pendingFailed;
     private string _activeRewardedUnitId;
 
-    /// <param name="appKey">App Key из LevelPlay Dashboard → Apps → ваше приложение.</param>
+    /// <param name="appKey">App Key from LevelPlay Dashboard → Apps → your app.</param>
     public LevelPlayAdsManager(string appKey)
     {
         _appKey = appKey;
@@ -54,7 +54,7 @@ public sealed class LevelPlayAdsManager : IAdsManager
         LevelPlay.OnInitSuccess += OnInitSuccess;
         LevelPlay.OnInitFailed  += OnInitFailed;
 
-        // isAdManagerEnabled=false → режим Ad Units (рекомендуемый в SDK 8.x)
+        // isAdManagerEnabled=false → Ad Units mode (recommended in SDK 8.x)
         LevelPlay.Init(_appKey);
     }
 
@@ -132,7 +132,7 @@ public sealed class LevelPlayAdsManager : IAdsManager
     private void OnRewardedLoaded(string adUnitId)
     {
         Debug.Log($"[LevelPlay] Rewarded loaded: {adUnitId}");
-        // Показываем только если именно этот юнит был запрошен через ShowRewardedAd
+        // Show only if this unit was requested via ShowRewardedAd
         if (adUnitId == _activeRewardedUnitId)
             _rewardedAds[adUnitId].ShowAd();
     }
@@ -154,19 +154,19 @@ public sealed class LevelPlayAdsManager : IAdsManager
     private void OnRewardEarned(string adUnitId)
     {
         if (adUnitId != _activeRewardedUnitId) return;
-        // Сохраняем коллбэк до сброса, т.к. OnAdClosed может прийти после
+        // Keep callback before reset — OnAdClosed may arrive after
         var callback = _pendingSuccess;
-        ResetCallbacks(); // _activeRewardedUnitId → null до OnAdClosed
+        ResetCallbacks(); // _activeRewardedUnitId → null before OnAdClosed
         callback?.Invoke();
     }
 
     private void OnRewardedClosed(string adUnitId)
     {
-        // Если OnAdRewarded ещё не сработал (пользователь пропустил) → вызываем onFailed
+        // If OnAdRewarded has not fired yet (user skipped) → call onFailed
         if (adUnitId == _activeRewardedUnitId)
             InvokeFailedAndReset();
 
-        // Предзагружаем следующий ролик сразу после закрытия
+        // Preload the next video right after close
         if (_rewardedAds.TryGetValue(adUnitId, out var ad))
             ad.LoadAd();
     }
@@ -182,7 +182,7 @@ public sealed class LevelPlayAdsManager : IAdsManager
         ad.OnAdLoaded        += _        => { Debug.Log($"[LevelPlay] Interstitial loaded: {adUnitId}"); _interstitials[adUnitId].ShowAd(); };
         ad.OnAdLoadFailed    += err      => Debug.LogWarning($"[LevelPlay] Interstitial load failed ({adUnitId}): {err}");
         ad.OnAdDisplayFailed += (_, err) => Debug.LogWarning($"[LevelPlay] Interstitial display failed ({adUnitId}): {err}");
-        ad.OnAdClosed        += _        => _interstitials[adUnitId].LoadAd(); // предзагрузка
+        ad.OnAdClosed        += _        => _interstitials[adUnitId].LoadAd(); // preload
         _interstitials[adUnitId] = ad;
         return ad;
     }

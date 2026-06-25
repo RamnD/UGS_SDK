@@ -1,6 +1,6 @@
 # Economy — Currency & Items
 
-← [Back to README](../README.md) | 🇷🇺 [Русская версия](ru/economy-ru.md)
+← [Back to README](../README.md)
 
 ---
 

@@ -7,14 +7,14 @@ using Unity.Services.CloudSave;
 using UnityEngine;
 
 /// <summary>
-/// Реализация <see cref="ICloudSaveService{TKey}"/> через Unity Gaming Services Cloud Save SDK 3.x.
+/// <see cref="ICloudSaveService{TKey}"/> implementation via Unity Gaming Services Cloud Save SDK 3.x.
 /// <para>
-/// <b>Хранение:</b> локальный кэш — PlayerPrefs (JSON), облако — UGS Cloud Save (Player Data).
-/// Временна́я метка хранится как специальный ключ <c>__ts</c> в облаке и отдельно в PlayerPrefs.
+/// <b>Storage:</b> local cache — PlayerPrefs (JSON), cloud — UGS Cloud Save (Player Data).
+/// Timestamp is stored as special key <c>__ts</c> in the cloud and separately in PlayerPrefs.
 /// </para>
 /// <para>
-/// <b>Сериализация:</b> все значения сериализуются в JSON через Newtonsoft.Json.
-/// Работает с примитивами (int, long, bool, string) и сериализуемыми классами/структурами.
+/// <b>Serialization:</b> all values are JSON-serialized via Newtonsoft.Json.
+/// Works with primitives (int, long, bool, string) and serializable classes/structs.
 /// </para>
 /// </summary>
 public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
@@ -34,17 +34,17 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
     /// <inheritdoc/>
     public DateTime? LocalTimestamp { get; private set; }
 
-    /// <param name="mapper">Маппер ключей: enum → строка для облака.</param>
+    /// <param name="mapper">Key mapper: enum → cloud string.</param>
     public UGSCloudSaveService(ISaveKeyMapper<TKey> mapper)
     {
         _mapper                 = mapper ?? throw new ArgumentNullException(nameof(mapper));
         _localPrefsKey          = $"cloud_save_{typeof(TKey).Name}_local";
         _localTimestampPrefsKey = $"cloud_save_{typeof(TKey).Name}_ts";
-        // PlayerPrefs доступны только с main thread — НЕ загружаем здесь.
-        // Загрузка выполняется лениво при первом обращении к данным (EnsureLocalLoaded).
+        // PlayerPrefs are main-thread only — do NOT load here.
+        // Loading is lazy on first data access (EnsureLocalLoaded).
     }
 
-    // ── Локальный доступ ──────────────────────────────────────────────────────
+    // ── Local access ──────────────────────────────────────────────────────
 
     /// <inheritdoc/>
     public TValue Get<TValue>(TKey key, TValue defaultValue = default)
@@ -65,7 +65,7 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
         PersistLocalToPrefs();
     }
 
-    // ── Облачная синхронизация ────────────────────────────────────────────────
+    // ── Cloud sync ────────────────────────────────────────────────
 
     /// <inheritdoc/>
     public async Task<SaveConflict?> LoadAsync(CancellationToken cancellationToken = default)
@@ -80,9 +80,9 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
             cancellationToken.ThrowIfCancellationRequested();
 
             if (items.Count == 0)
-                return null; // облако пустое — оставляем локальные данные
+                return null; // cloud empty — keep local data
 
-            // Читаем облачный снимок
+            // Read cloud snapshot
             _cloudSnapshot.Clear();
             _cloudSnapshotTimestamp = null;
 
@@ -104,28 +104,28 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
             foreach (var kvp in _cloudSnapshot)
                 Debug.Log($"  [{kvp.Key}] = {kvp.Value}");
 
-            // Облако содержит только __ts без данных — оставляем локальные данные
+            // Cloud has only __ts and no data — keep local data
             if (_cloudSnapshot.Count == 0)
             {
                 Debug.Log("[CloudSave] Cloud has only timestamp payload — keeping local save.");
                 return null;
             }
 
-            // Нет локальных данных → применяем облако без конфликта
+            // No local data → apply cloud without conflict
             if (!LocalTimestamp.HasValue)
             {
                 ApplyCloud();
                 return null;
             }
 
-            // Временны́е метки совпадают → данные синхронизированы
+            // Timestamps match → data in sync
             if (_cloudSnapshotTimestamp.HasValue &&
                 Math.Abs((_cloudSnapshotTimestamp.Value - LocalTimestamp.Value).TotalSeconds) < 1)
             {
                 return null;
             }
 
-            // Конфликт — возвращаем для разрешения пользователем
+            // Conflict — return for user resolution
             return new SaveConflict(
                 LocalTimestamp.Value,
                 _cloudSnapshotTimestamp ?? DateTime.MinValue);
@@ -202,8 +202,8 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
     // ── PlayerPrefs persistence ───────────────────────────────────────────────
 
     /// <summary>
-    /// Гарантирует однократную загрузку из PlayerPrefs при первом обращении к данным.
-    /// Должна вызываться с main thread — PlayerPrefs недоступны из фоновых потоков.
+    /// Ensures a one-time load from PlayerPrefs on first data access.
+    /// Must run on the main thread — PlayerPrefs are unavailable from background threads.
     /// </summary>
     private void EnsureLocalLoaded()
     {

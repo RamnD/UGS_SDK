@@ -1,8 +1,8 @@
 using System;
 
 /// <summary>
-/// Ошибка операции таблицы лидеров (сеть, UGS или неверная конфигурация).
-/// Некоторые сценарии «нет строки игрока» провайдер отдаёт как null или 404-деградация — см. реализацию UGSLeaderboardService.
+/// Leaderboard operation failure (network, UGS, or misconfiguration).
+/// Some "no player row" cases are returned as null or 404 degradation by the provider — see UGSLeaderboardService.
 /// </summary>
 public sealed class LeaderboardOperationException : Exception
 {

@@ -1,15 +1,15 @@
 using System;
 
 /// <summary>
-/// Адаптер между проектным enum предметов и строковым ID для внешних сервисов.
-/// Также содержит логику стоимости — единая точка истины для UI и покупки.
+/// Adapter between the project item enum and string IDs for external services.
+/// Also holds cost logic — single source of truth for UI and purchase.
 /// <para>
-/// Каждый проект создаёт одну реализацию и передаёт её в
-/// <see cref="UGSItemService{TItem,TCurrency}"/> через конструктор.
+/// Each project implements this once and passes it to
+/// <see cref="UGSItemService{TItem,TCurrency}"/> via the constructor.
 /// </para>
 /// </summary>
-/// <typeparam name="TItem">Проектный enum предметов.</typeparam>
-/// <typeparam name="TCurrency">Проектный enum валюты (для стоимости покупки).</typeparam>
+/// <typeparam name="TItem">Project enum of items.</typeparam>
+/// <typeparam name="TCurrency">Project currency enum (for purchase cost).</typeparam>
 /// <example>
 /// <code>
 /// public class ItemMapper : IItemMapper&lt;ItemId, CurrencyType&gt;
@@ -25,14 +25,14 @@ public interface IItemMapper<TItem, TCurrency>
     where TCurrency : struct, Enum
 {
     /// <summary>
-    /// Конвертирует проектный enum предмета в строковый Inventory Item ID для SDK.
-    /// ДОЛЖЕН совпадать с ID предмета в UGS Economy Dashboard.
+    /// Converts the project item enum to a string Inventory Item ID for the SDK.
+    /// MUST match the item ID in the UGS Economy Dashboard.
     /// </summary>
     string ToServiceId(TItem item);
 
-    /// <summary>Количество единиц валюты, которое стоит предмет.</summary>
+    /// <summary>Currency units required to buy the item.</summary>
     int GetCost(TItem item);
 
-    /// <summary>Тип валюты, которой оплачивается покупка предмета.</summary>
+    /// <summary>Currency type used to pay for the item.</summary>
     TCurrency GetCostCurrency(TItem item);
 }

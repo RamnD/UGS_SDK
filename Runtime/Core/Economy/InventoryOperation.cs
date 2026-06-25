@@ -1,12 +1,12 @@
 /// <summary>
-/// Тип операции с балансом. Используется в <see cref="ICurrencyMapper{TCurrency}.IsOfflineAllowed"/>
-/// для определения офлайн-правил на уровне проекта.
+/// Balance operation type. Used in <see cref="ICurrencyMapper{TCurrency}.IsOfflineAllowed"/>
+/// to define offline rules at the project level.
 /// </summary>
 public enum InventoryOperation
 {
-    /// <summary>Начисление валюты (награда, покупка в магазине реального мира).</summary>
+    /// <summary>Credit currency (reward, real-money store purchase).</summary>
     Add,
 
-    /// <summary>Списание валюты (покупка внутри игры, расход жизни).</summary>
+    /// <summary>Debit currency (in-game purchase, life spend).</summary>
     Spend
 }

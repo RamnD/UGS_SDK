@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.3] - 2026-06-25
+
+### Changed
+- All XML doc comments, inline comments, and documentation are now English-only.
+- Removed `docs/ru/` Russian documentation folder.
+
 ## [1.4.2] - 2026-06-25
 
 ### Added

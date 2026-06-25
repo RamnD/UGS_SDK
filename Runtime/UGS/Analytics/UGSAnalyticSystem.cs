@@ -2,12 +2,12 @@ using Unity.Services.Analytics;
 using UnityEngine;
 
 /// <summary>
-/// Реализация <see cref="IAnalyticsSystem"/> через Unity Gaming Services Analytics SDK.
+/// <see cref="IAnalyticsSystem"/> implementation via Unity Gaming Services Analytics SDK.
 /// <para>
-/// Для замены бэкенда — реализуйте <see cref="IAnalyticsSystem"/> в другом классе
-/// и передайте новый экземпляр в <see cref="UGSServicesBuilder"/>.
+/// To swap backends — implement <see cref="IAnalyticsSystem"/> in another class
+/// and pass the new instance to <see cref="UGSServicesBuilder"/>.
 /// </para>
-/// Использование:
+/// Usage:
 /// <code>
 /// GameServicesLocator.Services?.Analytics.LogEvent(new LevelStartEvent { LevelId = 3 });
 /// </code>
@@ -16,12 +16,12 @@ public class UGSAnalyticSystem : IAnalyticsSystem
 {
     private readonly IAnalyticsService _sdk;
 
-    /// <param name="playerId">UGS Player ID — зарезервирован для будущего использования (custom user ID).</param>
-    /// <param name="sdk">SDK инжектируется снаружи для тестируемости. Передавайте Unity.Services.Analytics.AnalyticsService.Instance.</param>
+    /// <param name="playerId">UGS Player ID — reserved for future use (custom user ID).</param>
+    /// <param name="sdk">SDK injected from outside for testability. Pass Unity.Services.Analytics.AnalyticsService.Instance.</param>
     public UGSAnalyticSystem(string playerId, IAnalyticsService sdk)
     {
-        // SDK v6+: включаем сбор данных. Без этого RecordEvent молча игнорируется.
-        // TODO(analytics-consent): StartDataCollection устаревает — мигрировать на EndUserConsent / политику магазина (см. документацию UGS Analytics 6+).
+        // SDK v6+: enable data collection. Without this, RecordEvent is silently ignored.
+        // TODO(analytics-consent): StartDataCollection is deprecated — migrate to EndUserConsent / store policy (see UGS Analytics 6+ docs).
 #pragma warning disable CS0618
         sdk.StartDataCollection();
 #pragma warning restore CS0618

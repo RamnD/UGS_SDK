@@ -1,5 +1,5 @@
 /// <summary>
-/// Mock-реализация <see cref="IGameServices"/>.
+/// Mock <see cref="IGameServices"/> implementation.
 /// </summary>
 public sealed class MockGameServices : IGameServices
 {
@@ -31,7 +31,7 @@ public sealed class MockGameServices : IGameServices
     }
 
     /// <summary>
-    /// Экземпляр со всеми mock-сервисами по умолчанию. Регистрируется в <see cref="GameServicesLocator"/>.
+    /// Instance with all default mock services. Registered in <see cref="GameServicesLocator"/>.
     /// </summary>
     public static MockGameServices CreateDefault()
     {

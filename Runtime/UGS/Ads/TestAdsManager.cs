@@ -3,8 +3,8 @@ using System.Threading.Tasks;
 using UnityEngine;
 
 /// <summary>
-/// Stub-реализация <see cref="IAdsManager"/> без реального SDK.
-/// Для редакторских тестов предпочтительнее <see cref="MockAdsManager"/>.
+/// Stub <see cref="IAdsManager"/> without a real SDK.
+/// Prefer <see cref="MockAdsManager"/> for editor tests.
 /// </summary>
 public class TestAdsManager : IAdsManager
 {

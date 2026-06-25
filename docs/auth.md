@@ -1,6 +1,6 @@
 # Auth Service
 
-← [Back to README](../README.md) | 🇷🇺 [Русская версия](ru/auth-ru.md)
+← [Back to README](../README.md)
 
 ---
 

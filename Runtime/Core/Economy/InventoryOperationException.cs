@@ -1,8 +1,8 @@
 using System;
 
 /// <summary>
-/// Ошибка операции экономики или инвентаря UGS Economy.
-/// Недостаток средств по данным клиента или 422 после сверки с сервером — не исключение: <see cref="IInventoryService{TCurrency}.TrySpendCurrencyAsync"/> возвращает false.
+/// Economy or inventory operation failure from UGS Economy.
+/// Insufficient funds on the client or HTTP 422 after server reconciliation is not an exception: <see cref="IInventoryService{TCurrency}.TrySpendCurrencyAsync"/> returns false.
 /// </summary>
 public sealed class InventoryOperationException : Exception
 {
@@ -16,18 +16,18 @@ public sealed class InventoryOperationException : Exception
     }
 }
 
-/// <summary>Причина сбоя операции экономики / очереди офлайн-транзакций.</summary>
+/// <summary>Reason an economy operation or offline transaction queue flush failed.</summary>
 public enum InventoryFailureReason
 {
-    /// <summary>Нет доступа к сети при обязательной онлайн-операции.</summary>
+    /// <summary>No network for an operation that requires online.</summary>
     NetworkUnavailable,
 
-    /// <summary>Операция запрещена офлайн (маппер / политика валюты).</summary>
+    /// <summary>Operation not allowed offline (mapper / currency policy).</summary>
     OperationNotAllowedOffline,
 
-    /// <summary>Сервер / SDK отклонил транзакцию (кроме ожидаемого недостатка средств после 422-сверки).</summary>
+    /// <summary>Server / SDK rejected the transaction (except expected insufficient funds after 422 reconciliation).</summary>
     ProviderRejected,
 
-    /// <summary>Не удалось завершить сброс очереди офлайн-начислений.</summary>
+    /// <summary>Failed to flush the offline credit transaction queue.</summary>
     PendingTransactionsFlushFailed
 }

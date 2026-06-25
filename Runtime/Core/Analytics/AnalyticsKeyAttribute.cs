@@ -1,9 +1,9 @@
 using System;
 
 /// <summary>
-/// Отмечает поле или свойство struct-события как параметр аналитики.
-/// Строка <see cref="Key"/> используется как имя параметра в SDK (snake_case).
-/// Поля без этого атрибута игнорируются при сериализации.
+/// Marks a field or property on an event struct as an analytics parameter.
+/// The <see cref="Key"/> string is used as the parameter name in the SDK (snake_case).
+/// Fields without this attribute are ignored during serialization.
 /// </summary>
 /// <example>
 /// <code>
@@ -19,7 +19,7 @@ using System;
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
 public class AnalyticsKeyAttribute : Attribute
 {
-    /// <summary>Имя параметра в аналитическом SDK.</summary>
+    /// <summary>Parameter name in the analytics SDK.</summary>
     public string Key { get; }
 
     public AnalyticsKeyAttribute(string key) => Key = key;

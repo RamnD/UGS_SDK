@@ -1,18 +1,18 @@
 using System;
 
 /// <summary>
-/// Маппер ключей сохранений: преобразует проектный enum в строковый ключ облачного хранилища.
+/// Save key mapper: converts the project enum to a cloud storage string key.
 /// <para>
-/// Реализуйте в проекте для каждого enum ключей сохранений.
-/// Пример: <c>SaveKeyMapper : ISaveKeyMapper&lt;SaveKey&gt;</c>
+/// Implement in your project for each save-key enum.
+/// Example: <c>SaveKeyMapper : ISaveKeyMapper&lt;SaveKey&gt;</c>
 /// </para>
 /// </summary>
-/// <typeparam name="TKey">Проектный enum с ключами сохранений.</typeparam>
+/// <typeparam name="TKey">Project enum of save keys.</typeparam>
 public interface ISaveKeyMapper<TKey> where TKey : struct, Enum
 {
     /// <summary>
-    /// Конвертирует enum-ключ в строку для хранения в облаке и PlayerPrefs.
-    /// Используйте snake_case: "high_score", "total_runs" и т.д.
+    /// Converts an enum key to a string for cloud and PlayerPrefs storage.
+    /// Use snake_case: "high_score", "total_runs", etc.
     /// </summary>
     string ToCloudKey(TKey key);
 }

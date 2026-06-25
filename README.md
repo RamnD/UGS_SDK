@@ -2,7 +2,7 @@
 
 Portable façade over **Unity Gaming Services (UGS)** and test **mocks**. Your game code talks to **interfaces** in `Runtime/Core` and swaps **UGS** vs **Mock** at bootstrap.
 
-**Runtime logs** from this package are in **English** (searchable, tooling-friendly). XML doc comments in sources may stay Russian or your team language — that does not affect builds.
+**Runtime logs** from this package are in **English** (searchable, tooling-friendly). XML doc comments and documentation are also in English.
 
 ---
 
@@ -13,7 +13,7 @@ Add to your project's `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git#v1.4.2"
+    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git#v1.4.3"
   }
 }
 ```
@@ -34,15 +34,15 @@ Optional sample: **Package Manager → RamnD Game Services SDK → Samples → I
 
 ## Table of Contents
 
-| Topic | English | Русский |
-|-------|---------|---------|
-| Initialization & bootstrap | [docs/bootstrap.md](docs/bootstrap.md) | [docs/ru/bootstrap-ru.md](docs/ru/bootstrap-ru.md) |
-| Auth & player name | [docs/auth.md](docs/auth.md) | [docs/ru/auth-ru.md](docs/ru/auth-ru.md) |
-| Economy (currency & items) | [docs/economy.md](docs/economy.md) | [docs/ru/economy-ru.md](docs/ru/economy-ru.md) |
-| Cloud Save | [docs/cloud-save.md](docs/cloud-save.md) | [docs/ru/cloud-save-ru.md](docs/ru/cloud-save-ru.md) |
-| Leaderboard | [docs/leaderboard.md](docs/leaderboard.md) | [docs/ru/leaderboard-ru.md](docs/ru/leaderboard-ru.md) |
-| Analytics | [docs/analytics.md](docs/analytics.md) | [docs/ru/analytics-ru.md](docs/ru/analytics-ru.md) |
-| Security & credentials | [below](#security--credentials) | — |
+| Topic | Documentation |
+|-------|---------------|
+| Initialization & bootstrap | [docs/bootstrap.md](docs/bootstrap.md) |
+| Auth & player name | [docs/auth.md](docs/auth.md) |
+| Economy (currency & items) | [docs/economy.md](docs/economy.md) |
+| Cloud Save | [docs/cloud-save.md](docs/cloud-save.md) |
+| Leaderboard | [docs/leaderboard.md](docs/leaderboard.md) |
+| Analytics | [docs/analytics.md](docs/analytics.md) |
+| Security & credentials | [below](#security--credentials) |
 
 > **Quick start:** see [docs/bootstrap.md](docs/bootstrap.md) or the condensed summary below.
 

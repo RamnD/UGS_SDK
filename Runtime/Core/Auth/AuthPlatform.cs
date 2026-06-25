@@ -1,16 +1,16 @@
 /// <summary>
-/// Поддерживаемые стратегии аутентификации.
-/// Намеренно не совпадает с <see cref="UnityEngine.RuntimePlatform"/> —
-/// здесь только то, что реально реализовано в auth-слое.
+/// Supported authentication strategies.
+/// Intentionally distinct from <see cref="UnityEngine.RuntimePlatform"/> —
+/// only what is actually implemented in the auth layer.
 /// </summary>
 public enum AuthPlatform
 {
-    /// <summary>Анонимный вход — не привязан к платформе. Используется по умолчанию и в редакторе.</summary>
+    /// <summary>Anonymous sign-in — not tied to a platform. Default and used in the Editor.</summary>
     Anonymous,
 
-    /// <summary>Google Play Games — только Android. Требует настройки GPGS SDK.</summary>
+    /// <summary>Google Play Games — Android only. Requires GPGS SDK setup.</summary>
     GooglePlayGames,
 
-    /// <summary>Apple Sign-In — только iOS. Требует нативного плагина для получения identityToken.</summary>
+    /// <summary>Apple Sign-In — iOS only. Requires a native plugin to obtain identityToken.</summary>
     Apple
 }

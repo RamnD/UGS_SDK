@@ -1,10 +1,10 @@
 using UnityEngine;
 
 /// <summary>
-/// Mock-реализация <see cref="IAnalyticsSystem"/>.
-/// Выводит события в консоль — никуда не отправляет.
+/// Mock <see cref="IAnalyticsSystem"/> implementation.
+/// Logs events to the console — does not send anywhere.
 /// <para>
-/// Используйте для разработки UI/логики до подключения реального Analytics SDK.
+/// Use for UI/logic development before wiring a real Analytics SDK.
 /// </para>
 /// </summary>
 public sealed class MockAnalyticsSystem : IAnalyticsSystem

@@ -6,7 +6,7 @@ using Unity.Services.Economy;
 using UnityEngine;
 
 /// <summary>
-/// Реализация <see cref="IItemService{TItem}"/> через Unity Gaming Services Economy PlayerInventory.
+/// <see cref="IItemService{TItem}"/> implementation via Unity Gaming Services Economy PlayerInventory.
 /// </summary>
 public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
     where TItem     : struct, Enum

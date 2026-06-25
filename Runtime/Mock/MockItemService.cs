@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using UnityEngine;
 
 /// <summary>
-/// Mock-реализация <see cref="IItemService{TItem}"/>.
+/// Mock <see cref="IItemService{TItem}"/> implementation.
 /// </summary>
 public sealed class MockItemService<TItem> : IItemService<TItem>
     where TItem : struct, Enum

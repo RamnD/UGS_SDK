@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 using UnityEngine;
 
 /// <summary>
-/// Mock-реализация <see cref="IAuthService"/>.
+/// Mock <see cref="IAuthService"/> implementation.
 /// </summary>
 public sealed class MockAuthService : IAuthService
 {

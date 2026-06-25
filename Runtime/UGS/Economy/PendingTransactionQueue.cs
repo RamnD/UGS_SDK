@@ -6,8 +6,8 @@ using Unity.Services.Economy;
 using UnityEngine;
 
 /// <summary>
-/// Очередь офлайн-транзакций (положительный amount — начисление, отрицательный — списание).
-/// Накапливает операции во время отсутствия сети и отправляет их при следующем подключении.
+/// Offline transaction queue (positive amount — credit, negative — debit).
+/// Accumulates operations while offline and sends them on the next connection.
 /// </summary>
 internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struct, Enum
 {
@@ -18,7 +18,7 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
     public PendingTransactionQueue(ICurrencyMapper<TCurrency> mapper) => _mapper = mapper;
 
     /// <summary>
-    /// Добавляет транзакцию в очередь и немедленно сохраняет на диск.
+    /// Enqueues a transaction and saves to disk immediately.
     /// </summary>
     public void Enqueue(TCurrency type, int amount)
     {
@@ -28,8 +28,8 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
     }
 
     /// <summary>
-    /// Отправляет накопленные транзакции на сервер по одной.
-    /// При первой ошибке — <see cref="InventoryOperationException"/> (Reason = <see cref="InventoryFailureReason.PendingTransactionsFlushFailed"/>).
+    /// Sends queued transactions to the server one by one.
+    /// On first error — <see cref="InventoryOperationException"/> (Reason = <see cref="InventoryFailureReason.PendingTransactionsFlushFailed"/>).
     /// </summary>
     public async Task FlushAsync(BalanceCache<TCurrency> cache, CancellationToken cancellationToken = default)
     {

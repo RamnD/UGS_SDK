@@ -3,41 +3,41 @@ using System.Threading;
 using System.Threading.Tasks;
 
 /// <summary>
-/// Сервис баланса игрока. TCurrency — проектный enum валюты (например, CurrencyType).
-/// Весь маппинг enum → string ID делегируется в <see cref="ICurrencyMapper{TCurrency}"/>.
+/// Player balance service. TCurrency is the project currency enum (e.g. CurrencyType).
+/// All enum → string ID mapping is delegated to <see cref="ICurrencyMapper{TCurrency}"/>.
 /// <para>
-/// Офлайн-стратегия определяется маппером:
-/// Add и Spend (где разрешено маппером) — оптимистичный кэш + очередь; иначе требуется сеть.
+/// Offline strategy is defined by the mapper:
+/// Add and Spend (where the mapper allows) — optimistic cache + queue; otherwise network is required.
 /// </para>
 /// <para>
-/// Сетевая / серверная ошибка → <see cref="InventoryOperationException"/>.
-/// Для списания: отсутствие средств (после сверки с сервером) → <see cref="TrySpendCurrencyAsync"/> вернёт false, не исключение.
+/// Network / server error → <see cref="InventoryOperationException"/>.
+/// For spend: insufficient funds (after server reconciliation) → <see cref="TrySpendCurrencyAsync"/> returns false, not an exception.
 /// </para>
 /// </summary>
-/// <typeparam name="TCurrency">Проектный enum с типами валюты.</typeparam>
+/// <typeparam name="TCurrency">Project enum of currency types.</typeparam>
 public interface IInventoryService<TCurrency> where TCurrency : struct, Enum
 {
     /// <summary>
-    /// Синхронно возвращает кэшированное значение баланса. Безопасно вызывать в Update/UI.
+    /// Returns the cached balance synchronously. Safe to call from Update/UI.
     /// </summary>
     long GetCachedBalance(TCurrency type);
 
     /// <summary>
-    /// Синхронизирует балансы с сервером. Вызывать при старте игры и после reconnect.
-    /// Если офлайн — загружает последний известный кэш из PlayerPrefs.
+    /// Syncs balances with the server. Call at game start and after reconnect.
+    /// If offline — loads the last known cache from PlayerPrefs.
     /// </summary>
     Task RefreshBalancesAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Начисляет валюту (например, награда за уровень, просмотр рекламы).
-    /// Офлайн-поведение определяется <see cref="ICurrencyMapper{TCurrency}.IsOfflineAllowed"/>.
+    /// Credits currency (e.g. level reward, ad watch).
+    /// Offline behavior is defined by <see cref="ICurrencyMapper{TCurrency}.IsOfflineAllowed"/>.
     /// </summary>
     Task AddCurrencyAsync(TCurrency type, int amount, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Списывает валюту. Офлайн — если разрешено маппером (оптимистичный кэш + очередь).
-    /// Возвращает false если не хватает средств. При рассинхронизации с сервером (HTTP 422) обновляет кэш.
+    /// Debits currency. Offline — if allowed by the mapper (optimistic cache + queue).
+    /// Returns false if insufficient funds. On server desync (HTTP 422) updates the cache.
     /// </summary>
-    /// <returns>True если сервер подтвердил транзакцию.</returns>
+    /// <returns>True if the server confirmed the transaction.</returns>
     Task<bool> TrySpendCurrencyAsync(TCurrency type, int amount, CancellationToken cancellationToken = default);
 }

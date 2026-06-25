@@ -1,6 +1,6 @@
 /// <summary>
-/// Маркерный интерфейс для событий аналитики.
-/// Реализуйте в struct с полями, помеченными <see cref="AnalyticsKeyAttribute"/>.
+/// Marker interface for analytics events.
+/// Implement on a struct with fields marked by <see cref="AnalyticsKeyAttribute"/>.
 /// </summary>
 /// <example>
 /// <code>
@@ -9,12 +9,12 @@
 ///     public string EventName => "level_start";
 ///     [AnalyticsKey("level_id")] public int LevelId;
 /// }
-/// // Использование:
+/// // Usage:
 /// GameServicesLocator.Services?.Analytics.LogEvent(new LevelStartEvent { LevelId = 3 });
 /// </code>
 /// </example>
 public interface IAnalyticsEvent
 {
-    /// <summary>Имя события в аналитическом бэкенде (рекомендуется snake_case).</summary>
+    /// <summary>Event name in the analytics backend (snake_case recommended).</summary>
     string EventName { get; }
 }

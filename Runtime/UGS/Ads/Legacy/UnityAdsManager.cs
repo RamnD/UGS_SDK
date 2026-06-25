@@ -4,16 +4,16 @@ using UnityEngine;
 using UnityEngine.Advertisements;
 
 /// <summary>
-/// <b>Legacy:</b> Реализация <see cref="IAdsManager"/> через Unity Ads SDK 4.x (без медиации).
+/// <b>Legacy:</b> <see cref="IAdsManager"/> implementation via Unity Ads SDK 4.x (no mediation).
 /// <para>
-/// Для новых проектов рекомендуется <see cref="LevelPlayAdsManager"/> — поддерживает медиацию
-/// (Unity Ads + Meta + AppLovin и др.) и активно развивается.
+/// For new projects use <see cref="LevelPlayAdsManager"/> — supports mediation
+/// (Unity Ads + Meta + AppLovin, etc.) and is actively maintained.
 /// </para>
 /// <para>
-/// Требует: Package Manager → <c>com.unity.ads</c> версии 4.x или новее.
-/// Game ID настраивается в Project Settings → Monetization → Unity Ads.
+/// Requires: Package Manager → <c>com.unity.ads</c> version 4.x or newer.
+/// Game ID is set in Project Settings → Monetization → Unity Ads.
 /// </para>
-/// Использование в bootstrap:
+/// Bootstrap usage:
 /// <code>
 /// new UGSServicesBuilder()
 ///     .WithAds(new UnityAdsManager("androidGameId", "iosGameId", testMode: false))
@@ -29,15 +29,15 @@ public sealed class UnityAdsManager : IAdsManager,
     private readonly string _iosGameId;
     private readonly bool   _testMode;
 
-    // Коллбэки текущего rewarded показа — хранятся на время Show()
+    // Callbacks for the current rewarded show — held for the duration of Show()
     private Action _pendingSuccess;
     private Action _pendingFailed;
-    // ID текущего показа — нужен для разрешения коллизий LoadListener/ShowListener
+    // Current show ID — resolves LoadListener/ShowListener collisions
     private string _activeShowPlacementId;
 
-    /// <param name="androidGameId">Unity Ads Game ID для Android (Project Settings → Ads).</param>
-    /// <param name="iosGameId">Unity Ads Game ID для iOS (Project Settings → Ads).</param>
-    /// <param name="testMode">Включить тестовый режим. В продакшне — false.</param>
+    /// <param name="androidGameId">Unity Ads Game ID for Android (Project Settings → Ads).</param>
+    /// <param name="iosGameId">Unity Ads Game ID for iOS (Project Settings → Ads).</param>
+    /// <param name="testMode">Enable test mode. Use false in production.</param>
     public UnityAdsManager(string androidGameId, string iosGameId, bool testMode = false)
     {
         _androidGameId = androidGameId;
@@ -96,13 +96,13 @@ public sealed class UnityAdsManager : IAdsManager,
 
     // ─── IUnityAdsInitializationListener ─────────────────────────────────────
 
-    /// <summary>Unity Ads SDK успешно инициализирован.</summary>
+    /// <summary>Unity Ads SDK initialized successfully.</summary>
     public void OnInitializationComplete()
     {
         Debug.Log("[Ads] Unity Ads initialized.");
     }
 
-    /// <summary>Ошибка инициализации SDK.</summary>
+    /// <summary>SDK initialization error.</summary>
     public void OnInitializationFailed(UnityAdsInitializationError error, string message)
     {
         Debug.LogError($"[Ads] Init failed: {error} — {message}");
@@ -110,16 +110,16 @@ public sealed class UnityAdsManager : IAdsManager,
 
     // ─── IUnityAdsLoadListener ────────────────────────────────────────────────
 
-    /// <summary>Рекламный блок загружен — начинаем показ.</summary>
+    /// <summary>Ad loaded — start show.</summary>
     public void OnUnityAdsAdLoaded(string placementId)
     {
         Debug.Log($"[Ads] Loaded: {placementId}");
-        // Показываем только тот placement, который мы запросили (защита от коллизий)
+        // Show only the placement we requested (collision guard)
         if (placementId == _activeShowPlacementId)
             Advertisement.Show(placementId, this);
     }
 
-    /// <summary>Ошибка загрузки рекламного блока.</summary>
+    /// <summary>Ad load error.</summary>
     public void OnUnityAdsFailedToLoad(string placementId, UnityAdsLoadError error, string message)
     {
         Debug.LogWarning($"[Ads] Failed to load {placementId}: {error} — {message}");
@@ -129,15 +129,15 @@ public sealed class UnityAdsManager : IAdsManager,
 
     // ─── IUnityAdsShowListener ────────────────────────────────────────────────
 
-    /// <summary>Игрок начал смотреть ролик.</summary>
+    /// <summary>Player started watching.</summary>
     public void OnUnityAdsShowStart(string placementId) { }
 
-    /// <summary>Клик по рекламе.</summary>
+    /// <summary>Ad click.</summary>
     public void OnUnityAdsShowClick(string placementId) { }
 
     /// <summary>
-    /// Показ завершён. <see cref="ShowResult.Finished"/> = игрок досмотрел → вызываем onSuccess.
-    /// Любой другой результат (Skipped, Failed) → onFailed.
+    /// Show finished. <see cref="ShowResult.Finished"/> = player watched to the end → call onSuccess.
+    /// Any other result (Skipped, Failed) → onFailed.
     /// </summary>
     public void OnUnityAdsShowComplete(string placementId, UnityAdsShowCompletionState showCompletionState)
     {
@@ -158,7 +158,7 @@ public sealed class UnityAdsManager : IAdsManager,
         }
     }
 
-    /// <summary>Ошибка во время показа рекламы.</summary>
+    /// <summary>Error during ad show.</summary>
     public void OnUnityAdsShowFailure(string placementId, UnityAdsShowError error, string message)
     {
         Debug.LogError($"[Ads] Show failed {placementId}: {error} — {message}");

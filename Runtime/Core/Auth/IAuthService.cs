@@ -2,68 +2,68 @@ using System.Threading;
 using System.Threading.Tasks;
 
 /// <summary>
-/// Сервис аутентификации игрока.
-/// Абстрагирован от конкретного SDK — поменяйте реализацию в билдере
-/// без изменения остального кода.
+/// Player authentication service.
+/// Abstracted from the concrete SDK — swap the implementation in the builder
+/// without changing the rest of your code.
 /// </summary>
 public interface IAuthService
 {
-    /// <summary>Авторизован ли игрок прямо сейчас.</summary>
+    /// <summary>Whether the player is signed in right now.</summary>
     bool IsSignedIn { get; }
 
     /// <summary>
-    /// Возвращает уникальный ID игрока в рамках SDK.
-    /// Возвращает "unknown" если не авторизован.
+    /// Returns the player's unique ID within the SDK.
+    /// Returns "unknown" if not signed in.
     /// </summary>
     string GetPlayerId();
 
     /// <summary>
-    /// Выполняет вход.
-    /// Логика приоритетов (UGS): Anonymous → форсированный аноним;
-    /// первый визит (нет session token) → аноним; повторный → метод из прошлой сессии.
+    /// Signs in.
+    /// Priority logic (UGS): Anonymous → forced anonymous;
+    /// first visit (no session token) → anonymous; return visit → method from the previous session.
     /// </summary>
-    /// <param name="platform">Желаемая платформа. Может быть переопределена сохранённым методом.</param>
-    /// <param name="cancellationToken">Отмена длительного входа или таймаута.</param>
-    /// <returns>True если вход выполнен успешно.</returns>
+    /// <param name="platform">Desired platform. May be overridden by a saved sign-in method.</param>
+    /// <param name="cancellationToken">Cancels a long-running sign-in or timeout.</param>
+    /// <returns>True if sign-in succeeded.</returns>
     Task<bool> SignInAsync(AuthPlatform platform, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Привязывает анонимный аккаунт к платформенному (Google Play / Apple).
-    /// Вызывать после обучения, когда игрок выбирает "Войти через Google/Apple".
+    /// Links an anonymous account to a platform account (Google Play / Apple).
+    /// Call after onboarding when the player chooses "Sign in with Google/Apple".
     /// </summary>
     Task<bool> LinkWithAccountAsync(AuthPlatform platform, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Полный сброс: выход из SDK + удаление сохранённого метода авторизации.
-    /// После вызова следующий <see cref="SignInAsync"/> создаст новый анонимный аккаунт.
+    /// Full reset: sign out of the SDK + clear the saved auth method.
+    /// The next <see cref="SignInAsync"/> creates a new anonymous account.
     /// </summary>
     void Reset();
 
     /// <summary>
-    /// Возвращает никнейм игрока из профиля UGS Authentication.
-    /// Именно это значение видят все сервисы UGS — лидерборд, Cloud Save и др.
-    /// Пустая строка если никнейм не установлен.
+    /// Returns the player's nickname from the UGS Authentication profile.
+    /// This is what all UGS services see — leaderboards, Cloud Save, etc.
+    /// Empty string if no nickname is set.
     /// </summary>
     string GetPlayerName();
 
     /// <summary>
-    /// Устанавливает никнейм в профиле UGS Authentication.
-    /// Все сервисы UGS (лидерборд и др.) увидят его автоматически.
+    /// Sets the nickname in the UGS Authentication profile.
+    /// All UGS services (leaderboards, etc.) pick it up automatically.
     /// </summary>
     /// <returns>
-    /// null — имя принято и сохранено на сервере.<br/>
-    /// <see cref="NameValidationError"/> — причина отказа (клиентская или серверная).
+    /// null — name accepted and saved on the server.<br/>
+    /// <see cref="NameValidationError"/> — rejection reason (client or server).
     /// </returns>
     Task<NameValidationError?> SetPlayerNameAsync(string name, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Клиентская валидация имени: длина, символы, базовый список запрещённых слов.
-    /// Вызывай в UI при каждом изменении поля ввода для live-фидбека.
-    /// Серверная проверка UGS всё равно выполняется при <see cref="SetPlayerNameAsync"/>.
+    /// Client-side name validation: length, characters, basic banned-word list.
+    /// Call from UI on every input change for live feedback.
+    /// UGS server validation still runs in <see cref="SetPlayerNameAsync"/>.
     /// </summary>
     /// <returns>
-    /// null — имя валидно.
-    /// <see cref="NameValidationError"/> — причина отказа. Локализацию выполняет игра.
+    /// null — name is valid.
+    /// <see cref="NameValidationError"/> — rejection reason. Localization is the game's responsibility.
     /// </returns>
     NameValidationError? ValidatePlayerName(string name);
 }

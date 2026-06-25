@@ -1,18 +1,18 @@
 /// <summary>
-/// Система аналитики. Абстрагирована от конкретного SDK (UGS, Firebase, GameAnalytics…).
-/// Все события типизированы через <see cref="IAnalyticsEvent"/> — нет строковых ключей вне событий.
+/// Analytics system. Abstracted from the concrete SDK (UGS, Firebase, GameAnalytics…).
+/// All events are typed via <see cref="IAnalyticsEvent"/> — no string keys outside event structs.
 /// </summary>
 public interface IAnalyticsSystem
 {
     /// <summary>
-    /// Записывает событие аналитики.
-    /// Поля T с атрибутом <see cref="AnalyticsKeyAttribute"/> сериализуются как параметры события.
+    /// Records an analytics event.
+    /// Fields on T with <see cref="AnalyticsKeyAttribute"/> are serialized as event parameters.
     /// </summary>
     void LogEvent<T>(T eventPayload) where T : struct, IAnalyticsEvent;
 
     /// <summary>
-    /// Принудительно отправляет накопленные события на сервер.
-    /// Вызывайте при паузе и выходе из приложения. Не нужно вызывать после каждого <see cref="LogEvent{T}"/>.
+    /// Forces delivery of queued events to the server.
+    /// Call on pause and app exit. No need to call after every <see cref="LogEvent{T}"/>.
     /// </summary>
     void Flush();
 }

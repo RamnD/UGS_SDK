@@ -1,23 +1,23 @@
 using System;
 
 /// <summary>
-/// Информация о конфликте между локальным и облачным сохранением.
-/// Возвращается из <see cref="ICloudSaveService{TKey}.LoadAsync"/> когда обе версии существуют
-/// и имеют разные временны́е метки.
+/// Conflict between local and cloud save data.
+/// Returned from <see cref="ICloudSaveService{TKey}.LoadAsync"/> when both versions exist
+/// with different timestamps.
 /// <para>
-/// Игрок должен выбрать: <see cref="ICloudSaveService{TKey}.ApplyCloud"/> или
+/// The player must choose: <see cref="ICloudSaveService{TKey}.ApplyCloud"/> or
 /// <see cref="ICloudSaveService{TKey}.KeepLocal"/>.
 /// </para>
 /// </summary>
 public readonly struct SaveConflict
 {
-    /// <summary>Время последнего локального изменения (UTC).</summary>
+    /// <summary>Time of the last local change (UTC).</summary>
     public readonly DateTime LocalTimestamp;
 
-    /// <summary>Время последнего облачного сохранения (UTC).</summary>
+    /// <summary>Time of the last cloud save (UTC).</summary>
     public readonly DateTime CloudTimestamp;
 
-    /// <summary>True если облачное сохранение новее локального.</summary>
+    /// <summary>True if the cloud save is newer than the local one.</summary>
     public bool IsCloudNewer => CloudTimestamp > LocalTimestamp;
 
     public SaveConflict(DateTime localTimestamp, DateTime cloudTimestamp)

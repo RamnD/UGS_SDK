@@ -6,13 +6,13 @@ using Newtonsoft.Json;
 using UnityEngine;
 
 /// <summary>
-/// Mock-реализация <see cref="ICloudSaveService{TKey}"/>.
-/// Хранит данные только в памяти — без сети и без PlayerPrefs.
+/// Mock <see cref="ICloudSaveService{TKey}"/> implementation.
+/// Stores data in memory only — no network and no PlayerPrefs.
 /// <para>
-/// Конфликтов не создаёт (всегда возвращает null из <see cref="LoadAsync"/>).
-/// Используйте для разработки UI и логики до настройки UGS Cloud Save.
+/// Does not create conflicts (always returns null from <see cref="LoadAsync"/>).
+/// Use for UI and logic development before setting up UGS Cloud Save.
 /// </para>
-/// Использование:
+/// Usage:
 /// <code>
 /// var save = new MockCloudSaveService&lt;SaveKey&gt;(new SaveKeyMapper());
 /// save.Set(SaveKey.HighScore, 1234L);

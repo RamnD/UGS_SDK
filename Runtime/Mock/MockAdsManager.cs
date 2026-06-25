@@ -3,8 +3,8 @@ using System.Threading.Tasks;
 using UnityEngine;
 
 /// <summary>
-/// Mock-реализация <see cref="IAdsManager"/>.
-/// Имитирует поведение рекламного SDK: задержка 1.5 с → вызов onSuccess.
+/// Mock <see cref="IAdsManager"/> implementation.
+/// Simulates ad SDK behavior: 1.5 s delay → onSuccess.
 /// </summary>
 public sealed class MockAdsManager : IAdsManager
 {

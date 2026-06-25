@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using UnityEngine;
 
 /// <summary>
-/// Mock-реализация <see cref="IInventoryService{TCurrency}"/>.
+/// Mock <see cref="IInventoryService{TCurrency}"/> implementation.
 /// </summary>
 public sealed class MockInventoryService<TCurrency> : IInventoryService<TCurrency>
     where TCurrency : struct, Enum

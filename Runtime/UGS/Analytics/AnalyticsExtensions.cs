@@ -3,14 +3,14 @@ using System.Reflection;
 using Unity.Services.Analytics;
 
 /// <summary>
-/// Вспомогательные методы для конвертации struct-событий в формат UGS Analytics SDK.
-/// Используются внутри <see cref="UGSAnalyticSystem"/> — не вызывайте напрямую.
+/// Helpers for converting event structs to UGS Analytics SDK format.
+/// Used inside <see cref="UGSAnalyticSystem"/> — do not call directly.
 /// </summary>
 public static class AnalyticsExtensions
 {
     /// <summary>
-    /// Конвертирует struct, реализующий <see cref="IAnalyticsEvent"/>, в <see cref="CustomEvent"/> для UGS SDK.
-    /// Включаются только поля с атрибутом <see cref="AnalyticsKeyAttribute"/>.
+    /// Converts a struct implementing <see cref="IAnalyticsEvent"/> to a <see cref="CustomEvent"/> for the UGS SDK.
+    /// Only fields with <see cref="AnalyticsKeyAttribute"/> are included.
     /// </summary>
     public static CustomEvent ToCustomEvent<T>(this T dataObject) where T : struct, IAnalyticsEvent
     {
@@ -33,7 +33,7 @@ public static class AnalyticsExtensions
     }
 
     /// <summary>
-    /// Собирает все публичные поля с <see cref="AnalyticsKeyAttribute"/> в словарь key → value.
+    /// Collects all public fields with <see cref="AnalyticsKeyAttribute"/> into a key → value dictionary.
     /// </summary>
     private static Dictionary<string, object> ToAnalyticsDict<T>(this T dataObject) where T : struct
     {

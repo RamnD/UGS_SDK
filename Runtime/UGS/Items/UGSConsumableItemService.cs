@@ -8,8 +8,8 @@ using Unity.Services.Economy.Model;
 using UnityEngine;
 
 /// <summary>
-/// Реализация <see cref="IConsumableItemService{TItem}"/> через UGS Economy PlayerBalances.
-/// Consumables в Dashboard задаются как <b>Currency</b>; quantity = баланс валюты.
+/// <see cref="IConsumableItemService{TItem}"/> implementation via UGS Economy PlayerBalances.
+/// Consumables in the Dashboard are defined as <b>Currency</b>; quantity = currency balance.
 /// </summary>
 public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TItem>
     where TItem : struct, Enum
