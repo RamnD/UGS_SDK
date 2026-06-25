@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.4.4] - 2026-06-25
+
+### Fixed
+- Added missing Unity `.meta` files for `package.json`, `README.md`, `CHANGELOG.md`, `LICENSE`, and `docs/` — removes Package Manager immutable-folder warnings on git install.
+
 ## [1.4.3] - 2026-06-25
 
 ### Changed
