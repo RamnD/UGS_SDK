@@ -1,0 +1,24 @@
+{
+  "name": "RamnD.GameServices.UGS",
+  "rootNamespace": "",
+  "references": [
+    "RamnD.GameServices.Core",
+    "Unity.Services.Core",
+    "Unity.Services.Authentication",
+    "Unity.Services.Economy",
+    "Unity.Services.Analytics",
+    "Unity.Services.CloudSave",
+    "Unity.Services.Leaderboards",
+    "Unity.LevelPlay",
+    "Google.Play.Games"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

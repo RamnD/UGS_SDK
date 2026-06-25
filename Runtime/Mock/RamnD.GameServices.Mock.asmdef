@@ -1,0 +1,14 @@
+{
+  "name": "RamnD.GameServices.Mock",
+  "rootNamespace": "",
+  "references": [
+    "RamnD.GameServices.Core",
+    "Newtonsoft.Json"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "autoReferenced": true,
+  "noEngineReferences": false
+}

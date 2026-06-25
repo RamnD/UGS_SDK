@@ -1,0 +1,363 @@
+// UGSAuthService.cs
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Unity.Services.Core;
+using Unity.Services.Authentication;
+using UnityEngine;
+#if UNITY_ANDROID
+using GooglePlayGames;
+using GooglePlayGames.BasicApi;
+#endif
+
+/// <summary>
+/// Реализация <see cref="IAuthService"/> через Unity Gaming Services Authentication SDK.
+/// <para>
+/// Стратегия входа:
+/// <list type="bullet">
+/// <item>Anonymous (или forceAnonymous) — всегда анонимный вход, prefs не трогаем.</item>
+/// <item>Первый визит (нет session token) — анонимный вход, сохраняем "Anonymous".</item>
+/// <item>Повторный визит — берём сохранённый метод из PlayerPrefs, игнорируем platform.</item>
+/// </list>
+/// </para>
+/// </summary>
+public class UGSAuthService : IAuthService
+{
+    private const string LastAuthMethodKey = "last_auth_method";
+
+    private readonly NameValidatorConfig            _validatorConfig;
+    private readonly GameServicesAuthProviderConfig _providerConfig;
+
+    /// <param name="config">
+    /// Конфигурация антицензора. Передаётся из <see cref="UGSServicesBuilder"/>.
+    /// Null равнозначен <see cref="NameValidatorConfig.Empty"/>.
+    /// </param>
+    /// <param name="providerConfig">Необязательные ключи GPGS / Apple (см. <see cref="GameServicesAuthProviderConfig"/>).</param>
+    public UGSAuthService(
+        NameValidatorConfig            config         = null,
+        GameServicesAuthProviderConfig providerConfig = null)
+    {
+        _validatorConfig = config ?? NameValidatorConfig.Empty;
+        _providerConfig  = providerConfig ?? GameServicesAuthProviderConfig.Empty;
+    }
+
+    /// <inheritdoc/>
+    public bool IsSignedIn => AuthenticationService.Instance.IsSignedIn;
+
+    /// <inheritdoc/>
+    public string GetPlayerId() =>
+        IsSignedIn ? AuthenticationService.Instance.PlayerId : "unknown";
+
+    /// <inheritdoc/>
+    public string GetPlayerName() =>
+        IsSignedIn ? (AuthenticationService.Instance.PlayerName ?? "") : "";
+
+    /// <inheritdoc/>
+    public async Task<NameValidationError?> SetPlayerNameAsync(string name,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsSignedIn)
+        {
+            Debug.LogError("[Auth] SetPlayerNameAsync: not signed in.");
+            return NameValidationError.NotSignedIn;
+        }
+
+        var clientError = ValidatePlayerName(name);
+        if (clientError != null)
+        {
+            Debug.LogWarning($"[Auth] SetPlayerNameAsync: client validation failed — {clientError}");
+            return clientError;
+        }
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await AuthenticationService.Instance.UpdatePlayerNameAsync(name);
+            cancellationToken.ThrowIfCancellationRequested();
+            Debug.Log($"[Auth] PlayerName updated: \"{GetPlayerName()}\"");
+            return null;
+        }
+        catch (AuthenticationException e) when (e.ErrorCode == AuthenticationErrorCodes.InvalidParameters)
+        {
+            Debug.LogWarning($"[Auth] Server rejected name \"{name}\": {e.Message}");
+            return NameValidationError.ServerRejected;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[Auth] UpdatePlayerName failed: {e.Message}");
+            return NameValidationError.NetworkError;
+        }
+    }
+
+    /// <inheritdoc/>
+    public NameValidationError? ValidatePlayerName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return NameValidationError.Empty;
+
+        if (name.Length < 3)
+            return NameValidationError.TooShort;
+
+        if (name.Length > 50)
+            return NameValidationError.TooLong;
+
+        foreach (char c in name)
+            if (!char.IsLetterOrDigit(c) && c != ' ' && c != '-' && c != '_' && c != '.')
+                return NameValidationError.InvalidCharacter;
+
+        string lower = name.ToLowerInvariant();
+        foreach (var word in _validatorConfig.BannedWords)
+            if (lower.Contains(word.ToLowerInvariant()))
+                return NameValidationError.Profanity;
+
+        if (_validatorConfig.BannedPattern != null &&
+            _validatorConfig.BannedPattern.IsMatch(name))
+            return NameValidationError.Profanity;
+
+        return null;
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> SignInAsync(AuthPlatform platform, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (UnityServices.State == ServicesInitializationState.Uninitialized)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await UnityServices.InitializeAsync();
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (IsSignedIn) return true;
+
+            if (platform == AuthPlatform.Anonymous)
+            {
+                Debug.Log("[Auth] Forced anonymous sign-in.");
+                cancellationToken.ThrowIfCancellationRequested();
+                await AuthenticationService.Instance.SignInAnonymouslyAsync();
+            }
+            else if (!AuthenticationService.Instance.SessionTokenExists)
+            {
+                Debug.Log("[Auth] First visit — anonymous sign-in.");
+                cancellationToken.ThrowIfCancellationRequested();
+                await AuthenticationService.Instance.SignInAnonymouslyAsync();
+                SaveLastMethod(AuthPlatform.Anonymous);
+            }
+            else
+            {
+                AuthPlatform lastMethod = LoadLastMethod();
+                Debug.Log($"[Auth] Returning visit — signing in via: {lastMethod}.");
+                cancellationToken.ThrowIfCancellationRequested();
+                await SignInWithMethodAsync(lastMethod, cancellationToken);
+            }
+
+            Debug.Log($"[Auth] Success. PlayerId={GetPlayerId()}");
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            Debug.LogWarning("[Auth] Sign-in cancelled.");
+            return false;
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[Auth] Sign-in failed: {e.Message}");
+            return false;
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> LinkWithAccountAsync(AuthPlatform platform,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsSignedIn)
+        {
+            Debug.LogError("[Auth] Cannot link account — not signed in.");
+            return false;
+        }
+
+        try
+        {
+            switch (platform)
+            {
+                case AuthPlatform.GooglePlayGames:
+#if UNITY_ANDROID
+                    if (string.IsNullOrWhiteSpace(_providerConfig.GooglePlayGamesOAuthWebClientId))
+                    {
+                        // TODO(GPGS→UGS): использовать GooglePlayGamesOAuthWebClientId, когда сборка действительно зависит от передачи ключа через SDK (сейчас GPGS часто задаёт клиент через ресурсы Android).
+                        Debug.LogWarning(
+                            "[Auth] TODO(GPGS→UGS): GooglePlayGamesOAuthWebClientId not passed via WithAuthProviderCredentials; add Web Client Id from GCP / game config if linking fails.");
+                    }
+#endif
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await LinkWithGooglePlayGamesAsync(cancellationToken);
+                    break;
+
+                case AuthPlatform.Apple:
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await LinkWithAppleAsync(cancellationToken);
+                    break;
+
+                default:
+                    Debug.LogError("[Auth] Anonymous cannot be used as a link target.");
+                    return false;
+            }
+
+            SaveLastMethod(platform);
+            Debug.Log($"[Auth] Account linked: {platform}.");
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            Debug.LogWarning("[Auth] Account link cancelled.");
+            return false;
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[Auth] Account link failed ({platform}): {e.Message}");
+            return false;
+        }
+    }
+
+    /// <inheritdoc/>
+    public void Reset()
+    {
+        if (IsSignedIn)
+            AuthenticationService.Instance.SignOut(clearCredentials: true);
+
+        PlayerPrefs.DeleteKey(LastAuthMethodKey);
+        PlayerPrefs.Save();
+        Debug.Log("[Auth] Session cleared. Next sign-in will create a new anonymous session.");
+    }
+
+    private static void SaveLastMethod(AuthPlatform method)
+    {
+        PlayerPrefs.SetString(LastAuthMethodKey, method.ToString());
+        PlayerPrefs.Save();
+    }
+
+    private static AuthPlatform LoadLastMethod()
+    {
+        string saved = PlayerPrefs.GetString(LastAuthMethodKey, AuthPlatform.Anonymous.ToString());
+        return Enum.TryParse(saved, out AuthPlatform result) ? result : AuthPlatform.Anonymous;
+    }
+
+    private Task SignInWithMethodAsync(AuthPlatform method, CancellationToken cancellationToken) =>
+        method switch
+        {
+            AuthPlatform.GooglePlayGames => SignInWithGooglePlayGamesAsync(cancellationToken),
+            AuthPlatform.Apple           => SignInWithAppleAsync(cancellationToken),
+            _                            => AuthenticationService.Instance.SignInAnonymouslyAsync()
+        };
+
+#if UNITY_ANDROID
+    private async Task SignInWithGooglePlayGamesAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_providerConfig.GooglePlayGamesOAuthWebClientId))
+        {
+            Debug.LogWarning(
+                "[Auth] TODO(GPGS→UGS): GooglePlayGamesOAuthWebClientId not set; pass WithAuthProviderCredentials if auth fails.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        string serverAuthCode = await GetGoogleServerAuthCodeAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        await AuthenticationService.Instance.SignInWithGooglePlayGamesAsync(serverAuthCode);
+    }
+
+    private async Task LinkWithGooglePlayGamesAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        string serverAuthCode = await GetGoogleServerAuthCodeAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        await AuthenticationService.Instance.LinkWithGooglePlayGamesAsync(serverAuthCode);
+    }
+
+    private Task<string> GetGoogleServerAuthCodeAsync(CancellationToken cancellationToken)
+    {
+        var tcs = new TaskCompletionSource<string>();
+        PlayGamesPlatform.Instance.Authenticate(status =>
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                tcs.TrySetCanceled(cancellationToken);
+                return;
+            }
+
+            if (status == SignInStatus.Success)
+            {
+                PlayGamesPlatform.Instance.RequestServerSideAccess(forceRefreshToken: false, authCode =>
+                {
+                    if (authCode == null)
+                        tcs.TrySetException(new Exception("Google Play Games: RequestServerSideAccess returned null."));
+                    else
+                        tcs.TrySetResult(authCode);
+                });
+            }
+            else
+            {
+                tcs.TrySetException(new Exception($"Google Play Games sign-in failed: {status}"));
+            }
+        });
+        return tcs.Task;
+    }
+#else
+    private Task SignInWithGooglePlayGamesAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        throw new PlatformNotSupportedException("Google Play Games is only available on Android.");
+    }
+
+    private Task LinkWithGooglePlayGamesAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        throw new PlatformNotSupportedException("Google Play Games is only available on Android.");
+    }
+#endif
+
+#if UNITY_IOS
+    private Task SignInWithAppleAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (string.IsNullOrWhiteSpace(_providerConfig.AppleServicesId))
+        {
+            Debug.LogError(
+                "[Auth] TODO(iOS→UGS): AppleServicesId is missing — pass GameServicesAuthProviderConfig.AppleServicesId in the builder.");
+            throw new InvalidOperationException("Apple Sign-In: AppleServicesId missing in builder config.");
+        }
+
+        // TODO(iOS→UGS): получить identityToken из нативного Apple Sign-In (напр. после Apple-плагина Unity / нативного bridge).
+        // string identityToken = await NativeAppleSignIn.GetIdentityTokenAsync(cancellationToken);
+        // await AuthenticationService.Instance.SignInWithAppleAsync(identityToken);
+
+        Debug.LogError(
+            "[Auth] TODO(iOS→UGS): obtain identityToken and call AuthenticationService.Instance.SignInWithAppleAsync.");
+        throw new InvalidOperationException("Apple Sign-In: identityToken flow not implemented for UGS.");
+    }
+
+    private Task LinkWithAppleAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return SignInWithAppleAsync(cancellationToken);
+    }
+#else
+    private Task SignInWithAppleAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        throw new PlatformNotSupportedException("Apple Sign-In is only available on iOS.");
+    }
+
+    private Task LinkWithAppleAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        throw new PlatformNotSupportedException("Apple Sign-In is only available on iOS.");
+    }
+#endif
+}

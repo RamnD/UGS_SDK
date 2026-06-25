@@ -1,0 +1,39 @@
+{
+  "name": "com.ramnd.gameservices-sdk",
+  "version": "1.4.0",
+  "displayName": "RamnD Game Services SDK",
+  "description": "Portable game services layer: Auth, Economy, Items, Analytics, Ads, CloudSave, Leaderboards. Includes UGS (Unity Gaming Services) backend. Extend with your own backend by implementing the Core interfaces.",
+  "unity": "2022.3",
+  "unityRelease": "0f1",
+  "keywords": [
+    "auth",
+    "economy",
+    "analytics",
+    "ads",
+    "ugs",
+    "inventory",
+    "shop",
+    "cloud-save",
+    "leaderboard"
+  ],
+  "author": {
+    "name": "RamnD"
+  },
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.1",
+    "com.unity.services.core": "1.16.0",
+    "com.unity.services.authentication": "3.6.1",
+    "com.unity.services.economy": "3.5.3",
+    "com.unity.services.analytics": "6.3.0",
+    "com.unity.services.levelplay": "9.4.1",
+    "com.unity.services.cloud-save": "3.4.0",
+    "com.unity.services.leaderboards": "2.3.4"
+  },
+  "samples": [
+    {
+      "displayName": "Bootstrap",
+      "description": "Minimal UGSServicesBuilder bootstrap MonoBehaviour.",
+      "path": "Samples~/Bootstrap"
+    }
+  ]
+}

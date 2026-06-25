@@ -1,0 +1,17 @@
+{
+  "name": "RamnD.GameServices.Samples.Bootstrap",
+  "rootNamespace": "",
+  "references": [
+    "RamnD.GameServices.Core",
+    "RamnD.GameServices.UGS"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
