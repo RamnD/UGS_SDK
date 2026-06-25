@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.4.1] - 2026-06-25
+
+### Fixed
+- Cloud Save dependency ID: `com.unity.services.cloudsave` (was invalid `com.unity.services.cloud-save`).
+
 ## [1.4.0] - 2026-06-25
 
 ### Added
