@@ -13,7 +13,7 @@ Add to your project's `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git#v1.4.1"
+    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git#v1.4.2"
   }
 }
 ```
@@ -42,8 +42,84 @@ Optional sample: **Package Manager → RamnD Game Services SDK → Samples → I
 | Cloud Save | [docs/cloud-save.md](docs/cloud-save.md) | [docs/ru/cloud-save-ru.md](docs/ru/cloud-save-ru.md) |
 | Leaderboard | [docs/leaderboard.md](docs/leaderboard.md) | [docs/ru/leaderboard-ru.md](docs/ru/leaderboard-ru.md) |
 | Analytics | [docs/analytics.md](docs/analytics.md) | [docs/ru/analytics-ru.md](docs/ru/analytics-ru.md) |
+| Security & credentials | [below](#security--credentials) | — |
 
 > **Quick start:** see [docs/bootstrap.md](docs/bootstrap.md) or the condensed summary below.
+
+---
+
+## Security & credentials
+
+This package is **public and contains no game-specific secrets**. Every consuming project supplies its own keys at runtime or via project settings. **Do not** commit credentials into this SDK repository.
+
+### What lives where
+
+| Credential / config | Owned by | How it is supplied |
+|---------------------|----------|-------------------|
+| UGS project link (Environment, Project ID) | Your game | **Edit → Project Settings → Services** (Unity Dashboard) |
+| Google Play Games OAuth **Web Client ID** | Your game | GPGS plugin setup **and/or** `GameServicesAuthProviderConfig.GooglePlayGamesOAuthWebClientId` |
+| Apple **Services ID** | Your game | `GameServicesAuthProviderConfig.AppleServicesId` |
+| LevelPlay **App Key** | Your game | `new LevelPlayAdsManager("your-app-key")` in `.WithAds(...)` |
+| Profanity / name rules | Your game | `WithNameValidator(...)` or `WithProfanityFilter(...)` |
+
+Pass platform credentials through the builder (from a ScriptableObject, Remote Config, or build-time constants in **your** repo — not hardcoded in the SDK):
+
+```csharp
+.WithAuthProviderCredentials(new GameServicesAuthProviderConfig
+{
+    GooglePlayGamesOAuthWebClientId = gameConfig.GoogleWebClientId,
+    AppleServicesId                 = gameConfig.AppleServicesId,
+})
+.WithAds(new LevelPlayAdsManager(gameConfig.LevelPlayAppKey))
+```
+
+### Public vs secret
+
+| Value | Treat as | Safe in client / git? |
+|-------|----------|------------------------|
+| OAuth Web Client ID (Google) | Public client identifier | Yes |
+| Apple Services ID | Public app identifier | Yes |
+| LevelPlay App Key | App-scoped config | Yes in shipped builds; avoid leaking in public **server** repos if you treat it as sensitive |
+| UGS session tokens, auth codes, identity tokens | Secret / ephemeral | **Never** log or commit |
+| OAuth client **secret**, service account JSON, `.p12`, keystores | Secret | **Never** in SDK or game git — CI / secret store only |
+
+The SDK logs **diagnostic** messages (PlayerId, errors). It does **not** print auth codes or identity tokens. Avoid adding debug logs that dump tokens in your game bootstrap.
+
+### Never commit in your **game** project
+
+Add patterns like these to your game `.gitignore`:
+
+```gitignore
+# Credentials & platform secrets
+**/GoogleService-Info.plist
+**/google-services.json
+*.keystore
+*.jks
+*.p12
+*.pem
+*Credentials*.asset
+*Secrets*.asset
+.env
+.env.*
+```
+
+Keep credential ScriptableObjects local, or load IDs from environment variables in CI for builds.
+
+### Platform auth status
+
+| Platform | Status in this SDK |
+|----------|-------------------|
+| Anonymous UGS | Supported |
+| Google Play Games → UGS (Android) | Supported (requires [GPGS plugin](#android--google-play-games-plugin-for-unity) in the host project) |
+| Sign in with Apple → UGS (iOS) | **Not implemented** — `UGSAuthService` throws until you wire `identityToken` via the Apple plugin (see [docs/auth.md](docs/auth.md)). Use `.WithForceAnonymous(true)` until then. |
+
+### Disclaimer
+
+**RamnD Game Services SDK** is an independent open-source helper for Unity Gaming Services. It is **not** affiliated with, endorsed by, or sponsored by Unity Technologies. Unity, Unity Gaming Services, and LevelPlay are trademarks of their respective owners.
+
+### License
+
+Distributed under the [MIT License](LICENSE).
 
 ---
 

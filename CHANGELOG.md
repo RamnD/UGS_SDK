@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.2] - 2026-06-25
+
+### Added
+- MIT `LICENSE`.
+- README section [Security & credentials](README.md#security--credentials): credential ownership, public vs secret values, game `.gitignore` hints, platform auth status, Unity disclaimer.
+
 ## [1.4.1] - 2026-06-25
 
 ### Fixed
