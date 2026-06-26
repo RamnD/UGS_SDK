@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.5.1] - 2026-06-26
+
+### Fixed
+- Added missing Unity `.meta` files for Remote Config, pre-auth analytics cache (`CachedAnalyticsSystem`, `PendingAnalyticsQueue`, `AnalyticsEventSerializer`, `PendingAnalyticsRecord`), and `docs/remote-config.md` — proper `uuid4` GUIDs (fixes GUID conflicts after v1.5.0 git install).
+
 ## [1.5.0] - 2026-06-26
 
 ### Added

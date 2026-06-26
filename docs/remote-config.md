@@ -65,7 +65,7 @@ mock.SetValue("inventory_max_cap", "8");
 
 ## Design notes
 
-- **SDK only in v1.5.0** — overlay in game `EconomyManager` is a separate step (game-side).
+- **SDK only** — overlay in game `EconomyManager` is a separate step (game-side).
 - Keys are case-insensitive in cache; UGS runtime is case-insensitive from 4.x.
 - Re-fetch at runtime: `await Services.RemoteConfig.FetchAsync()` (e.g. on app resume).
 
