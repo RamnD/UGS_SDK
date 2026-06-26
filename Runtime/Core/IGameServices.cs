@@ -33,6 +33,12 @@ public interface IGameServices
     /// </summary>
     ILeaderboardService Leaderboards { get; }
 
+    /// <summary>
+    /// Remote Config service. Null if not enabled or auth failed.
+    /// After registration, use <c>Services.RemoteConfig</c>.
+    /// </summary>
+    IRemoteConfigService RemoteConfig { get; }
+
     /// <summary>True if auth succeeded.</summary>
     bool IsAuthenticated { get; }
 }

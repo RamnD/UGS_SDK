@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.0] - 2026-06-26
+
+### Added
+- `IRemoteConfigService` on `IGameServices` (`Services.RemoteConfig`).
+- `UGSRemoteConfigService` with PlayerPrefs cache (`RemoteConfigCache`) for offline reads.
+- `MockRemoteConfigService` for editor / tests.
+- `UGSServicesBuilder.WithRemoteConfig()` — fetch after auth.
+- `docs/remote-config.md`.
+
+### Changed
+- Dependency: `com.unity.remote-config` 4.2.5.
+
 ## [1.4.5] - 2026-06-25
 
 ### Fixed

@@ -13,7 +13,7 @@ Add to your project's `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git#v1.4.5"
+    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git#v1.5.0"
   }
 }
 ```
@@ -42,6 +42,7 @@ Optional sample: **Package Manager → RamnD Game Services SDK → Samples → I
 | Cloud Save | [docs/cloud-save.md](docs/cloud-save.md) |
 | Leaderboard | [docs/leaderboard.md](docs/leaderboard.md) |
 | Analytics | [docs/analytics.md](docs/analytics.md) |
+| Remote Config | [docs/remote-config.md](docs/remote-config.md) |
 | Security & credentials | [below](#security--credentials) |
 
 > **Quick start:** see [docs/bootstrap.md](docs/bootstrap.md) or the condensed summary below.
@@ -172,7 +173,7 @@ These plugins are **not available in the Unity Package Manager registry** and mu
 
 **Note:** `Google.Play.Games` must be present in the consuming project for Android auth (see below). Legacy Unity Ads (`UnityAdsManager`) compiles only with scripting define `RAMND_LEGACY_UNITY_ADS` plus `com.unity.ads` in the host project.
 
-Dependencies are listed in `package.json` (Newtonsoft, Authentication, Economy, Cloud Save, Leaderboards, Analytics, Ads / LevelPlay).
+Dependencies are listed in `package.json` (Newtonsoft, Authentication, Economy, Cloud Save, Leaderboards, Analytics, Remote Config, Ads / LevelPlay).
 
 ---
 
@@ -191,6 +192,7 @@ Use:
 - Analytics: `GameServicesLocator.Services?.Analytics?.LogEvent(...)` (null if not signed in)
 - Ads: `GameServicesLocator.Services.Ads` (non-null after build)
 - Leaderboards: `Services.Leaderboards` (null if not authenticated)
+- Remote Config: `Services.RemoteConfig` (null if not enabled or not authenticated)
 
 Generic services (economy, items, cloud save) stay **outside** the façade: inject `IInventoryService<T>`, `IItemService<T>`, `ICloudSaveService<TKey>` from your own bootstrap (see UGS example below).
 
@@ -234,7 +236,7 @@ private async void Start()
 
 ```csharp
 var services = MockGameServices.CreateDefault();
-// GameServicesLocator is set inside CreateDefault(); Auth is signed in, Analytics/Ads/Leaderboards are mocks
+// GameServicesLocator is set inside CreateDefault(); Auth is signed in, Analytics/Ads/Leaderboards/RemoteConfig are mocks
 ```
 
 Use mocks for `IInventoryService<T>` etc. (`MockInventoryService`, `MockItemService`, …) and pass them to your same `PlayerData`-style bridges — no change to UI code paths.

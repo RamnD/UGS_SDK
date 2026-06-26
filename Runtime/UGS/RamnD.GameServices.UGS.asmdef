@@ -9,6 +9,7 @@
     "Unity.Services.Analytics",
     "Unity.Services.CloudSave",
     "Unity.Services.Leaderboards",
+    "Unity.Services.RemoteConfig",
     "Unity.LevelPlay",
     "Google.Play.Games"
   ],

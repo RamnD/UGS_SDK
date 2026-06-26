@@ -19,18 +19,23 @@ public sealed class UGSGameServices : IGameServices
     public ILeaderboardService Leaderboards { get; }
 
     /// <inheritdoc/>
+    public IRemoteConfigService RemoteConfig { get; }
+
+    /// <inheritdoc/>
     public bool              IsAuthenticated { get; }
 
     internal UGSGameServices(
-        IAuthService       auth,
-        IAnalyticsSystem   analytics,
-        IAdsManager        ads,
-        ILeaderboardService leaderboards)
+        IAuthService          auth,
+        IAnalyticsSystem      analytics,
+        IAdsManager           ads,
+        ILeaderboardService   leaderboards,
+        IRemoteConfigService  remoteConfig = null)
     {
         Auth            = auth          ?? throw new ArgumentNullException(nameof(auth));
         Analytics       = analytics;     // null allowed (not authenticated)
         Ads             = ads            ?? throw new ArgumentNullException(nameof(ads));
         Leaderboards    = leaderboards;  // null allowed (not authenticated)
+        RemoteConfig    = remoteConfig;  // null allowed (not enabled / not authenticated)
         IsAuthenticated = auth.IsSignedIn;
     }
 }

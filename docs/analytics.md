@@ -98,6 +98,22 @@ private void OnApplicationQuit()
 
 ---
 
+## Offline event cache (opt-in)
+
+Enable disk-backed replay while offline via bootstrap:
+
+```csharp
+await new UGSServicesBuilder()
+    .WithCachedAnalytics()
+    .BuildAsync();
+```
+
+`CachedAnalyticsSystem` stores pending events in PlayerPrefs and replays them on the next online `LogEvent` / `Flush()`.
+
+With `WithCachedAnalytics()`, analytics is registered in `GameServicesLocator` **before** auth completes. Events emitted during sign-in are queued and replayed after `AttachInner` connects the UGS backend.
+
+---
+
 ## Design guidelines
 
 - **One struct per event name.** Don't reuse a generic event struct for different concepts.

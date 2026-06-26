@@ -1,6 +1,6 @@
 {
   "name": "com.ramnd.gameservices-sdk",
-  "version": "1.4.5",
+  "version": "1.5.0",
   "displayName": "RamnD Game Services SDK",
   "description": "Portable game services layer: Auth, Economy, Items, Analytics, Ads, CloudSave, Leaderboards. Includes UGS (Unity Gaming Services) backend. Extend with your own backend by implementing the Core interfaces.",
   "unity": "2022.3",
@@ -14,7 +14,8 @@
     "inventory",
     "shop",
     "cloud-save",
-    "leaderboard"
+    "leaderboard",
+    "remote-config"
   ],
   "author": {
     "name": "RamnD"
@@ -27,7 +28,8 @@
     "com.unity.services.analytics": "6.3.0",
     "com.unity.services.levelplay": "9.4.1",
     "com.unity.services.cloudsave": "3.4.0",
-    "com.unity.services.leaderboards": "2.3.4"
+    "com.unity.services.leaderboards": "2.3.4",
+    "com.unity.remote-config": "4.2.5"
   },
   "samples": [
     {

@@ -67,6 +67,8 @@ private async void Start()
 | `WithProfanityFilter(Regex)` | Banned pattern only |
 | `WithProfanityFilter(ProfanityConfig)` | ScriptableObject (Inspector-editable) |
 | `WithAds(IAdsManager)` | Ads manager (LevelPlay, Unity Ads, TestAds…) |
+| `WithCachedAnalytics(bool)` | Disk-backed offline analytics queue |
+| `WithRemoteConfig(bool)` | UGS Remote Config fetch after auth + PlayerPrefs cache |
 | `OnAuthenticated(Func<IAuthService, Task>)` | Callback after successful sign-in |
 | `BuildAsync(CancellationToken)` | Initializes UGS, signs in, runs callback, sets locator |
 
@@ -76,7 +78,7 @@ private async void Start()
 
 ```csharp
 var services = MockGameServices.CreateDefault();
-// Auth is already signed in. Analytics, Ads, Leaderboards are no-op mocks.
+// Auth is already signed in. Analytics, Ads, Leaderboards, RemoteConfig are no-op mocks.
 
 var economy   = new MockInventoryService<CurrencyType>();
 var cloudSave = new MockCloudSaveService<SaveKey>();
@@ -94,6 +96,7 @@ if (GameServicesLocator.TryGet(out var svc))
 {
     svc.Analytics?.LogEvent(new LevelStartedEvent { Level = 3 });
     svc.Leaderboards?.SubmitScoreAsync("run_leaderboard", score);
+    int cap = svc.RemoteConfig?.GetInt("inventory_max_cap", 6) ?? 6;
 }
 
 // Direct access (null until BuildAsync completes):

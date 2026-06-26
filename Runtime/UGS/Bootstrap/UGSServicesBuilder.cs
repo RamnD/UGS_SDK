@@ -22,6 +22,8 @@ public sealed class UGSServicesBuilder
     private Regex                                     _profanityPattern;
     private NameValidatorConfig                       _nameValidator;
     private GameServicesAuthProviderConfig            _authCredentials = GameServicesAuthProviderConfig.Empty;
+    private bool                                      _useCachedAnalytics;
+    private bool                                      _useRemoteConfig;
 
     /// <summary>
     /// Force anonymous sign-in on all platforms.
@@ -98,11 +100,30 @@ public sealed class UGSServicesBuilder
     }
 
     /// <summary>
+    /// Wraps analytics with a disk-backed offline queue (opt-in).
+    /// </summary>
+    public UGSServicesBuilder WithCachedAnalytics(bool enabled = true)
+    {
+        _useCachedAnalytics = enabled;
+        return this;
+    }
+
+    /// <summary>
+    /// Enables UGS Remote Config fetch after auth. Values are cached in PlayerPrefs for offline reads.
+    /// </summary>
+    public UGSServicesBuilder WithRemoteConfig(bool enabled = true)
+    {
+        _useRemoteConfig = enabled;
+        return this;
+    }
+
+    /// <summary>
     /// Runs full initialization in this order:
     /// <list type="number">
     /// <item>UnityServices.InitializeAsync()</item>
     /// <item>Auth via <see cref="UGSAuthService"/></item>
     /// <item>UGS Analytics (only on successful auth)</item>
+    /// <item>Remote Config fetch (opt-in, after auth)</item>
     /// <item>OnAuthenticated callback (Economy, Items, etc.)</item>
     /// <item>Ads (independent of auth)</item>
     /// </list>
@@ -118,31 +139,72 @@ public sealed class UGSServicesBuilder
         var authNaming = ResolveNameValidator();
         var auth       = new UGSAuthService(authNaming, _authCredentials);
         var platform   = ResolvePlatform();
+
+        CachedAnalyticsSystem cachedAnalytics = null;
+        IAnalyticsSystem analytics = null;
+
+        if (_useCachedAnalytics)
+        {
+            cachedAnalytics = CachedAnalyticsSystem.CreatePreAuth();
+            analytics = cachedAnalytics;
+            GameServicesLocator.Set(new UGSGameServices(
+                auth,
+                analytics,
+                _adsManager ?? new TestAdsManager(),
+                leaderboards: null,
+                remoteConfig: null));
+        }
+
         bool signedIn = await auth.SignInAsync(platform, cancellationToken);
 
         Debug.Log($"[SDK] Auth: SignedIn={signedIn}, PlayerId={auth.GetPlayerId()}");
 
-        IAnalyticsSystem analytics = null;
         if (signedIn)
         {
             cancellationToken.ThrowIfCancellationRequested();
             await AuthenticationSdkReadiness.WaitForPlayerSessionStableAsync(cancellationToken);
 
             // TODO(analytics-consent): UGS Analytics v6 — migrate from deprecated StartDataCollection to EndUserConsent / store policies.
-            analytics = new UGSAnalyticSystem(
+            var ugsAnalytics = new UGSAnalyticSystem(
                 auth.GetPlayerId(),
                 Unity.Services.Analytics.AnalyticsService.Instance);
+
+            if (cachedAnalytics != null)
+                cachedAnalytics.AttachInner(ugsAnalytics, Unity.Services.Analytics.AnalyticsService.Instance);
+            else
+                analytics = ugsAnalytics;
         }
 
         ILeaderboardService leaderboards = null;
+        IRemoteConfigService remoteConfig = null;
         if (signedIn)
         {
             leaderboards = new UGSLeaderboardService();
             Debug.Log("[SDK] Leaderboards initialized.");
+
+            if (_useRemoteConfig)
+            {
+                remoteConfig = new UGSRemoteConfigService();
+                try
+                {
+                    await remoteConfig.FetchAsync(cancellationToken);
+                    Debug.Log("[SDK] Remote Config initialized.");
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (RemoteConfigOperationException ex)
+                {
+                    Debug.LogWarning($"[SDK] Remote Config fetch failed: {ex.Message}");
+                }
+            }
         }
         else
         {
             Debug.LogWarning("[SDK] Leaderboards skipped — user not authenticated. GameServicesLocator.Services.Leaderboards will be null.");
+            if (_useRemoteConfig)
+                Debug.LogWarning("[SDK] Remote Config skipped — user not authenticated.");
         }
 
         if (signedIn && _onAuthenticated != null)
@@ -156,7 +218,7 @@ public sealed class UGSServicesBuilder
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var services = new UGSGameServices(auth, analytics, ads, leaderboards);
+        var services = new UGSGameServices(auth, analytics, ads, leaderboards, remoteConfig);
         GameServicesLocator.Set(services);
         return services;
     }
