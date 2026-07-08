@@ -144,8 +144,8 @@ public sealed class UGSServicesBuilder
         cancellationToken.ThrowIfCancellationRequested();
 
         string environmentName = UGSEnvironmentResolver.Resolve();
-        var initOptions = new InitializationOptions()
-            .SetEnvironmentName(environmentName);
+        var initOptions = new InitializationOptions();
+        TrySetEnvironmentName(initOptions, environmentName);
 
         Debug.Log($"[SDK] Initializing Unity Services. Environment={environmentName}");
         await UnityServices.InitializeAsync(initOptions);
@@ -279,5 +279,53 @@ public sealed class UGSServicesBuilder
 #else
         return AuthPlatform.Anonymous;
 #endif
+    }
+
+    static void TrySetEnvironmentName(InitializationOptions initOptions, string environmentName)
+    {
+        // Unity Services Core has changed API shape across versions.
+        // In some versions, InitializationOptions includes `SetEnvironmentName(string)`,
+        // in others the method/property might be missing.
+        //
+        // Use reflection so the SDK compiles with older `com.unity.services.core`
+        // while still applying the environment when the method exists.
+        var t = initOptions.GetType();
+
+        var setMethod = t.GetMethod(
+            "SetEnvironmentName",
+            System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.Public |
+            System.Reflection.BindingFlags.NonPublic,
+            binder: null,
+            types: new[] { typeof(string) },
+            modifiers: null);
+
+        if (setMethod != null)
+        {
+            setMethod.Invoke(initOptions, new object[] { environmentName });
+            return;
+        }
+
+        var envProp =
+            t.GetProperty(
+                "EnvironmentName",
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.Public |
+                System.Reflection.BindingFlags.NonPublic)
+            ?? t.GetProperty(
+                "environmentName",
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.Public |
+                System.Reflection.BindingFlags.NonPublic);
+
+        if (envProp != null && envProp.CanWrite)
+        {
+            envProp.SetValue(initOptions, environmentName);
+            return;
+        }
+
+        Debug.LogWarning(
+            "[SDK] Unity Services environment was not set via InitializationOptions API " +
+            "(SetEnvironmentName/EnvironmentName not found). Falling back to default Unity environment.");
     }
 }
