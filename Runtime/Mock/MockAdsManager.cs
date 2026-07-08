@@ -24,8 +24,9 @@ public sealed class MockAdsManager : IAdsManager
     }
 
     /// <inheritdoc/>
-    public void ShowInterstitial(string placementId)
+    public void ShowInterstitial(string placementId, Action onClosed = null, Action onFailed = null)
     {
         Debug.Log($"[Mock Ads] Interstitial: shown ({placementId}) (mock).");
+        onClosed?.Invoke();
     }
 }

@@ -25,5 +25,7 @@ public interface IAdsManager
     /// <summary>
     /// Shows a full-screen interstitial (no reward).
     /// </summary>
-    void ShowInterstitial(string placementId);
+    /// <param name="onClosed">Called after the ad is closed/dismissed.</param>
+    /// <param name="onFailed">Called on load/show failure.</param>
+    void ShowInterstitial(string placementId, Action onClosed = null, Action onFailed = null);
 }

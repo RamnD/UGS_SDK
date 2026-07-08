@@ -35,6 +35,11 @@ public sealed class UnityAdsManager : IAdsManager,
     // Current show ID — resolves LoadListener/ShowListener collisions
     private string _activeShowPlacementId;
 
+    // Callbacks for the current interstitial show — held for the duration of Show()
+    private Action _pendingInterstitialClosed;
+    private Action _pendingInterstitialFailed;
+    private string _activeInterstitialPlacementId;
+
     /// <param name="androidGameId">Unity Ads Game ID for Android (Project Settings → Ads).</param>
     /// <param name="iosGameId">Unity Ads Game ID for iOS (Project Settings → Ads).</param>
     /// <param name="testMode">Enable test mode. Use false in production.</param>
@@ -83,14 +88,18 @@ public sealed class UnityAdsManager : IAdsManager,
     }
 
     /// <inheritdoc/>
-    public void ShowInterstitial(string placementId)
+    public void ShowInterstitial(string placementId, Action onClosed = null, Action onFailed = null)
     {
         if (!Advertisement.isInitialized)
         {
             Debug.LogWarning("[Ads] Interstitial: SDK not initialized.");
+            onFailed?.Invoke();
             return;
         }
 
+        _pendingInterstitialClosed = onClosed;
+        _pendingInterstitialFailed = onFailed;
+        _activeInterstitialPlacementId = placementId;
         Advertisement.Show(placementId, this);
     }
 
@@ -143,18 +152,31 @@ public sealed class UnityAdsManager : IAdsManager,
     {
         Debug.Log($"[Ads] Show complete: {placementId}, result: {showCompletionState}");
 
-        if (placementId != _activeShowPlacementId)
-            return;
+        // Rewarded path
+        if (placementId == _activeShowPlacementId)
+        {
+            if (showCompletionState == UnityAdsShowCompletionState.COMPLETED)
+            {
+                var callback = _pendingSuccess;
+                ResetCallbacks();
+                callback?.Invoke();
+            }
+            else
+            {
+                InvokeFailedAndReset();
+            }
 
-        if (showCompletionState == UnityAdsShowCompletionState.COMPLETED)
-        {
-            var callback = _pendingSuccess;
-            ResetCallbacks();
-            callback?.Invoke();
+            return;
         }
-        else
+
+        // Interstitial path
+        if (placementId == _activeInterstitialPlacementId)
         {
-            InvokeFailedAndReset();
+            // Interstitial has no reward semantics — treat any completion (COMPLETED/SKIPPED)
+            // as "closed" from gameplay perspective.
+            _pendingInterstitialClosed?.Invoke();
+
+            ResetInterstitialCallbacks();
         }
     }
 
@@ -163,7 +185,16 @@ public sealed class UnityAdsManager : IAdsManager,
     {
         Debug.LogError($"[Ads] Show failed {placementId}: {error} — {message}");
         if (placementId == _activeShowPlacementId)
+        {
             InvokeFailedAndReset();
+            return;
+        }
+
+        if (placementId == _activeInterstitialPlacementId)
+        {
+            _pendingInterstitialFailed?.Invoke();
+            ResetInterstitialCallbacks();
+        }
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -180,6 +211,13 @@ public sealed class UnityAdsManager : IAdsManager,
         _pendingSuccess        = null;
         _pendingFailed         = null;
         _activeShowPlacementId = null;
+    }
+
+    private void ResetInterstitialCallbacks()
+    {
+        _pendingInterstitialClosed  = null;
+        _pendingInterstitialFailed  = null;
+        _activeInterstitialPlacementId = null;
     }
 }
 #endif // RAMND_LEGACY_UNITY_ADS

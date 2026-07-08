@@ -34,6 +34,11 @@ public sealed class LevelPlayAdsManager : IAdsManager
     private Action _pendingFailed;
     private string _activeRewardedUnitId;
 
+    // Current interstitial show state (only one at a time)
+    private Action _pendingInterstitialClosed;
+    private Action _pendingInterstitialFailed;
+    private string _activeInterstitialUnitId;
+
     /// <param name="appKey">App Key from LevelPlay Dashboard → Apps → your app.</param>
     public LevelPlayAdsManager(string appKey)
     {
@@ -82,16 +87,21 @@ public sealed class LevelPlayAdsManager : IAdsManager
     }
 
     /// <inheritdoc/>
-    public void ShowInterstitial(string placementId)
+    public void ShowInterstitial(string placementId, Action onClosed = null, Action onFailed = null)
     {
         if (!_initialized)
         {
             Debug.LogWarning("[LevelPlay] ShowInterstitial: SDK not initialized.");
+            onFailed?.Invoke();
             return;
         }
 
         var adUnitId = placementId;
         var ad       = GetOrCreateInterstitial(adUnitId);
+
+        _pendingInterstitialClosed = onClosed;
+        _pendingInterstitialFailed = onFailed;
+        _activeInterstitialUnitId  = adUnitId;
 
         if (ad.IsAdReady())
             ad.ShowAd();
@@ -179,12 +189,46 @@ public sealed class LevelPlayAdsManager : IAdsManager
             return existing;
 
         var ad = new LevelPlayInterstitialAd(adUnitId);
-        ad.OnAdLoaded        += _        => { Debug.Log($"[LevelPlay] Interstitial loaded: {adUnitId}"); _interstitials[adUnitId].ShowAd(); };
-        ad.OnAdLoadFailed    += err      => Debug.LogWarning($"[LevelPlay] Interstitial load failed ({adUnitId}): {err}");
-        ad.OnAdDisplayFailed += (_, err) => Debug.LogWarning($"[LevelPlay] Interstitial display failed ({adUnitId}): {err}");
-        ad.OnAdClosed        += _        => _interstitials[adUnitId].LoadAd(); // preload
+        ad.OnAdLoaded        += _        => OnInterstitialLoaded(adUnitId);
+        ad.OnAdLoadFailed    += err      => OnInterstitialLoadFailed(adUnitId, err);
+        ad.OnAdDisplayFailed += (_, err) => OnInterstitialDisplayFailed(adUnitId, err);
+        ad.OnAdClosed        += _        => OnInterstitialClosed(adUnitId);
         _interstitials[adUnitId] = ad;
         return ad;
+    }
+
+    private void OnInterstitialLoaded(string adUnitId)
+    {
+        Debug.Log($"[LevelPlay] Interstitial loaded: {adUnitId}");
+        if (adUnitId == _activeInterstitialUnitId)
+            _interstitials[adUnitId].ShowAd();
+    }
+
+    private void OnInterstitialLoadFailed(string adUnitId, LevelPlayAdError error)
+    {
+        Debug.LogWarning($"[LevelPlay] Interstitial load failed ({adUnitId}): {error}");
+        if (adUnitId == _activeInterstitialUnitId)
+            InvokeInterstitialFailedAndReset();
+    }
+
+    private void OnInterstitialDisplayFailed(string adUnitId, LevelPlayAdError error)
+    {
+        Debug.LogWarning($"[LevelPlay] Interstitial display failed ({adUnitId}): {error}");
+        if (adUnitId == _activeInterstitialUnitId)
+            InvokeInterstitialFailedAndReset();
+    }
+
+    private void OnInterstitialClosed(string adUnitId)
+    {
+        if (adUnitId == _activeInterstitialUnitId)
+        {
+            var cb = _pendingInterstitialClosed;
+            ResetInterstitialCallbacks();
+            cb?.Invoke();
+        }
+
+        if (_interstitials.TryGetValue(adUnitId, out var ad))
+            ad.LoadAd(); // preload next
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -196,10 +240,24 @@ public sealed class LevelPlayAdsManager : IAdsManager
         callback?.Invoke();
     }
 
+    private void InvokeInterstitialFailedAndReset()
+    {
+        var callback = _pendingInterstitialFailed;
+        ResetInterstitialCallbacks();
+        callback?.Invoke();
+    }
+
     private void ResetCallbacks()
     {
         _pendingSuccess       = null;
         _pendingFailed        = null;
         _activeRewardedUnitId = null;
+    }
+
+    private void ResetInterstitialCallbacks()
+    {
+        _pendingInterstitialClosed = null;
+        _pendingInterstitialFailed = null;
+        _activeInterstitialUnitId = null;
     }
 }

@@ -24,8 +24,9 @@ public class TestAdsManager : IAdsManager
     }
 
     /// <inheritdoc/>
-    public void ShowInterstitial(string placementId)
+    public void ShowInterstitial(string placementId, Action onClosed = null, Action onFailed = null)
     {
         Debug.Log($"[Ads] Interstitial: simulating show ({placementId}).");
+        onClosed?.Invoke();
     }
 }
