@@ -13,7 +13,7 @@ Add to your project's `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git#v1.5.1"
+    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git#v1.6.0"
   }
 }
 ```
@@ -41,6 +41,7 @@ Optional sample: **Package Manager → RamnD Game Services SDK → Samples → I
 | Economy (currency & items) | [docs/economy.md](docs/economy.md) |
 | Cloud Save | [docs/cloud-save.md](docs/cloud-save.md) |
 | Leaderboard | [docs/leaderboard.md](docs/leaderboard.md) |
+| Achievements | [docs/achievements.md](docs/achievements.md) |
 | Analytics | [docs/analytics.md](docs/analytics.md) |
 | Remote Config | [docs/remote-config.md](docs/remote-config.md) |
 | Security & credentials | [below](#security--credentials) |
@@ -173,7 +174,7 @@ These plugins are **not available in the Unity Package Manager registry** and mu
 
 **Note:** `Google.Play.Games` must be present in the consuming project for Android auth (see below). Legacy Unity Ads (`UnityAdsManager`) compiles only with scripting define `RAMND_LEGACY_UNITY_ADS` plus `com.unity.ads` in the host project.
 
-Dependencies are listed in `package.json` (Newtonsoft, Authentication, Economy, Cloud Save, Leaderboards, Analytics, Remote Config, Ads / LevelPlay).
+Dependencies are listed in `package.json` (Newtonsoft, Authentication, Economy, Cloud Save, Leaderboards, Achievements via Cloud Save, Analytics, Remote Config, Ads / LevelPlay).
 
 ---
 
@@ -193,6 +194,7 @@ Use:
 - Ads: `GameServicesLocator.Services.Ads` (non-null after build)
 - Leaderboards: `Services.Leaderboards` (null if not authenticated)
 - Remote Config: `Services.RemoteConfig` (null if not enabled or not authenticated)
+- Achievements: `Services.Achievements` (null if not enabled or not authenticated)
 
 Generic services (economy, items, cloud save) stay **outside** the façade: inject `IInventoryService<T>`, `IItemService<T>`, `ICloudSaveService<TKey>` from your own bootstrap (see UGS example below).
 
@@ -216,6 +218,7 @@ private async void Start()
             AppleServicesId = "...",
         })
         .WithAds(new LevelPlayAdsManager("your-app-key")) // or TestAdsManager / UnityAdsManager
+        .WithAchievements() // optional portable achievements backed by UGS Cloud Save
         .OnAuthenticated(async auth =>
         {
             // Create UGSEconomyService<T>, UGSItemService<,>, UGSCloudSaveService<TKey>, wire to your MonoBehaviour bridges
@@ -236,8 +239,21 @@ private async void Start()
 
 ```csharp
 var services = MockGameServices.CreateDefault();
-// GameServicesLocator is set inside CreateDefault(); Auth is signed in, Analytics/Ads/Leaderboards/RemoteConfig are mocks
+// GameServicesLocator is set inside CreateDefault(); Auth is signed in, Analytics/Ads/Leaderboards/RemoteConfig/Achievements are mocks
 ```
+
+---
+
+## Environments
+
+`UGSEnvironmentResolver` chooses the backend environment from scripting defines with this priority:
+
+1. `UGS_ENV_PRODUCTION`
+2. `UGS_ENV_STAGING`
+3. `UGS_ENV_DEVELOPMENT`
+4. fallback: `development`
+
+If more than one `UGS_ENV_*` symbol is defined, the SDK logs an error and still applies the priority order above.
 
 Use mocks for `IInventoryService<T>` etc. (`MockInventoryService`, `MockItemService`, …) and pass them to your same `PlayerData`-style bridges — no change to UI code paths.
 

@@ -10,6 +10,8 @@ All services are created once at startup via `UGSServicesBuilder` (production) o
 
 Generic services (`IInventoryService<T>`, `IItemService<T>`, `ICloudSaveService<TKey>`) live **outside** the façade — create them in the `OnAuthenticated` callback and store them in your own game-side bootstrap.
 
+`Achievements` live **inside** the façade because they are portable and non-generic: use `GameServicesLocator.Services?.Achievements`.
+
 ---
 
 ## UGSServicesBuilder — full example
@@ -38,6 +40,8 @@ private async void Start()
         // .WithProfanityFilter(new Regex(@"bad\w+"))              // alternative: regex
         // ── Ads ───────────────────────────────────────────────────────
         .WithAds(new LevelPlayAdsManager("YOUR_APP_KEY"))
+        // ── Optional portable modules ─────────────────────────────────
+        .WithAchievements()
         // ── Post-auth hook: create project-specific services ──────────
         .OnAuthenticated(async auth =>
         {
@@ -69,6 +73,7 @@ private async void Start()
 | `WithAds(IAdsManager)` | Ads manager (LevelPlay, Unity Ads, TestAds…) |
 | `WithCachedAnalytics(bool)` | Disk-backed offline analytics queue |
 | `WithRemoteConfig(bool)` | UGS Remote Config fetch after auth + PlayerPrefs cache |
+| `WithAchievements(bool)` | Portable achievement module backed by UGS Cloud Save |
 | `OnAuthenticated(Func<IAuthService, Task>)` | Callback after successful sign-in |
 | `BuildAsync(CancellationToken)` | Initializes UGS, signs in, runs callback, sets locator |
 
@@ -78,7 +83,7 @@ private async void Start()
 
 ```csharp
 var services = MockGameServices.CreateDefault();
-// Auth is already signed in. Analytics, Ads, Leaderboards, RemoteConfig are no-op mocks.
+// Auth is already signed in. Analytics, Ads, Leaderboards, RemoteConfig, Achievements are mocks.
 
 var economy   = new MockInventoryService<CurrencyType>();
 var cloudSave = new MockCloudSaveService<SaveKey>();
@@ -97,6 +102,7 @@ if (GameServicesLocator.TryGet(out var svc))
     svc.Analytics?.LogEvent(new LevelStartedEvent { Level = 3 });
     svc.Leaderboards?.SubmitScoreAsync("run_leaderboard", score);
     int cap = svc.RemoteConfig?.GetInt("inventory_max_cap", 6) ?? 6;
+    bool firstWinUnlocked = svc.Achievements?.TryGetState("first_win", out var state) == true && state.IsUnlocked;
 }
 
 // Direct access (null until BuildAsync completes):
@@ -134,3 +140,18 @@ If you need to touch Unity APIs in `OnAuthenticated`, marshal back with:
     PlayerPrefs.GetString("key");       // now safe
 })
 ```
+
+---
+
+## Environments
+
+`UGSServicesBuilder` resolves the UGS environment name through `UGSEnvironmentResolver`.
+
+Priority:
+
+1. `UGS_ENV_PRODUCTION`
+2. `UGS_ENV_STAGING`
+3. `UGS_ENV_DEVELOPMENT`
+4. fallback: `development`
+
+If more than one `UGS_ENV_*` symbol is defined, the SDK logs an error and still applies the priority list above.

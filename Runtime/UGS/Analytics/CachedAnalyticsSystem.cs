@@ -9,6 +9,7 @@ public sealed class CachedAnalyticsSystem : IAnalyticsSystem
 {
     IAnalyticsService _sdk;
     UGSAnalyticSystem _inner;
+    string _playerId;
     readonly PendingAnalyticsQueue _queue = new PendingAnalyticsQueue();
 
     /// <summary>Queue-only instance for use before UGS auth completes.</summary>
@@ -26,6 +27,7 @@ public sealed class CachedAnalyticsSystem : IAnalyticsSystem
     {
         _inner = inner ?? throw new System.ArgumentNullException(nameof(inner));
         _sdk = sdk ?? throw new System.ArgumentNullException(nameof(sdk));
+        _playerId = inner.PlayerId;
         DrainQueue();
     }
 
@@ -74,6 +76,7 @@ public sealed class CachedAnalyticsSystem : IAnalyticsSystem
             try
             {
                 CustomEvent customEvent = AnalyticsEventSerializer.ToCustomEvent(record);
+                AnalyticsCustomEventEnricher.ApplyUnityPlayerId(customEvent, _playerId ?? _inner?.PlayerId);
                 _sdk.RecordEvent(customEvent);
                 Debug.Log($"[Analytics] Replayed queued event '{record.eventName}'");
             }

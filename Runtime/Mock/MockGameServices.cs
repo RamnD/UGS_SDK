@@ -19,6 +19,9 @@ public sealed class MockGameServices : IGameServices
     public IRemoteConfigService RemoteConfig { get; }
 
     /// <inheritdoc/>
+    public IAchievementService Achievements { get; }
+
+    /// <inheritdoc/>
     public bool IsAuthenticated => Auth.IsSignedIn;
 
     public MockGameServices(
@@ -26,13 +29,15 @@ public sealed class MockGameServices : IGameServices
         IAnalyticsSystem      analytics    = null,
         IAdsManager           ads          = null,
         ILeaderboardService   leaderboards = null,
-        IRemoteConfigService  remoteConfig = null)
+        IRemoteConfigService  remoteConfig = null,
+        IAchievementService   achievements = null)
     {
         Auth         = auth         ?? new MockAuthService();
         Analytics    = analytics    ?? new MockAnalyticsSystem();
         Ads          = ads          ?? new MockAdsManager();
         Leaderboards = leaderboards ?? new MockLeaderboardService();
         RemoteConfig = remoteConfig ?? new MockRemoteConfigService();
+        Achievements = achievements ?? new MockAchievementService();
     }
 
     /// <summary>

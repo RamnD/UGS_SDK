@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.6.0] - 2026-07-08
+
+### Added
+- Portable `IAchievementService` module on `IGameServices` (`Services.Achievements`).
+- `UGSAchievementService` backed by UGS Cloud Save with runtime in-memory cache and immediate flush on mutation when online.
+- `MockAchievementService` for editor/tests.
+- `UGSServicesBuilder.WithAchievements()` opt-in module toggle.
+- `docs/achievements.md`.
+
+### Changed
+- Package metadata now advertises achievements support.
+- Bootstrap docs and README examples now include achievements and environment behavior.
+
+### Fixed
+- `UGSEnvironmentResolver` now logs the resolved environment and reports conflicting `UGS_ENV_*` symbol combinations while keeping deterministic priority.
+
 ## [1.5.1] - 2026-06-26
 
 ### Fixed

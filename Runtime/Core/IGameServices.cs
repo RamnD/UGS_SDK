@@ -1,5 +1,5 @@
 /// <summary>
-/// Single access point to SDK services: auth, analytics, ads, leaderboards.
+/// Single access point to SDK services: auth, analytics, ads, leaderboards, achievements.
 /// Created by a builder (e.g. UGSServicesBuilder) at app start; the instance is registered in <see cref="GameServicesLocator"/>.
 /// <para>
 /// Economy (<see cref="IInventoryService{TCurrency}"/>), items
@@ -38,6 +38,12 @@ public interface IGameServices
     /// After registration, use <c>Services.RemoteConfig</c>.
     /// </summary>
     IRemoteConfigService RemoteConfig { get; }
+
+    /// <summary>
+    /// Achievement service. Null if not enabled or auth failed.
+    /// After registration, use <c>Services.Achievements</c>.
+    /// </summary>
+    IAchievementService Achievements { get; }
 
     /// <summary>True if auth succeeded.</summary>
     bool IsAuthenticated { get; }

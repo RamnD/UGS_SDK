@@ -22,6 +22,9 @@ public sealed class UGSGameServices : IGameServices
     public IRemoteConfigService RemoteConfig { get; }
 
     /// <inheritdoc/>
+    public IAchievementService Achievements { get; }
+
+    /// <inheritdoc/>
     public bool              IsAuthenticated { get; }
 
     internal UGSGameServices(
@@ -29,13 +32,15 @@ public sealed class UGSGameServices : IGameServices
         IAnalyticsSystem      analytics,
         IAdsManager           ads,
         ILeaderboardService   leaderboards,
-        IRemoteConfigService  remoteConfig = null)
+        IRemoteConfigService  remoteConfig = null,
+        IAchievementService   achievements = null)
     {
         Auth            = auth          ?? throw new ArgumentNullException(nameof(auth));
         Analytics       = analytics;     // null allowed (not authenticated)
         Ads             = ads            ?? throw new ArgumentNullException(nameof(ads));
         Leaderboards    = leaderboards;  // null allowed (not authenticated)
         RemoteConfig    = remoteConfig;  // null allowed (not enabled / not authenticated)
+        Achievements    = achievements;  // null allowed (not enabled / not authenticated)
         IsAuthenticated = auth.IsSignedIn;
     }
 }

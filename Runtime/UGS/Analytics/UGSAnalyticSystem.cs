@@ -14,9 +14,10 @@ using UnityEngine;
 /// </summary>
 public class UGSAnalyticSystem : IAnalyticsSystem
 {
+    private readonly string _playerId;
     private readonly IAnalyticsService _sdk;
 
-    /// <param name="playerId">UGS Player ID — reserved for future use (custom user ID).</param>
+    /// <param name="playerId">UGS Authentication player id — injected into every custom event.</param>
     /// <param name="sdk">SDK injected from outside for testability. Pass Unity.Services.Analytics.AnalyticsService.Instance.</param>
     public UGSAnalyticSystem(string playerId, IAnalyticsService sdk)
     {
@@ -25,8 +26,11 @@ public class UGSAnalyticSystem : IAnalyticsSystem
 #pragma warning disable CS0618
         sdk.StartDataCollection();
 #pragma warning restore CS0618
+        _playerId = playerId;
         _sdk = sdk;
     }
+
+    internal string PlayerId => _playerId;
 
     /// <inheritdoc/>
     public void LogEvent<T>(T eventPayload) where T : struct, IAnalyticsEvent
@@ -34,6 +38,7 @@ public class UGSAnalyticSystem : IAnalyticsSystem
         try
         {
             var customEvent = eventPayload.ToCustomEvent();
+            AnalyticsCustomEventEnricher.ApplyUnityPlayerId(customEvent, _playerId);
             _sdk.RecordEvent(customEvent);
             Debug.Log($"[Analytics] {eventPayload.EventName}");
         }

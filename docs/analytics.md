@@ -112,6 +112,14 @@ await new UGSServicesBuilder()
 
 With `WithCachedAnalytics()`, analytics is registered in `GameServicesLocator` **before** auth completes. Events emitted during sign-in are queued and replayed after `AttachInner` connects the UGS backend.
 
+### `unity_player_id` on custom events
+
+UGS Analytics adds top-level `unityPlayerID` only to **standard** events (`gameStarted`, `clientDevice`, …). **Custom** events (`RecordEvent(CustomEvent)`) use a different SDK code path and do not get that field automatically.
+
+`UGSAnalyticSystem` therefore injects a custom parameter **`unity_player_id`** (UGS Authentication player UUID) into every custom event after sign-in. Add this parameter once in the UGS Dashboard (string) and attach it to your custom event schemas to filter by authenticated player.
+
+`userID` remains the Analytics installation / external user id — it is separate from `unity_player_id`.
+
 ---
 
 ## Design guidelines

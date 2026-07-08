@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Unity.Services.Core;
+using Unity.Services.Core.Environments;
 using UnityEngine;
 
 /// <summary>
@@ -24,6 +25,7 @@ public sealed class UGSServicesBuilder
     private GameServicesAuthProviderConfig            _authCredentials = GameServicesAuthProviderConfig.Empty;
     private bool                                      _useCachedAnalytics;
     private bool                                      _useRemoteConfig;
+    private bool                                      _useAchievements;
 
     /// <summary>
     /// Force anonymous sign-in on all platforms.
@@ -118,12 +120,22 @@ public sealed class UGSServicesBuilder
     }
 
     /// <summary>
+    /// Enables the portable achievements module backed by UGS Cloud Save.
+    /// </summary>
+    public UGSServicesBuilder WithAchievements(bool enabled = true)
+    {
+        _useAchievements = enabled;
+        return this;
+    }
+
+    /// <summary>
     /// Runs full initialization in this order:
     /// <list type="number">
     /// <item>UnityServices.InitializeAsync()</item>
     /// <item>Auth via <see cref="UGSAuthService"/></item>
     /// <item>UGS Analytics (only on successful auth)</item>
     /// <item>Remote Config fetch (opt-in, after auth)</item>
+    /// <item>Achievements warmup (opt-in, after auth)</item>
     /// <item>OnAuthenticated callback (Economy, Items, etc.)</item>
     /// <item>Ads (independent of auth)</item>
     /// </list>
@@ -132,7 +144,12 @@ public sealed class UGSServicesBuilder
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        await UnityServices.InitializeAsync();
+        string environmentName = UGSEnvironmentResolver.Resolve();
+        var initOptions = new InitializationOptions()
+            .SetEnvironmentName(environmentName);
+
+        Debug.Log($"[SDK] Initializing Unity Services. Environment={environmentName}");
+        await UnityServices.InitializeAsync(initOptions);
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -152,7 +169,8 @@ public sealed class UGSServicesBuilder
                 analytics,
                 _adsManager ?? new TestAdsManager(),
                 leaderboards: null,
-                remoteConfig: null));
+                remoteConfig: null,
+                achievements: null));
         }
 
         bool signedIn = await auth.SignInAsync(platform, cancellationToken);
@@ -177,6 +195,7 @@ public sealed class UGSServicesBuilder
 
         ILeaderboardService leaderboards = null;
         IRemoteConfigService remoteConfig = null;
+        IAchievementService achievements = null;
         if (signedIn)
         {
             leaderboards = new UGSLeaderboardService();
@@ -199,12 +218,34 @@ public sealed class UGSServicesBuilder
                     Debug.LogWarning($"[SDK] Remote Config fetch failed: {ex.Message}");
                 }
             }
+
+            if (_useAchievements)
+            {
+                var ugsAchievements = new UGSAchievementService();
+                try
+                {
+                    await ugsAchievements.WarmupAsync(cancellationToken);
+                    achievements = ugsAchievements;
+                    Debug.Log("[SDK] Achievements initialized.");
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (AchievementOperationException ex)
+                {
+                    Debug.LogWarning($"[SDK] Achievements warmup failed: {ex.Message}");
+                    achievements = ugsAchievements;
+                }
+            }
         }
         else
         {
             Debug.LogWarning("[SDK] Leaderboards skipped — user not authenticated. GameServicesLocator.Services.Leaderboards will be null.");
             if (_useRemoteConfig)
                 Debug.LogWarning("[SDK] Remote Config skipped — user not authenticated.");
+            if (_useAchievements)
+                Debug.LogWarning("[SDK] Achievements skipped — user not authenticated.");
         }
 
         if (signedIn && _onAuthenticated != null)
@@ -218,7 +259,7 @@ public sealed class UGSServicesBuilder
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var services = new UGSGameServices(auth, analytics, ads, leaderboards, remoteConfig);
+        var services = new UGSGameServices(auth, analytics, ads, leaderboards, remoteConfig, achievements);
         GameServicesLocator.Set(services);
         return services;
     }
