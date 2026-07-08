@@ -324,8 +324,26 @@ public sealed class UGSServicesBuilder
             return;
         }
 
+        var setOptionMethod = t.GetMethod(
+            "SetOption",
+            System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.Public |
+            System.Reflection.BindingFlags.NonPublic,
+            binder: null,
+            types: new[] { typeof(string), typeof(string) },
+            modifiers: null);
+
+        if (setOptionMethod != null)
+        {
+            setOptionMethod.Invoke(
+                initOptions,
+                new object[] { "com.unity.services.core.environment-name", environmentName });
+            Debug.Log($"[SDK] Applied Unity Services environment via SetOption: {environmentName}");
+            return;
+        }
+
         Debug.LogWarning(
             "[SDK] Unity Services environment was not set via InitializationOptions API " +
-            "(SetEnvironmentName/EnvironmentName not found). Falling back to default Unity environment.");
+            "(SetEnvironmentName/EnvironmentName/SetOption not found). Falling back to default Unity environment.");
     }
 }

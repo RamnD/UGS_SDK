@@ -99,6 +99,8 @@ public sealed class LevelPlayAdsManager : IAdsManager
         var adUnitId = placementId;
         var ad       = GetOrCreateInterstitial(adUnitId);
 
+        Debug.Log($"[LevelPlay] ShowInterstitial placementId={placementId}. Ready={ad.IsAdReady()}");
+
         _pendingInterstitialClosed = onClosed;
         _pendingInterstitialFailed = onFailed;
         _activeInterstitialUnitId  = adUnitId;
@@ -220,6 +222,8 @@ public sealed class LevelPlayAdsManager : IAdsManager
 
     private void OnInterstitialClosed(string adUnitId)
     {
+        Debug.Log($"[LevelPlay] Interstitial closed event adUnitId={adUnitId}, active={_activeInterstitialUnitId}");
+
         if (adUnitId == _activeInterstitialUnitId)
         {
             var cb = _pendingInterstitialClosed;
