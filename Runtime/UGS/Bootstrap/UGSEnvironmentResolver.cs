@@ -7,6 +7,8 @@ using UnityEngine;
 /// </summary>
 internal static class UGSEnvironmentResolver
 {
+    static bool _warnedMultipleEnvironments;
+
     public static string Resolve()
     {
         int definedEnvironmentCount = 0;
@@ -35,9 +37,14 @@ internal static class UGSEnvironmentResolver
 
         if (definedEnvironmentCount > 1)
         {
-            Debug.LogError(
-                "[SDK] Multiple UGS environment symbols are defined. " +
-                "Priority is UGS_ENV_PRODUCTION > UGS_ENV_STAGING > UGS_ENV_DEVELOPMENT.");
+            if (!_warnedMultipleEnvironments)
+            {
+                _warnedMultipleEnvironments = true;
+                Debug.LogWarning(
+                    "[SDK] Multiple UGS environment symbols are defined. " +
+                    "Priority is UGS_ENV_PRODUCTION > UGS_ENV_STAGING > UGS_ENV_DEVELOPMENT. " +
+                    "Using deterministic priority to resolve the environment.");
+            }
         }
 
         Debug.Log($"[SDK] Resolved UGS environment: {environmentName}");
