@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Unity.Services.LevelPlay;
 using UnityEngine;
 
@@ -22,8 +23,16 @@ using UnityEngine;
 /// </summary>
 public sealed class LevelPlayAdsManager : IAdsManager
 {
+    enum InitState
+    {
+        NotStarted,
+        InProgress,
+        Succeeded,
+        Failed,
+    }
+
     private readonly string _appKey;
-    private bool _initialized;
+    private InitState _initState = InitState.NotStarted;
 
     // Cached ad unit instances — created on first use
     private readonly Dictionary<string, LevelPlayRewardedAd>    _rewardedAds    = new();
@@ -39,6 +48,24 @@ public sealed class LevelPlayAdsManager : IAdsManager
     private Action _pendingInterstitialFailed;
     private string _activeInterstitialUnitId;
 
+    // Show requests that arrive before LevelPlay.Init finishes (async on device).
+    private PendingRewardedShow _deferredRewardedShow;
+    private PendingInterstitialShow _deferredInterstitialShow;
+
+    struct PendingRewardedShow
+    {
+        public string PlacementId;
+        public Action OnSuccess;
+        public Action OnFailed;
+    }
+
+    struct PendingInterstitialShow
+    {
+        public string PlacementId;
+        public Action OnClosed;
+        public Action OnFailed;
+    }
+
     /// <param name="appKey">App Key from LevelPlay Dashboard → Apps → your app.</param>
     public LevelPlayAdsManager(string appKey)
     {
@@ -50,25 +77,47 @@ public sealed class LevelPlayAdsManager : IAdsManager
     /// <inheritdoc/>
     public void Initialize()
     {
-        if (_initialized)
+        if (_initState != InitState.NotStarted)
         {
-            Debug.Log("[LevelPlay] Already initialized.");
+            Debug.Log("[LevelPlay] Initialize skipped — already started.");
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(_appKey))
+        {
+            _initState = InitState.Failed;
+            Debug.LogError("[LevelPlay] Initialize failed: app key is empty.");
+            return;
+        }
+
+        _initState = InitState.InProgress;
         LevelPlay.OnInitSuccess += OnInitSuccess;
         LevelPlay.OnInitFailed  += OnInitFailed;
 
-        // isAdManagerEnabled=false → Ad Units mode (recommended in SDK 8.x)
+        Debug.Log("[LevelPlay] Initializing SDK...");
         LevelPlay.Init(_appKey);
     }
 
     /// <inheritdoc/>
     public void ShowRewardedAd(string placementId, Action onSuccess, Action onFailed = null)
     {
-        if (!_initialized)
+        if (_initState == InitState.NotStarted)
+            Initialize();
+
+        if (_initState == InitState.InProgress)
         {
-            Debug.LogWarning("[LevelPlay] ShowRewardedAd: SDK not initialized.");
+            _deferredRewardedShow = new PendingRewardedShow
+            {
+                PlacementId = placementId,
+                OnSuccess = onSuccess,
+                OnFailed = onFailed,
+            };
+            return;
+        }
+
+        if (_initState == InitState.Failed)
+        {
+            Debug.LogWarning("[LevelPlay] ShowRewardedAd: SDK init failed.");
             onFailed?.Invoke();
             return;
         }
@@ -89,9 +138,23 @@ public sealed class LevelPlayAdsManager : IAdsManager
     /// <inheritdoc/>
     public void ShowInterstitial(string placementId, Action onClosed = null, Action onFailed = null)
     {
-        if (!_initialized)
+        if (_initState == InitState.NotStarted)
+            Initialize();
+
+        if (_initState == InitState.InProgress)
         {
-            Debug.LogWarning("[LevelPlay] ShowInterstitial: SDK not initialized.");
+            _deferredInterstitialShow = new PendingInterstitialShow
+            {
+                PlacementId = placementId,
+                OnClosed = onClosed,
+                OnFailed = onFailed,
+            };
+            return;
+        }
+
+        if (_initState == InitState.Failed)
+        {
+            Debug.LogWarning("[LevelPlay] ShowInterstitial: SDK init failed.");
             onFailed?.Invoke();
             return;
         }
@@ -104,7 +167,12 @@ public sealed class LevelPlayAdsManager : IAdsManager
         _activeInterstitialUnitId  = adUnitId;
 
         if (ad.IsAdReady())
+        {
             ad.ShowAd();
+#if UNITY_EDITOR
+            ScheduleEditorInterstitialFallbackClose(adUnitId);
+#endif
+        }
         else
             ad.LoadAd(); // → OnAdLoaded → ShowAd
     }
@@ -113,13 +181,40 @@ public sealed class LevelPlayAdsManager : IAdsManager
 
     private void OnInitSuccess(LevelPlayConfiguration config)
     {
-        _initialized = true;
+        _initState = InitState.Succeeded;
         Debug.Log($"[LevelPlay] Initialized. {config}");
+        FlushDeferredShows();
     }
 
     private void OnInitFailed(LevelPlayInitError error)
     {
+        _initState = InitState.Failed;
         Debug.LogError($"[LevelPlay] Init failed: {error}");
+
+        var deferredRewarded = _deferredRewardedShow;
+        _deferredRewardedShow = default;
+        deferredRewarded.OnFailed?.Invoke();
+
+        var deferredInterstitial = _deferredInterstitialShow;
+        _deferredInterstitialShow = default;
+        deferredInterstitial.OnFailed?.Invoke();
+    }
+
+    private void FlushDeferredShows()
+    {
+        var deferredRewarded = _deferredRewardedShow;
+        if (!string.IsNullOrWhiteSpace(deferredRewarded.PlacementId))
+        {
+            _deferredRewardedShow = default;
+            ShowRewardedAd(deferredRewarded.PlacementId, deferredRewarded.OnSuccess, deferredRewarded.OnFailed);
+        }
+
+        var deferredInterstitial = _deferredInterstitialShow;
+        if (!string.IsNullOrWhiteSpace(deferredInterstitial.PlacementId))
+        {
+            _deferredInterstitialShow = default;
+            ShowInterstitial(deferredInterstitial.PlacementId, deferredInterstitial.OnClosed, deferredInterstitial.OnFailed);
+        }
     }
 
     // ─── Rewarded ad ─────────────────────────────────────────────────────────
@@ -200,8 +295,13 @@ public sealed class LevelPlayAdsManager : IAdsManager
     private void OnInterstitialLoaded(string adUnitId)
     {
         Debug.Log($"[LevelPlay] Interstitial loaded: {adUnitId}");
-        if (adUnitId == _activeInterstitialUnitId)
-            _interstitials[adUnitId].ShowAd();
+        if (adUnitId != _activeInterstitialUnitId)
+            return;
+
+        _interstitials[adUnitId].ShowAd();
+#if UNITY_EDITOR
+        ScheduleEditorInterstitialFallbackClose(adUnitId);
+#endif
     }
 
     private void OnInterstitialLoadFailed(string adUnitId, LevelPlayAdError error)
@@ -220,6 +320,8 @@ public sealed class LevelPlayAdsManager : IAdsManager
 
     private void OnInterstitialClosed(string adUnitId)
     {
+        Debug.Log($"[LevelPlay] Interstitial closed adUnitId={adUnitId}, active={_activeInterstitialUnitId}");
+
         if (adUnitId == _activeInterstitialUnitId)
         {
             var cb = _pendingInterstitialClosed;
@@ -260,4 +362,36 @@ public sealed class LevelPlayAdsManager : IAdsManager
         _pendingInterstitialFailed = null;
         _activeInterstitialUnitId = null;
     }
+
+#if UNITY_EDITOR
+    /// <summary>
+    /// Editor interstitial mock has no auto-close countdown (unlike rewarded mock).
+    /// If the mock UI is invisible or the Close button is missed, unblock gameplay.
+    /// </summary>
+    async void ScheduleEditorInterstitialFallbackClose(string adUnitId)
+    {
+        const int fallbackMs = 5000;
+        await Task.Delay(fallbackMs);
+        if (adUnitId != _activeInterstitialUnitId)
+            return;
+
+        Debug.LogWarning(
+            $"[LevelPlay] Editor interstitial auto-closed after {fallbackMs}ms " +
+            $"(mock OnAdClosed fallback): {adUnitId}");
+
+        // Fallback only invokes the C# callback — it does not call InterstitialPrefab.HideAd(),
+        // so m_Preview stays true and the fullscreen OnGUI overlay keeps blocking input.
+        DismissEditorInterstitialVisual(adUnitId);
+        OnInterstitialClosed(adUnitId);
+    }
+
+    void DismissEditorInterstitialVisual(string adUnitId)
+    {
+        if (!_interstitials.TryGetValue(adUnitId, out var ad))
+            return;
+
+        ad.DestroyAd();
+        _interstitials.Remove(adUnitId);
+    }
+#endif
 }

@@ -75,4 +75,4 @@ mock.SetValue("inventory_max_cap", "8");
 
 1. Link project in **Edit → Project Settings → Services**.
 2. Deploy keys in **Unity Dashboard → Remote Config**.
-3. Use the same key names in code (`GetString("economy_constants")`, etc.).
+3. Use the same key names in code (`GetJson("economy_constants")`, etc.).

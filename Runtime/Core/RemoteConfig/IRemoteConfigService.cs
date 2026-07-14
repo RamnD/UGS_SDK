@@ -22,6 +22,9 @@ public interface IRemoteConfigService
 
     string GetString(string key, string defaultValue = "");
 
+    /// <summary>JSON-значение ключа (для type=json в Dashboard). Не использовать GetString для JSON-объектов.</summary>
+    string GetJson(string key, string defaultValue = "{}");
+
     bool GetBool(string key, bool defaultValue = false);
 
     int GetInt(string key, int defaultValue = 0);

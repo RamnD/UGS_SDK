@@ -34,6 +34,10 @@ public sealed class MockRemoteConfigService : IRemoteConfigService
         HasKey(key) ? _values[key] : defaultValue;
 
     /// <inheritdoc/>
+    public string GetJson(string key, string defaultValue = "{}") =>
+        GetString(key, defaultValue);
+
+    /// <inheritdoc/>
     public bool GetBool(string key, bool defaultValue = false)
     {
         if (!HasKey(key))

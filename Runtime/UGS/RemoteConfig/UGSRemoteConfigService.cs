@@ -80,6 +80,17 @@ public sealed class UGSRemoteConfigService : IRemoteConfigService
     }
 
     /// <inheritdoc/>
+    public string GetJson(string key, string defaultValue = "{}")
+    {
+        if (TryGetLiveAppConfig(out RuntimeConfig appConfig) && appConfig.HasKey(key))
+            return appConfig.GetJson(key, defaultValue);
+
+        return _cache.TryGetString(key, out string cached) && !string.IsNullOrEmpty(cached)
+            ? cached
+            : defaultValue;
+    }
+
+    /// <inheritdoc/>
     public bool GetBool(string key, bool defaultValue = false)
     {
         if (TryGetLiveAppConfig(out RuntimeConfig appConfig) && appConfig.HasKey(key))
@@ -144,12 +155,25 @@ public sealed class UGSRemoteConfigService : IRemoteConfigService
                 if (string.IsNullOrEmpty(key))
                     continue;
 
-                values[key] = appConfig.GetString(key, string.Empty);
+                values[key] = ReadConfigValue(appConfig, key);
             }
         }
 
         _cache.ReplaceAll(values);
         IsReady = true;
+    }
+
+    static string ReadConfigValue(RuntimeConfig appConfig, string key)
+    {
+        string stringValue = appConfig.GetString(key, string.Empty);
+        if (!string.IsNullOrEmpty(stringValue))
+            return stringValue;
+
+        if (!appConfig.HasKey(key))
+            return string.Empty;
+
+        string jsonValue = appConfig.GetJson(key, string.Empty);
+        return !string.IsNullOrEmpty(jsonValue) ? jsonValue : stringValue;
     }
 
     bool TryGetLiveAppConfig(out RuntimeConfig appConfig)
