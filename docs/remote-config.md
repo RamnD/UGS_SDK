@@ -14,7 +14,7 @@ Exposed via `GameServicesLocator.Services.RemoteConfig` (nullable — null when 
 | `UsedCacheOnly` | Latest load used only local cache (offline or fetch fallback). |
 | `FetchAsync()` | Fetches from UGS when online; falls back to cache on failure. |
 | `HasKey(key)` | Whether a key exists in live config or cache. |
-| `GetString` / `GetBool` / `GetInt` / `GetFloat` | Typed reads with defaults. |
+| `GetString` / `GetJson` / `GetBool` / `GetInt` / `GetFloat` | Typed reads with defaults. |
 
 Network errors throw `RemoteConfigOperationException` only when fetch fails **and** no cache exists.
 
@@ -45,10 +45,10 @@ if (rc == null || !rc.IsReady)
 
 int cap = rc.GetInt("inventory_max_cap", EconomyManager.InventoryMaxCap);
 bool featureOn = rc.GetBool("feature_new_shop", false);
-string json = rc.GetString("economy_constants", string.Empty);
+string json = rc.GetJson("economy_constants", "{}");
 ```
 
-Prefer defaults from your local JSON / `EconomyManager` when a key is missing.
+Use `GetJson` (not `GetString`) for Dashboard keys with type **json**.
 
 ---
 

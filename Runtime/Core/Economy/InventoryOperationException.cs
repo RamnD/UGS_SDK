@@ -2,7 +2,9 @@ using System;
 
 /// <summary>
 /// Economy or inventory operation failure from UGS Economy.
-/// Insufficient funds on the client or HTTP 422 after server reconciliation is not an exception: <see cref="IInventoryService{TCurrency}.TrySpendCurrencyAsync"/> returns false.
+/// Spend soft-failures (insufficient funds, recoverable network when offline spend is
+/// disallowed) are not exceptions: <see cref="IInventoryService{TCurrency}.TrySpendCurrencyAsync"/> returns false.
+/// Recoverable Add/Spend failures for mapper-allowed currencies are queued locally and also do not throw.
 /// </summary>
 public sealed class InventoryOperationException : Exception
 {
@@ -28,6 +30,6 @@ public enum InventoryFailureReason
     /// <summary>Server / SDK rejected the transaction (except expected insufficient funds after 422 reconciliation).</summary>
     ProviderRejected,
 
-    /// <summary>Failed to flush the offline credit transaction queue.</summary>
+    /// <summary>Failed to flush the offline transaction queue (non-recoverable provider error).</summary>
     PendingTransactionsFlushFailed
 }

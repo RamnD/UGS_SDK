@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.6] - 2026-07-16
+
+### Changed
+- `UGSEconomyService`: recoverable network failures on Add/Spend now apply optimistic cache and durable pending queue (when mapper allows), instead of hard-failing gameplay.
+- `TrySpendCurrencyAsync` no longer throws on network errors — returns `false` or queues locally.
+- `PendingTransactionQueue`: per-currency coalescing, key rename `economy_pending_adds` → `economy_pending_tx` (with migration), soft-stop on recoverable flush failures.
+- `RefreshBalancesAsync` keeps local cache while pending deltas remain (does not overwrite with server mid-queue).
+- Economy docs updated for durable queue / recoverable-failure behaviour.
+
+### Added
+- `EconomyErrorClassifier` for recoverable vs hard economy transport failures.
+
 ## [1.6.0] - 2026-07-08
 
 ### Added

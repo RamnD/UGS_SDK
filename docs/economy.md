@@ -31,7 +31,7 @@ public enum CurrencyType
 
 ### Step 2 — Implement ICurrencyMapper\<TCurrency\>
 
-The mapper owns **all** currency business rules: which string ID maps to which UGS resource, and which operations are allowed offline.
+The mapper owns **all** currency business rules: which string ID maps to which UGS resource, and which operations are allowed offline / on recoverable network failure.
 
 ```csharp
 // CurrencyMapper.cs
@@ -49,20 +49,18 @@ public sealed class CurrencyMapper : ICurrencyMapper<CurrencyType>
     };
 
     /// <summary>
-    /// Offline rules:
-    ///   Add Gold/Energy — allowed offline (optimistic cache + pending queue).
-    ///   Add Gems        — requires server (premium currency, never grant offline).
-    ///   Spend anything  — always requires server confirmation.
+    /// Offline / recoverable-network rules:
+    ///   Add Gold/Energy  — allowed (optimistic cache + pending queue).
+    ///   Spend Gold/Energy — allowed (same queue; net deltas are coalesced).
+    ///   Add/Spend Gems   — requires server (premium; never grant or debit offline).
     /// </summary>
     public bool IsOfflineAllowed(CurrencyType currency, InventoryOperation op)
     {
-        if (op == InventoryOperation.Spend) return false;
-
         return currency switch
         {
             CurrencyType.Gold   => true,
             CurrencyType.Energy => true,
-            CurrencyType.Gems   => false,   // premium — never grant without server
+            CurrencyType.Gems   => false,   // premium — never mutate without server
             _ => false,
         };
     }
@@ -75,7 +73,7 @@ public sealed class CurrencyMapper : ICurrencyMapper<CurrencyType>
 .OnAuthenticated(async auth =>
 {
     _economy = new UGSEconomyService<CurrencyType>(new CurrencyMapper());
-    await _economy.RefreshBalancesAsync(); // sync with server on startup
+    await _economy.RefreshBalancesAsync(); // flush queue + sync with server
 })
 ```
 
@@ -96,21 +94,56 @@ catch (InventoryOperationException ex)
     Debug.LogError($"Could not add gold: {ex.Reason}");
 }
 
-// Spend currency (requires network; returns false if insufficient funds)
-bool spent = await _economy.TrySpendCurrencyAsync(CurrencyType.Gems, 50, destroyCancellationToken);
+// Spend currency (returns false if insufficient / soft network failure)
+bool spent = await _economy.TrySpendCurrencyAsync(CurrencyType.Gold, 50, destroyCancellationToken);
 if (!spent)
-    ShowNotEnoughGemsPopup();
+    ShowNotEnoughGoldPopup();
 ```
 
 ### InventoryOperationException reference
 
 | `InventoryFailureReason` | When |
 |--------------------------|------|
-| `Offline` | Offline + operation not allowed offline |
-| `InsufficientFunds` | Balance < amount (server-confirmed) |
-| `ServerError` | UGS returned an error |
-| `NetworkError` | No response from server |
-| `InvalidOperation` | Bad arguments (zero amount, etc.) |
+| `NetworkUnavailable` | Reserved for explicit no-network hard failures |
+| `OperationNotAllowedOffline` | Offline Add not allowed by mapper |
+| `ProviderRejected` | Non-recoverable UGS / config error |
+| `PendingTransactionsFlushFailed` | Queue flush hit a non-recoverable error |
+
+`TrySpendCurrencyAsync` does **not** throw for insufficient funds or recoverable network errors — it returns `false` (or queues locally when the mapper allows spend offline).
+
+---
+
+## Durable pending queue
+
+`UGSEconomyService` keeps:
+
+| PlayerPrefs key | Purpose |
+|-----------------|----------|
+| `economy_cached_balances` | Last known balances (UI + offline boot) |
+| `economy_pending_tx` | Coalesced signed deltas waiting for upload |
+
+Legacy key `economy_pending_adds` is migrated automatically on first load.
+
+### When deltas are queued
+
+1. Device is offline (`NetworkStatus.IsOnline == false`) and the mapper allows the operation.
+2. Device looks online, but the UGS call fails with a **recoverable** transport error (timeout, connection, 5xx-style messages) and the mapper allows the operation.
+
+Queued amounts for the same currency are **coalesced** into one net delta (`+5` then `-2` → `+3`).
+
+### When the queue flushes
+
+Call `RefreshBalancesAsync()`:
+
+- at sign-in / `OnAuthenticated`
+- after reconnect
+- on app resume (recommended)
+
+Flow:
+
+1. Flush pending deltas to UGS (stop on first recoverable failure; keep the remaining tail).
+2. If anything is still pending — **keep local cache**, do not overwrite from server.
+3. Otherwise `GetBalancesAsync` and replace the cache from the server.
 
 ---
 
@@ -179,14 +212,14 @@ if (purchased)
 
 ---
 
-## Offline behaviour summary
+## Offline / recoverable behaviour summary
 
-| Operation | Gold / Energy | Gems | Items |
+| Operation | Gold / Energy (mapper allows) | Gems (mapper denies) | Items |
 |-----------|:---:|:---:|:---:|
 | `GetCachedBalance` | ✅ local cache | ✅ local cache | — |
-| `RefreshBalancesAsync` offline | ✅ loads from PlayerPrefs | ✅ loads from PlayerPrefs | ✅ loads from PlayerPrefs |
-| `AddCurrencyAsync` offline | ✅ optimistic + pending queue | ❌ throws | — |
-| `TrySpendCurrencyAsync` offline | ❌ returns false | ❌ returns false | — |
+| `RefreshBalancesAsync` offline | ✅ loads PlayerPrefs | ✅ loads PlayerPrefs | ✅ loads PlayerPrefs |
+| `AddCurrencyAsync` offline / recoverable | ✅ optimistic + queue | ❌ throws | — |
+| `TrySpendCurrencyAsync` offline / recoverable | ✅ optimistic + queue | ❌ returns false | — |
 | `TryPurchaseAsync` offline | — | — | ❌ returns false |
 
-The pending offline queue flushes automatically on the next successful `RefreshBalancesAsync`.
+Spend never throws for gameplay soft-failures. The pending queue flushes on the next successful `RefreshBalancesAsync` path (and is preserved across app restarts via PlayerPrefs).

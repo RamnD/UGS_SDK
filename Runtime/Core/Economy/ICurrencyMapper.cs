@@ -26,8 +26,9 @@ public interface ICurrencyMapper<TCurrency> where TCurrency : struct, Enum
     string ToServiceId(TCurrency currency);
 
     /// <summary>
-    /// Whether this operation is allowed without a network connection.
-    /// Single source of truth for offline logic — do not duplicate rules elsewhere.
+    /// Whether this operation may apply locally without a successful server round-trip
+    /// (true offline, or recoverable transport failure while seemingly online).
+    /// Single source of truth — do not duplicate rules elsewhere.
     /// </summary>
     bool IsOfflineAllowed(TCurrency currency, InventoryOperation op);
 }
