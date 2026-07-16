@@ -113,7 +113,8 @@ Keep credential ScriptableObjects local, or load IDs from environment variables 
 |----------|-------------------|
 | Anonymous UGS | Supported |
 | Google Play Games → UGS (Android) | Supported (requires [GPGS plugin](#android--google-play-games-plugin-for-unity) in the host project) |
-| Sign in with Apple → UGS (iOS) | **Supported** — pass `RequestAppleIdentityTokenAsync` via `GameServicesAuthProviderConfig` (native plugin lives in the game). |
+| Sign in with Apple → UGS (iOS) | **Supported (optional)** — `RequestAppleIdentityTokenAsync`. |
+| Apple Game Center → UGS (iOS) | **Supported (recommended for games)** — `RequestAppleGameCenterCredentialsAsync` + GameKit. |
 
 ### Disclaimer
 
@@ -147,26 +148,23 @@ These plugins are **not available in the Unity Package Manager registry** and mu
 
 ---
 
-### iOS — Apple Sign In for Unity (lupidan)
+### iOS — Apple Game Center (GameKit) + optional Sign in with Apple
 
-| | |
-|---|---|
-| **Version** | **1.4.2** |
-| **Release page** | https://github.com/lupidan/apple-signin-unity/releases/tag/v1.4.2 |
-| **Direct download** | [`AppleSignIn-1.4.2.unitypackage`](https://github.com/lupidan/apple-signin-unity/releases/download/v1.4.2/AppleSignIn-1.4.2.unitypackage) |
-| **UPM git URL** | `https://github.com/lupidan/apple-signin-unity.git` |
-
-**Setup steps:**
-1. Import the package (or add UPM dependency `com.lupidan.apple-signin-unity`).
-2. Enable the **Sign In with Apple** capability in Xcode (game postprocessor / plugin).
-3. Pass identity-token bridge + Services ID:
+**Game Center (recommended for games):**
+1. Build Apple.Core + Apple.GameKit tarballs from [apple/unityplugins](https://github.com/apple/unityplugins) (`python3 build.py`).
+2. Add both packages via Package Manager → Add from tarball.
+3. Enable **Apple Game Center** in UGS Dashboard (Bundle ID).
+4. Add scripting define `APPLE_GAMEKIT` for iOS.
+5. Pass credentials bridge:
 ```csharp
 .WithAuthProviderCredentials(new GameServicesAuthProviderConfig
 {
-    AppleServicesId = "com.yourcompany.yourgame",
-    RequestAppleIdentityTokenAsync = ct => AppleSignInIdentityTokenProvider.RequestAsync(ct).AsTask(),
+    RequestAppleGameCenterCredentialsAsync = ct =>
+        AppleGameCenterCredentialsProvider.RequestAsTaskAsync(ct),
 })
 ```
+
+**Sign in with Apple (optional / future):** see [docs/auth.md](docs/auth.md) — `RequestAppleIdentityTokenAsync`.
 
 ---
 

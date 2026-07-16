@@ -17,14 +17,20 @@ public sealed class GameServicesAuthProviderConfig
     public string GooglePlayGamesOAuthWebClientId { get; set; }
 
     /// <summary>
-    /// Apple Services ID configured in Apple Developer + UGS Dashboard.
+    /// Apple Services ID configured in Apple Developer + UGS Dashboard (SIWA).
     /// Used for diagnostics; native token fetch is provided via <see cref="RequestAppleIdentityTokenAsync"/>.
     /// </summary>
     public string AppleServicesId { get; set; }
 
     /// <summary>
-    /// Game-supplied Apple identity token (JWT) bridge for SignIn/Link with Apple.
-    /// Typically wired to a native Apple Sign-In plugin in the consuming project.
+    /// Game-supplied Apple identity token (JWT) bridge for SignIn/Link with Apple (SIWA).
+    /// Optional — prefer <see cref="RequestAppleGameCenterCredentialsAsync"/> for games.
     /// </summary>
     public Func<CancellationToken, Task<string>> RequestAppleIdentityTokenAsync { get; set; }
+
+    /// <summary>
+    /// Game-supplied Apple Game Center credentials bridge (GameKit FetchItems → UGS).
+    /// Primary iOS identity for games.
+    /// </summary>
+    public Func<CancellationToken, Task<AppleGameCenterCredentials>> RequestAppleGameCenterCredentialsAsync { get; set; }
 }

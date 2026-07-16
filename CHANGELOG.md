@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.6.9] - 2026-07-16
+
+### Added
+- `AuthPlatform.AppleGameCenter` — primary iOS gaming identity (pair to Google Play Games).
+- `AppleGameCenterCredentials` + `GameServicesAuthProviderConfig.RequestAppleGameCenterCredentialsAsync`.
+- `UGSAuthService` SignIn/Link/Unlink path for Apple Game Center via injected GameKit credentials.
+- iOS bootstrap default platform is now `AppleGameCenter` (SIWA `AuthPlatform.Apple` remains available).
+
+### Changed
+- Auth docs updated for Game Center as the recommended iOS provider for games; SIWA stays optional.
+
 ## [1.6.8] - 2026-07-16
 
 ### Added

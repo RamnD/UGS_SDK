@@ -275,7 +275,7 @@ public sealed class UGSServicesBuilder
 #elif UNITY_ANDROID
         return AuthPlatform.GooglePlayGames;
 #elif UNITY_IOS
-        return AuthPlatform.Apple;
+        return AuthPlatform.AppleGameCenter;
 #else
         return AuthPlatform.Anonymous;
 #endif

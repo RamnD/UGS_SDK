@@ -11,6 +11,12 @@ public enum AuthPlatform
     /// <summary>Google Play Games — Android only. Requires GPGS SDK setup.</summary>
     GooglePlayGames,
 
-    /// <summary>Apple Sign-In — iOS only. Requires a native plugin to obtain identityToken.</summary>
-    Apple
+    /// <summary>
+    /// Sign in with Apple (SIWA) — iOS. Optional consumer identity.
+    /// Prefer <see cref="AppleGameCenter"/> for games; keep SIWA for future/account flows.
+    /// </summary>
+    Apple,
+
+    /// <summary>Apple Game Center — iOS primary gaming identity. Pair to Google Play Games on Android.</summary>
+    AppleGameCenter,
 }

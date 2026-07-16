@@ -25,16 +25,19 @@ The UGS auth layer wraps platform-specific SDKs that are **not in the UPM regist
 })
 ```
 
-### iOS — Apple Sign In for Unity v1.4.2+
+### iOS — Apple Game Center (recommended for games) + optional SIWA
 
-| | |
-|---|---|
-| **Release page** | https://github.com/lupidan/apple-signin-unity/releases/tag/v1.4.2 |
-| **Direct download** | [`AppleSignIn-1.4.2.unitypackage`](https://github.com/lupidan/apple-signin-unity/releases/download/v1.4.2/AppleSignIn-1.4.2.unitypackage) |
+**Game Center (primary):**
+```csharp
+.WithAuthProviderCredentials(new GameServicesAuthProviderConfig
+{
+    RequestAppleGameCenterCredentialsAsync = ct => AppleGameCenterCredentialsProvider.RequestAsTaskAsync(ct),
+})
+```
 
-1. Import the package (or UPM: `com.lupidan.apple-signin-unity`).
-2. The plugin's post-process step / game postprocessor adds the **Sign In with Apple** Xcode capability.
-3. Wire identity token fetch into the builder:
+Requires Apple.Core + Apple.GameKit (build tarballs from [apple/unityplugins](https://github.com/apple/unityplugins)) and UGS Dashboard → Apple Game Center (Bundle ID).
+
+**Sign in with Apple (optional):**
 ```csharp
 .WithAuthProviderCredentials(new GameServicesAuthProviderConfig
 {

@@ -204,6 +204,11 @@ public class UGSAuthService : IAuthService
                     await LinkWithAppleAsync(cancellationToken);
                     break;
 
+                case AuthPlatform.AppleGameCenter:
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await LinkWithAppleGameCenterAsync(cancellationToken);
+                    break;
+
                 default:
                     Debug.LogError("[Auth] Anonymous cannot be used as a link target.");
                     return false;
@@ -251,9 +256,10 @@ public class UGSAuthService : IAuthService
     private Task SignInWithMethodAsync(AuthPlatform method, CancellationToken cancellationToken) =>
         method switch
         {
-            AuthPlatform.GooglePlayGames => SignInWithGooglePlayGamesAsync(cancellationToken),
-            AuthPlatform.Apple           => SignInWithAppleAsync(cancellationToken),
-            _                            => AuthenticationService.Instance.SignInAnonymouslyAsync()
+            AuthPlatform.GooglePlayGames  => SignInWithGooglePlayGamesAsync(cancellationToken),
+            AuthPlatform.Apple            => SignInWithAppleAsync(cancellationToken),
+            AuthPlatform.AppleGameCenter  => SignInWithAppleGameCenterAsync(cancellationToken),
+            _                             => AuthenticationService.Instance.SignInAnonymouslyAsync()
         };
 
 #if UNITY_ANDROID
@@ -352,6 +358,32 @@ public class UGSAuthService : IAuthService
         await AuthenticationService.Instance.LinkWithAppleAsync(identityToken);
     }
 
+    private async Task SignInWithAppleGameCenterAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        AppleGameCenterCredentials credentials = await RequestAppleGameCenterCredentialsAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        await AuthenticationService.Instance.SignInWithAppleGameCenterAsync(
+            credentials.Signature,
+            credentials.TeamPlayerId,
+            credentials.PublicKeyUrl,
+            credentials.Salt,
+            credentials.Timestamp);
+    }
+
+    private async Task LinkWithAppleGameCenterAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        AppleGameCenterCredentials credentials = await RequestAppleGameCenterCredentialsAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        await AuthenticationService.Instance.LinkWithAppleGameCenterAsync(
+            credentials.Signature,
+            credentials.TeamPlayerId,
+            credentials.PublicKeyUrl,
+            credentials.Salt,
+            credentials.Timestamp);
+    }
+
     private async Task<string> RequestAppleIdentityTokenAsync(CancellationToken cancellationToken)
     {
         if (_providerConfig.RequestAppleIdentityTokenAsync == null)
@@ -369,6 +401,26 @@ public class UGSAuthService : IAuthService
 
         return identityToken;
     }
+
+    private async Task<AppleGameCenterCredentials> RequestAppleGameCenterCredentialsAsync(
+        CancellationToken cancellationToken)
+    {
+        if (_providerConfig.RequestAppleGameCenterCredentialsAsync == null)
+        {
+            throw new InvalidOperationException(
+                "Apple Game Center: RequestAppleGameCenterCredentialsAsync is not set. " +
+                "Install Apple GameKit and wire AppleGameCenterCredentialsProvider.");
+        }
+
+        AppleGameCenterCredentials credentials =
+            await _providerConfig.RequestAppleGameCenterCredentialsAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (credentials == null || !credentials.IsValid)
+            throw new InvalidOperationException("Apple Game Center: credentials are missing or invalid.");
+
+        return credentials;
+    }
 #else
     private Task SignInWithAppleAsync(CancellationToken cancellationToken)
     {
@@ -380,6 +432,18 @@ public class UGSAuthService : IAuthService
     {
         cancellationToken.ThrowIfCancellationRequested();
         throw new PlatformNotSupportedException("Apple Sign-In is only available on iOS.");
+    }
+
+    private Task SignInWithAppleGameCenterAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        throw new PlatformNotSupportedException("Apple Game Center is only available on iOS.");
+    }
+
+    private Task LinkWithAppleGameCenterAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        throw new PlatformNotSupportedException("Apple Game Center is only available on iOS.");
     }
 #endif
 }
