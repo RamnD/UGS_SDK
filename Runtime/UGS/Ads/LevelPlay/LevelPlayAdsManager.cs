@@ -94,6 +94,14 @@ public sealed class LevelPlayAdsManager : IAdsManager
         LevelPlay.OnInitSuccess += OnInitSuccess;
         LevelPlay.OnInitFailed  += OnInitFailed;
 
+#if UGS_ENV_STAGING || UGS_ENV_DEVELOPMENT
+        // Integration Helper: logs network VERIFIED/MISSING and prints Advertising ID
+        // (IDFA/GAID) for LevelPlay Dashboard → Setup → Testing → Add test device.
+        Debug.Log("[LevelPlay] ValidateIntegration (staging/development)...");
+        LevelPlay.SetAdaptersDebug(true);
+        LevelPlay.ValidateIntegration();
+#endif
+
         Debug.Log("[LevelPlay] Initializing SDK...");
         LevelPlay.Init(_appKey);
     }

@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.6.7] - 2026-07-16
+
+### Added
+- `LevelPlayAdsManager`: on `UGS_ENV_STAGING` / `UGS_ENV_DEVELOPMENT`, call `SetAdaptersDebug(true)` and `ValidateIntegration()` before init (logs adapter status + Advertising ID for test devices).
+
 ## [1.6.6] - 2026-07-16
 
 ### Changed
