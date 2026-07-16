@@ -25,21 +25,21 @@ The UGS auth layer wraps platform-specific SDKs that are **not in the UPM regist
 })
 ```
 
-### iOS — Apple Sign In for Unity v1.4.2
+### iOS — Apple Sign In for Unity v1.4.2+
 
 | | |
 |---|---|
 | **Release page** | https://github.com/lupidan/apple-signin-unity/releases/tag/v1.4.2 |
 | **Direct download** | [`AppleSignIn-1.4.2.unitypackage`](https://github.com/lupidan/apple-signin-unity/releases/download/v1.4.2/AppleSignIn-1.4.2.unitypackage) |
 
-1. Import the package.
-2. The plugin's post-process step adds the **Sign In with Apple** Xcode capability automatically.
-3. Wire `IAppleAuthManager` into `UGSAuthService` (see `TODO(iOS→UGS)` comment in the source).
-4. Pass your Services ID to the builder:
+1. Import the package (or UPM: `com.lupidan.apple-signin-unity`).
+2. The plugin's post-process step / game postprocessor adds the **Sign In with Apple** Xcode capability.
+3. Wire identity token fetch into the builder:
 ```csharp
 .WithAuthProviderCredentials(new GameServicesAuthProviderConfig
 {
     AppleServicesId = "com.yourcompany.yourgame",
+    RequestAppleIdentityTokenAsync = ct => YourAppleTokenBridge.RequestAsync(ct),
 })
 ```
 

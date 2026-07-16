@@ -322,30 +322,52 @@ public class UGSAuthService : IAuthService
 #endif
 
 #if UNITY_IOS
-    private Task SignInWithAppleAsync(CancellationToken cancellationToken)
+    private async Task SignInWithAppleAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (string.IsNullOrWhiteSpace(_providerConfig.AppleServicesId))
         {
-            Debug.LogError(
-                "[Auth] TODO(iOS→UGS): AppleServicesId is missing — pass GameServicesAuthProviderConfig.AppleServicesId in the builder.");
-            throw new InvalidOperationException("Apple Sign-In: AppleServicesId missing in builder config.");
+            Debug.LogWarning(
+                "[Auth] AppleServicesId is empty — ensure UGS Dashboard Apple provider + game config are set.");
         }
 
-        // TODO(iOS→UGS): obtain identityToken from native Apple Sign-In (e.g. after Unity Apple plugin / native bridge).
-        // string identityToken = await NativeAppleSignIn.GetIdentityTokenAsync(cancellationToken);
-        // await AuthenticationService.Instance.SignInWithAppleAsync(identityToken);
-
-        Debug.LogError(
-            "[Auth] TODO(iOS→UGS): obtain identityToken and call AuthenticationService.Instance.SignInWithAppleAsync.");
-        throw new InvalidOperationException("Apple Sign-In: identityToken flow not implemented for UGS.");
+        string identityToken = await RequestAppleIdentityTokenAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        await AuthenticationService.Instance.SignInWithAppleAsync(identityToken);
     }
 
-    private Task LinkWithAppleAsync(CancellationToken cancellationToken)
+    private async Task LinkWithAppleAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return SignInWithAppleAsync(cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(_providerConfig.AppleServicesId))
+        {
+            Debug.LogWarning(
+                "[Auth] AppleServicesId is empty — ensure UGS Dashboard Apple provider + game config are set.");
+        }
+
+        string identityToken = await RequestAppleIdentityTokenAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        await AuthenticationService.Instance.LinkWithAppleAsync(identityToken);
+    }
+
+    private async Task<string> RequestAppleIdentityTokenAsync(CancellationToken cancellationToken)
+    {
+        if (_providerConfig.RequestAppleIdentityTokenAsync == null)
+        {
+            throw new InvalidOperationException(
+                "Apple Sign-In: RequestAppleIdentityTokenAsync is not set. " +
+                "Wire the native Apple plugin via GameServicesAuthProviderConfig.");
+        }
+
+        string identityToken = await _providerConfig.RequestAppleIdentityTokenAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (string.IsNullOrWhiteSpace(identityToken))
+            throw new InvalidOperationException("Apple Sign-In: identity token is empty.");
+
+        return identityToken;
     }
 #else
     private Task SignInWithAppleAsync(CancellationToken cancellationToken)

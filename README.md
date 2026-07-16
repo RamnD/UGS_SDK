@@ -113,7 +113,7 @@ Keep credential ScriptableObjects local, or load IDs from environment variables 
 |----------|-------------------|
 | Anonymous UGS | Supported |
 | Google Play Games → UGS (Android) | Supported (requires [GPGS plugin](#android--google-play-games-plugin-for-unity) in the host project) |
-| Sign in with Apple → UGS (iOS) | **Not implemented** — `UGSAuthService` throws until you wire `identityToken` via the Apple plugin (see [docs/auth.md](docs/auth.md)). Use `.WithForceAnonymous(true)` until then. |
+| Sign in with Apple → UGS (iOS) | **Supported** — pass `RequestAppleIdentityTokenAsync` via `GameServicesAuthProviderConfig` (native plugin lives in the game). |
 
 ### Disclaimer
 
@@ -157,10 +157,16 @@ These plugins are **not available in the Unity Package Manager registry** and mu
 | **UPM git URL** | `https://github.com/lupidan/apple-signin-unity.git` |
 
 **Setup steps:**
-1. Import the `.unitypackage`.
-2. Enable the **Sign In with Apple** capability in Xcode (added automatically by the plugin's post-process build step).
-3. Implement `NativeAppleSignIn.GetIdentityTokenAsync(ct)` (see TODO in `UGSAuthService.cs`) using `IAppleAuthManager` from the plugin.
-4. Set `AppleServicesId` in `GameServicesAuthProviderConfig` (see [docs/auth.md](docs/auth.md)).
+1. Import the package (or add UPM dependency `com.lupidan.apple-signin-unity`).
+2. Enable the **Sign In with Apple** capability in Xcode (game postprocessor / plugin).
+3. Pass identity-token bridge + Services ID:
+```csharp
+.WithAuthProviderCredentials(new GameServicesAuthProviderConfig
+{
+    AppleServicesId = "com.yourcompany.yourgame",
+    RequestAppleIdentityTokenAsync = ct => AppleSignInIdentityTokenProvider.RequestAsync(ct).AsTask(),
+})
+```
 
 ---
 

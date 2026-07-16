@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.8] - 2026-07-16
+
+### Added
+- `GameServicesAuthProviderConfig.RequestAppleIdentityTokenAsync` — game-supplied Apple identity token (JWT) bridge for SignIn/Link with Apple.
+- `UGSAuthService` SignIn/Link with Apple now uses the injected token provider instead of throwing a TODO.
+
+### Changed
+- Auth docs/README updated for Apple Sign-In wiring via `RequestAppleIdentityTokenAsync`.
+
 ## [1.6.7] - 2026-07-16
 
 ### Added
