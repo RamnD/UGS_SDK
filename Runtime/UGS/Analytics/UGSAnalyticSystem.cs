@@ -38,7 +38,7 @@ public class UGSAnalyticSystem : IAnalyticsSystem
         try
         {
             var customEvent = eventPayload.ToCustomEvent();
-            AnalyticsCustomEventEnricher.ApplyUnityPlayerId(customEvent, _playerId);
+            AnalyticsCustomEventEnricher.ApplyUgsPlayerId(customEvent, _playerId);
             _sdk.RecordEvent(customEvent);
             Debug.Log($"[Analytics] {eventPayload.EventName}");
         }

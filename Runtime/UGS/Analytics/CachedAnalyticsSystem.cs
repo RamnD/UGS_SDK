@@ -76,7 +76,7 @@ public sealed class CachedAnalyticsSystem : IAnalyticsSystem
             try
             {
                 CustomEvent customEvent = AnalyticsEventSerializer.ToCustomEvent(record);
-                AnalyticsCustomEventEnricher.ApplyUnityPlayerId(customEvent, _playerId ?? _inner?.PlayerId);
+                AnalyticsCustomEventEnricher.ApplyUgsPlayerId(customEvent, _playerId ?? _inner?.PlayerId);
                 _sdk.RecordEvent(customEvent);
                 Debug.Log($"[Analytics] Replayed queued event '{record.eventName}'");
             }
