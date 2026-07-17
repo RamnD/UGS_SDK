@@ -288,7 +288,11 @@ public class UGSAuthService : IAuthService
     private Task<string> GetGoogleServerAuthCodeAsync(CancellationToken cancellationToken)
     {
         var tcs = new TaskCompletionSource<string>();
-        PlayGamesPlatform.Instance.Authenticate(status =>
+
+        // Activate so PlayGamesPlatform.Instance is the Social implementation.
+        PlayGamesPlatform.Activate();
+
+        void OnAuthComplete(SignInStatus status)
         {
             if (cancellationToken.IsCancellationRequested)
             {
@@ -296,21 +300,48 @@ public class UGSAuthService : IAuthService
                 return;
             }
 
-            if (status == SignInStatus.Success)
+            if (status != SignInStatus.Success)
             {
-                PlayGamesPlatform.Instance.RequestServerSideAccess(forceRefreshToken: false, authCode =>
-                {
-                    if (authCode == null)
-                        tcs.TrySetException(new Exception("Google Play Games: RequestServerSideAccess returned null."));
-                    else
-                        tcs.TrySetResult(authCode);
-                });
-            }
-            else
-            {
+                Debug.LogError($"[Auth] Google Play Games sign-in failed: {status}");
                 tcs.TrySetException(new Exception($"Google Play Games sign-in failed: {status}"));
+                return;
             }
-        });
+
+            Debug.Log("[Auth] Google Play Games authenticated — requesting server auth code.");
+            PlayGamesPlatform.Instance.RequestServerSideAccess(forceRefreshToken: false, authCode =>
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    tcs.TrySetCanceled(cancellationToken);
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(authCode))
+                {
+                    tcs.TrySetException(new Exception(
+                        "Google Play Games: RequestServerSideAccess returned empty. " +
+                        "Check Web Client ID in GPGS Setup + Android OAuth client SHA-1 in Google Cloud."));
+                    return;
+                }
+
+                tcs.TrySetResult(authCode);
+            });
+        }
+
+        // Authenticate() = silent check only (no UI). If the startup auto-prompt was
+        // dismissed / failed, Link would appear to do nothing — use ManuallyAuthenticate
+        // which shows the Google Play Games sign-in sheet.
+        if (PlayGamesPlatform.Instance.IsAuthenticated())
+        {
+            Debug.Log("[Auth] Google Play Games already authenticated.");
+            OnAuthComplete(SignInStatus.Success);
+        }
+        else
+        {
+            Debug.Log("[Auth] Google Play Games: showing manual sign-in UI.");
+            PlayGamesPlatform.Instance.ManuallyAuthenticate(OnAuthComplete);
+        }
+
         return tcs.Task;
     }
 #else

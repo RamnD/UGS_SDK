@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.6.10] - 2026-07-17
+
+### Fixed
+- Google Play Games Link/SignIn: use `PlayGamesPlatform.Activate()` + `ManuallyAuthenticate` when not already signed in. Previously `Authenticate()` only did a silent check (no UI), so the Profile Link button could appear to do nothing after dismissing the startup GPGS prompt.
+
 ## [1.6.9] - 2026-07-16
 
 ### Added
