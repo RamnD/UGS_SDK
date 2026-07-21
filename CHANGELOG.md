@@ -1,11 +1,12 @@
 # Changelog
 
-## [1.6.12] - 2026-07-21
+## [1.7.0] - 2026-07-21
 
 ### Added
 - Portable real-money purchase layer: `IRealMoneyPurchaseService`, `RealMoneyProductDefinition`, `CloudSaveEntitlementStore<TKey>`.
 - `UGSRealMoneyPurchaseService<TKey, TCurrency>` — Unity IAP store bridge + UGS Economy receipt redeem + optional entitlement persistence via `ICloudSaveService<TKey>`.
 - [docs/iap.md](docs/iap.md) — setup guide for consumables, bundles, and non-consumable entitlements (e.g. `no_ads`).
+- Unity `.meta` GUIDs for IAP folders, scripts, and docs so Package Manager imports cleanly.
 
 ### Changed
 - `package.json`: added `com.unity.purchasing` dependency and `iap` keyword.
