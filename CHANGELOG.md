@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.8.1] - 2026-07-21
+
+### Added
+- `AccountLinkResult` for `IAuthService.LinkWithAccountAsync`.
+- On `AuthenticationErrorCodes.AccountAlreadyLinked`, SDK signs out and `SignInWith*` the existing player (`SignedIntoExisting`) — reinstall recover. Does not use ForceLink.
+
+### Changed
+- `LinkWithAccountAsync` return type: `Task<bool>` → `Task<AccountLinkResult>`.
+
 ## [1.8.0] - 2026-07-21
 
 ### Added

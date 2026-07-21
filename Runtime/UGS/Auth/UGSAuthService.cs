@@ -173,13 +173,13 @@ public class UGSAuthService : IAuthService
     }
 
     /// <inheritdoc/>
-    public async Task<bool> LinkWithAccountAsync(AuthPlatform platform,
+    public async Task<AccountLinkResult> LinkWithAccountAsync(AuthPlatform platform,
         CancellationToken cancellationToken = default)
     {
         if (!IsSignedIn)
         {
             Debug.LogError("[Auth] Cannot link account — not signed in.");
-            return false;
+            return AccountLinkResult.NotSignedIn;
         }
 
         try
@@ -211,22 +211,72 @@ public class UGSAuthService : IAuthService
 
                 default:
                     Debug.LogError("[Auth] Anonymous cannot be used as a link target.");
-                    return false;
+                    return AccountLinkResult.Failed;
             }
 
             SaveLastMethod(platform);
-            Debug.Log($"[Auth] Account linked: {platform}.");
-            return true;
+            Debug.Log($"[Auth] Account linked: {platform}. PlayerId={GetPlayerId()}");
+            return AccountLinkResult.Linked;
         }
         catch (OperationCanceledException)
         {
             Debug.LogWarning("[Auth] Account link cancelled.");
-            return false;
+            return AccountLinkResult.Cancelled;
+        }
+        catch (AuthenticationException e) when (e.ErrorCode == AuthenticationErrorCodes.AccountAlreadyLinked)
+        {
+            Debug.LogWarning(
+                $"[Auth] External ID already linked to another player ({platform}) — " +
+                "signing into existing account (reinstall recover).");
+            return await SignIntoExistingAfterAlreadyLinkedAsync(platform, cancellationToken);
         }
         catch (Exception e)
         {
             Debug.LogError($"[Auth] Account link failed ({platform}): {e.Message}");
-            return false;
+            return AccountLinkResult.Failed;
+        }
+    }
+
+    /// <summary>
+    /// After <see cref="AuthenticationErrorCodes.AccountAlreadyLinked"/>: drop the current
+    /// (usually fresh anonymous) session and SignIn with the same platform identity.
+    /// Does not use ForceLink — that would steal the identity onto the wrong player.
+    /// </summary>
+    private async Task<AccountLinkResult> SignIntoExistingAfterAlreadyLinkedAsync(
+        AuthPlatform platform,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (IsSignedIn)
+                AuthenticationService.Instance.SignOut(clearCredentials: true);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await SignInWithMethodAsync(platform, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!IsSignedIn)
+            {
+                Debug.LogError($"[Auth] Recover SignIn failed — still not signed in ({platform}).");
+                return AccountLinkResult.Failed;
+            }
+
+            SaveLastMethod(platform);
+            Debug.Log(
+                $"[Auth] Signed into existing account via {platform}. PlayerId={GetPlayerId()}");
+            return AccountLinkResult.SignedIntoExisting;
+        }
+        catch (OperationCanceledException)
+        {
+            Debug.LogWarning("[Auth] Recover SignIn cancelled.");
+            return AccountLinkResult.Cancelled;
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[Auth] Recover SignIn failed ({platform}): {e.Message}");
+            return AccountLinkResult.Failed;
         }
     }
 

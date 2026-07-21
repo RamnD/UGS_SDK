@@ -28,10 +28,15 @@ public interface IAuthService
     Task<bool> SignInAsync(AuthPlatform platform, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Links an anonymous account to a platform account (Google Play / Apple).
+    /// Links an anonymous account to a platform account (Google Play / Apple / Game Center).
     /// Call after onboarding when the player chooses "Sign in with Google/Apple".
     /// </summary>
-    Task<bool> LinkWithAccountAsync(AuthPlatform platform, CancellationToken cancellationToken = default);
+    /// <returns>
+    /// <see cref="AccountLinkResult.Linked"/> on a normal link;
+    /// <see cref="AccountLinkResult.SignedIntoExisting"/> when the external ID was already
+    /// tied to another UGS player (recover via SignIn — typical after reinstall).
+    /// </returns>
+    Task<AccountLinkResult> LinkWithAccountAsync(AuthPlatform platform, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Full reset: sign out of the SDK + clear the saved auth method.

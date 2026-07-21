@@ -71,12 +71,12 @@ public sealed class MockAuthService : IAuthService
     }
 
     /// <inheritdoc/>
-    public Task<bool> LinkWithAccountAsync(AuthPlatform platform,
+    public Task<AccountLinkResult> LinkWithAccountAsync(AuthPlatform platform,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Debug.Log($"[Mock Auth] LinkWithAccount ({platform}) — mock.");
-        return Task.FromResult(true);
+        Debug.Log($"[Mock Auth] LinkWithAccount ({platform}) — mock Linked.");
+        return Task.FromResult(AccountLinkResult.Linked);
     }
 
     /// <inheritdoc/>

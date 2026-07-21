@@ -58,7 +58,7 @@ Exposed via `GameServicesLocator.Services.Auth`.
 | `string GetPlayerId()` | UGS player UUID; `"unknown"` if not signed in |
 | `string GetPlayerName()` | Display name in UGS profile; empty string if unset |
 | `Task<bool> SignInAsync(platform, ct)` | Signs in. Platform may be overridden by saved session. |
-| `Task<bool> LinkWithAccountAsync(platform, ct)` | Links anonymous account to Google Play / Apple |
+| `Task<AccountLinkResult> LinkWithAccountAsync(platform, ct)` | Links anonymous → platform, or recovers into existing player if already linked |
 | `void Reset()` | Sign out + delete saved auth method |
 | `NameValidationError? ValidatePlayerName(name)` | Client-side only; no network. `null` = valid. |
 | `Task<NameValidationError?> SetPlayerNameAsync(name, ct)` | Validates + saves to UGS. `null` = success. |
@@ -91,10 +91,33 @@ Debug.Log($"Signed in as {auth.GetPlayerId()}");
 Call **after** the player is already signed in anonymously (e.g. after tutorial):
 
 ```csharp
-bool linked = await auth.LinkWithAccountAsync(AuthPlatform.GooglePlayGames, ct);
-if (linked)
-    ShowToast("Account linked — progress saved to cloud!");
+AccountLinkResult result = await auth.LinkWithAccountAsync(AuthPlatform.GooglePlayGames, ct);
+switch (result)
+{
+    case AccountLinkResult.Linked:
+        ShowToast("Account linked — progress saved to cloud!");
+        break;
+    case AccountLinkResult.SignedIntoExisting:
+        // External ID was already on another UGS player (typical after reinstall).
+        // Reload Cloud Save / Economy for the restored PlayerId, then resolve SaveConflict if any.
+        await ReloadProgressAfterAccountSwitchAsync();
+        break;
+    default:
+        ShowToast("Link failed");
+        break;
+}
 ```
+
+### Reinstall / already linked
+
+If Game Center / Google Play is already tied to a previous UGS `PlayerId`, `LinkWith*` fails with `AccountAlreadyLinked`. The SDK then:
+
+1. Signs out the fresh anonymous session (`clearCredentials: true`)
+2. Requests **fresh** platform credentials
+3. Calls `SignInWith*` into the existing player
+4. Returns `AccountLinkResult.SignedIntoExisting`
+
+Do **not** use UGS `ForceLink` — that steals the identity onto the new anonymous account and orphans the old one.
 
 ---
 
