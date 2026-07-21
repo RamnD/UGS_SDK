@@ -13,7 +13,7 @@ Add to your project's `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git#v1.6.7"
+    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git#v1.6.12"
   }
 }
 ```
@@ -39,6 +39,7 @@ Optional sample: **Package Manager → RamnD Game Services SDK → Samples → I
 | Initialization & bootstrap | [docs/bootstrap.md](docs/bootstrap.md) |
 | Auth & player name | [docs/auth.md](docs/auth.md) |
 | Economy (currency & items) | [docs/economy.md](docs/economy.md) |
+| Real money purchases (IAP + Economy redeem) | [docs/iap.md](docs/iap.md) |
 | Cloud Save | [docs/cloud-save.md](docs/cloud-save.md) |
 | Leaderboard | [docs/leaderboard.md](docs/leaderboard.md) |
 | Achievements | [docs/achievements.md](docs/achievements.md) |
@@ -179,6 +180,7 @@ These plugins are **not available in the Unity Package Manager registry** and mu
 **Note:** `Google.Play.Games` must be present in the consuming project for Android auth (see below). Legacy Unity Ads (`UnityAdsManager`) compiles only with scripting define `RAMND_LEGACY_UNITY_ADS` plus `com.unity.ads` in the host project.
 
 Dependencies are listed in `package.json` (Newtonsoft, Authentication, Economy, Cloud Save, Leaderboards, Achievements via Cloud Save, Analytics, Remote Config, Ads / LevelPlay).
+Unity IAP is also included for portable real-money purchase flows redeemed through Economy.
 
 ---
 
