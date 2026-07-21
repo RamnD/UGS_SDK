@@ -51,7 +51,11 @@ private async void Start()
             await _economy.RefreshBalancesAsync();
             var conflict = await _cloudSave.LoadAsync();
             if (conflict.HasValue)
-                _cloudSave.ApplyCloud(); // or show conflict UI
+            {
+                // Show Local vs Cloud UI, then ApplyCloud() or KeepLocal() (+ Push if keeping local).
+                // See docs/cloud-save.md — conflicts are return values, not events.
+                _cloudSave.ApplyCloud();
+            }
         })
         .BuildAsync(destroyCancellationToken);
 

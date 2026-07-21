@@ -9,7 +9,7 @@ using UnityEngine;
 /// Mock <see cref="ICloudSaveService{TKey}"/> implementation.
 /// Stores data in memory only — no network and no PlayerPrefs.
 /// <para>
-/// Does not create conflicts (always returns null from <see cref="LoadAsync"/>).
+/// Does not create conflicts (always returns null from Load/Push).
 /// Use for UI and logic development before setting up UGS Cloud Save.
 /// </para>
 /// Usage:
@@ -27,6 +27,9 @@ public sealed class MockCloudSaveService<TKey> : ICloudSaveService<TKey>
 
     /// <inheritdoc/>
     public DateTime? LocalTimestamp { get; private set; }
+
+    /// <inheritdoc/>
+    public DateTime? BaseTimestamp { get; private set; }
 
     public MockCloudSaveService(ISaveKeyMapper<TKey> mapper)
     {
@@ -59,12 +62,14 @@ public sealed class MockCloudSaveService<TKey> : ICloudSaveService<TKey>
     }
 
     /// <inheritdoc/>
-    public Task PushToCloudAsync(CancellationToken cancellationToken = default)
+    public Task<SaveConflict?> PushToCloudAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        LocalTimestamp = DateTime.UtcNow;
+        var ts = DateTime.UtcNow;
+        LocalTimestamp = ts;
+        BaseTimestamp  = ts;
         Debug.Log("[Mock CloudSave] PushToCloud (mock, nothing sent).");
-        return Task.CompletedTask;
+        return Task.FromResult<SaveConflict?>(null);
     }
 
     /// <inheritdoc/>

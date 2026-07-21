@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.8.0] - 2026-07-21
+
+### Added
+- Cloud Save optimistic concurrency via `BaseTimestamp` (parent cloud `__ts` after last successful sync).
+- `PushToCloudAsync` now returns `SaveConflict?` — detects when another client wrote since `BaseTimestamp` and does not overwrite.
+- `SaveConflictSource` (`Load` / `Push`) on `SaveConflict`.
+- Auto-apply cloud on `LoadAsync` when local has no unsynced edits and cloud moved ahead.
+- `KeepLocal` acknowledges the conflicting cloud version so the next push can overwrite.
+
+### Changed
+- `ICloudSaveService.PushToCloudAsync` signature: `Task` → `Task<SaveConflict?>` (awaiters that ignore the result stay source-compatible).
+- Conflict docs: report via **return values** (await Load/Push → UI → Apply/Keep), not C# events.
+- [docs/cloud-save.md](docs/cloud-save.md) updated for `BaseTimestamp` and push-time conflicts.
+
 ## [1.7.1] - 2026-07-21
 
 ### Fixed

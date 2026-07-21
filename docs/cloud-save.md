@@ -6,15 +6,21 @@
 
 ## Overview
 
-`ICloudSaveService<TKey>` uses a **local-first** strategy:
+`ICloudSaveService<TKey>` uses a **local-first** strategy with optimistic concurrency:
 
 | Operation | Where | When |
 |-----------|-------|------|
 | `Set` | Memory + PlayerPrefs | Immediate, no network |
-| `PushToCloudAsync` | UGS Cloud Save | On pause / quit |
+| `PushToCloudAsync` | UGS Cloud Save | On pause / quit (returns conflict if cloud moved) |
 | `LoadAsync` | UGS Cloud Save | On startup / reconnect |
 
-Conflict resolution is **explicit** — the service never silently overwrites data. If both local and cloud versions exist with different timestamps, it returns a `SaveConflict` and waits for your call.
+| Timestamp | Meaning |
+|-----------|---------|
+| `LocalTimestamp` | Last local `Set` / successful push |
+| `BaseTimestamp` | Cloud `__ts` from the last successful sync (parent version) |
+| cloud `__ts` | Last successful push from any device |
+
+Conflict resolution is **explicit** — the service never silently overwrites divergent data. Conflicts are reported via **return values** from `LoadAsync` / `PushToCloudAsync` (not events): await the call, show UI, then `ApplyCloud` or `KeepLocal`.
 
 ---
 
@@ -94,14 +100,17 @@ Supported `TValue` types: `int`, `long`, `float`, `bool`, `string`, and any **JS
 
 ## Step 5 — Push on pause / quit
 
+Always check the return value — a second device may have written while you were playing.
+
 ```csharp
-// In your save manager MonoBehaviour:
 private async void OnApplicationPause(bool paused)
 {
     if (!paused) return;
     try
     {
-        await _cloudSave.PushToCloudAsync();
+        var conflict = await _cloudSave.PushToCloudAsync();
+        if (conflict.HasValue)
+            await HandleConflictAsync(conflict.Value);
     }
     catch (CloudSaveOperationException ex)
     {
@@ -109,43 +118,54 @@ private async void OnApplicationPause(bool paused)
         // Data is safe in PlayerPrefs — will retry on next session
     }
 }
-
-private void OnApplicationQuit()
-{
-    // Fire-and-forget on quit (best-effort)
-    _ = _cloudSave.PushToCloudAsync();
-}
 ```
 
 ---
 
 ## Conflict resolution
 
-A conflict occurs when both local and cloud have data with **different timestamps** (> 1 second apart). This happens after playing on two devices without syncing.
+A conflict occurs when **local is dirty** (edits since `BaseTimestamp`) **and** cloud `__ts` moved away from `BaseTimestamp`. Typical case: two devices play from the same parent version, then both push.
 
 ```csharp
-var conflict = await _cloudSave.LoadAsync();
-
-if (conflict.HasValue)
+async Task HandleConflictAsync(SaveConflict conflict)
 {
-    // Ask player which version to keep:
     bool keepCloud = await ShowConflictDialogAsync(
-        localTime:  conflict.Value.LocalTimestamp,
-        cloudTime:  conflict.Value.CloudTimestamp);
+        localTime:  conflict.LocalTimestamp,
+        cloudTime:  conflict.CloudTimestamp,
+        source:     conflict.Source); // Load or Push
 
     if (keepCloud)
-        _cloudSave.ApplyCloud();   // overwrites local with cloud data
+    {
+        _cloudSave.ApplyCloud();
+    }
     else
-        _cloudSave.KeepLocal();    // discards cloud snapshot, keeps local
+    {
+        _cloudSave.KeepLocal();           // acknowledges cloud version
+        var again = await _cloudSave.PushToCloudAsync();
+        // again should be null after KeepLocal
+    }
 }
 ```
+
+**Why return values (not a C# event):** the game must pause the sync flow, show UI, and only then continue. `await Load/Push → dialog → Apply/Keep` is the natural shape. An event would fire-and-forget and race with the next push.
 
 **`SaveConflict` properties:**
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `LocalTimestamp` | `DateTime` | UTC time of last local `Set` / `PushToCloudAsync` |
-| `CloudTimestamp` | `DateTime` | UTC time of last successful cloud push |
+| `LocalTimestamp` | `DateTime` | UTC time of last local `Set` / push |
+| `CloudTimestamp` | `DateTime` | UTC time of the conflicting cloud `__ts` |
+| `Source` | `SaveConflictSource` | `Load` or `Push` |
+| `IsCloudNewer` | `bool` | `CloudTimestamp > LocalTimestamp` |
+
+**Detection rules (summary):**
+
+| Local dirty? | Cloud vs `BaseTimestamp` | Result |
+|--------------|--------------------------|--------|
+| No | cloud ahead | Auto `ApplyCloud` on Load; Push is no-op |
+| No | same | In sync |
+| Yes | same (parent unchanged) | Keep local edits; Push uploads |
+| Yes | cloud moved | `SaveConflict` |
 
 ---
 
@@ -153,7 +173,7 @@ if (conflict.HasValue)
 
 - `Set` / `Get` — always work (memory + PlayerPrefs, no network)
 - `LoadAsync` offline — returns `null` (no conflict), local data unchanged
-- `PushToCloudAsync` offline — returns immediately without throwing
+- `PushToCloudAsync` offline — returns `null` immediately without throwing
 
 ---
 
