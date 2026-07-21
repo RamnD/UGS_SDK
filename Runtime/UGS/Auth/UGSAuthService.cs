@@ -227,7 +227,7 @@ public class UGSAuthService : IAuthService
         {
             Debug.LogWarning(
                 $"[Auth] External ID already linked to another player ({platform}) — " +
-                "signing into existing account (reinstall recover).");
+                "deleting current anonymous session and signing into existing account.");
             return await SignIntoExistingAfterAlreadyLinkedAsync(platform, cancellationToken);
         }
         catch (Exception e)
@@ -238,8 +238,10 @@ public class UGSAuthService : IAuthService
     }
 
     /// <summary>
-    /// After <see cref="AuthenticationErrorCodes.AccountAlreadyLinked"/>: drop the current
-    /// (usually fresh anonymous) session and SignIn with the same platform identity.
+    /// After <see cref="AuthenticationErrorCodes.AccountAlreadyLinked"/>: permanently delete the
+    /// current (usually fresh anonymous) UGS player so it does not linger as an empty orphan,
+    /// then SignIn with the platform identity into the existing linked account.
+    /// Does not touch game local saves — the caller resolves SaveConflict in UI.
     /// Does not use ForceLink — that would steal the identity onto the wrong player.
     /// </summary>
     private async Task<AccountLinkResult> SignIntoExistingAfterAlreadyLinkedAsync(
@@ -251,7 +253,25 @@ public class UGSAuthService : IAuthService
             cancellationToken.ThrowIfCancellationRequested();
 
             if (IsSignedIn)
-                AuthenticationService.Instance.SignOut(clearCredentials: true);
+            {
+                string orphanId = GetPlayerId();
+                try
+                {
+                    await AuthenticationService.Instance.DeleteAccountAsync();
+                    Debug.Log($"[Auth] Deleted orphan anonymous PlayerId={orphanId} before recover SignIn.");
+                }
+                catch (Exception deleteEx)
+                {
+                    // Recover must still proceed; SignOut leaves an orphan but unblocks SignIn.
+                    Debug.LogWarning(
+                        $"[Auth] Could not delete orphan anonymous ({deleteEx.Message}) — SignOut fallback.");
+                    if (IsSignedIn)
+                        AuthenticationService.Instance.SignOut(clearCredentials: true);
+                }
+
+                PlayerPrefs.DeleteKey(LastAuthMethodKey);
+                PlayerPrefs.Save();
+            }
 
             cancellationToken.ThrowIfCancellationRequested();
             await SignInWithMethodAsync(platform, cancellationToken);

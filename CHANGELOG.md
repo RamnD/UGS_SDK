@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.8.3] - 2026-07-21
+
+### Changed
+- On `AccountAlreadyLinked` recover: **delete** the current (orphan anonymous) UGS player before `SignInWith*`, instead of `SignOut` only — avoids empty abandoned Unity player IDs. Local game saves are untouched; caller resolves SaveConflict in UI. Falls back to SignOut if delete fails.
+
 ## [1.8.2] - 2026-07-21
 
 ### Added
