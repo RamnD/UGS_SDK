@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.7.1] - 2026-07-21
+
+### Fixed
+- Reference `Unity.Purchasing` from Core and UGS asmdefs so IAP types compile in consuming projects.
+
 ## [1.7.0] - 2026-07-21
 
 ### Added

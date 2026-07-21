@@ -1,7 +1,9 @@
 {
   "name": "RamnD.GameServices.Core",
   "rootNamespace": "",
-  "references": [],
+  "references": [
+    "Unity.Purchasing"
+  ],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

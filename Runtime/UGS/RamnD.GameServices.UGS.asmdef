@@ -11,7 +11,8 @@
     "Unity.Services.Leaderboards",
     "Unity.Services.RemoteConfig",
     "Unity.LevelPlay",
-    "Google.Play.Games"
+    "Google.Play.Games",
+    "Unity.Purchasing"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],
