@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.8.2] - 2026-07-21
+
+### Added
+- `IAuthService.DeleteAccountAsync` — permanent UGS Authentication account deletion (`DeleteAccountAsync`), clears saved auth method. Required for App Store Guideline 5.1.1; wipe Cloud Save / Economy in the game before calling.
+
 ## [1.8.1] - 2026-07-21
 
 ### Added

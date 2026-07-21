@@ -291,6 +291,41 @@ public class UGSAuthService : IAuthService
         Debug.Log("[Auth] Session cleared. Next sign-in will create a new anonymous session.");
     }
 
+    /// <inheritdoc/>
+    public async Task<bool> DeleteAccountAsync(CancellationToken cancellationToken = default)
+    {
+        if (!IsSignedIn)
+        {
+            PlayerPrefs.DeleteKey(LastAuthMethodKey);
+            PlayerPrefs.Save();
+            Debug.LogWarning("[Auth] DeleteAccountAsync: not signed in — cleared local auth prefs only.");
+            return true;
+        }
+
+        string playerId = GetPlayerId();
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await AuthenticationService.Instance.DeleteAccountAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            PlayerPrefs.DeleteKey(LastAuthMethodKey);
+            PlayerPrefs.Save();
+            Debug.Log($"[Auth] Account deleted. Former PlayerId={playerId}");
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            Debug.LogWarning("[Auth] DeleteAccountAsync cancelled.");
+            return false;
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[Auth] DeleteAccountAsync failed: {e.Message}");
+            return false;
+        }
+    }
+
     private static void SaveLastMethod(AuthPlatform method)
     {
         PlayerPrefs.SetString(LastAuthMethodKey, method.ToString());

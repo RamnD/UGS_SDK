@@ -39,6 +39,14 @@ public interface IAuthService
     Task<AccountLinkResult> LinkWithAccountAsync(AuthPlatform platform, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Permanently deletes the current UGS Authentication player (App Store 5.1.1).
+    /// Signs out and clears the saved auth method. Does <b>not</b> wipe Cloud Save / Economy —
+    /// clear those while still signed in before calling this.
+    /// </summary>
+    /// <returns>True if the account was deleted (or already signed out with nothing to delete).</returns>
+    Task<bool> DeleteAccountAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Full reset: sign out of the SDK + clear the saved auth method.
     /// The next <see cref="SignInAsync"/> creates a new anonymous account.
     /// </summary>

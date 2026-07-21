@@ -59,6 +59,7 @@ Exposed via `GameServicesLocator.Services.Auth`.
 | `string GetPlayerName()` | Display name in UGS profile; empty string if unset |
 | `Task<bool> SignInAsync(platform, ct)` | Signs in. Platform may be overridden by saved session. |
 | `Task<AccountLinkResult> LinkWithAccountAsync(platform, ct)` | Links anonymous → platform, or recovers into existing player if already linked |
+| `Task<bool> DeleteAccountAsync(ct)` | Permanently deletes the UGS Authentication player (App Store 5.1.1) |
 | `void Reset()` | Sign out + delete saved auth method |
 | `NameValidationError? ValidatePlayerName(name)` | Client-side only; no network. `null` = valid. |
 | `Task<NameValidationError?> SetPlayerNameAsync(name, ct)` | Validates + saves to UGS. `null` = success. |
@@ -118,6 +119,26 @@ If Game Center / Google Play is already tied to a previous UGS `PlayerId`, `Link
 4. Returns `AccountLinkResult.SignedIntoExisting`
 
 Do **not** use UGS `ForceLink` — that steals the identity onto the new anonymous account and orphans the old one.
+
+---
+
+## Delete account (App Store 5.1.1)
+
+`Reset()` only signs out. Platform links (Game Center / Google) stay on the UGS player — after reinstall, Link hits `AccountAlreadyLinked`.
+
+For a real account deletion:
+
+1. While still signed in, wipe Cloud Save / Economy / local progress in the game
+2. Call `DeleteAccountAsync` — wraps `AuthenticationService.Instance.DeleteAccountAsync()`, clears `last_auth_method`
+3. Cold-start / reload so bootstrap creates a fresh anonymous session
+
+```csharp
+await WipeGameDataWhileSignedInAsync(ct); // Cloud Save empty push, Economy zero, local prefs
+bool ok = await auth.DeleteAccountAsync(ct);
+// then reload bootstrap / SignInAsync → new anonymous player
+```
+
+`DeleteAccountAsync` does **not** wipe Cloud Save or Economy by itself.
 
 ---
 

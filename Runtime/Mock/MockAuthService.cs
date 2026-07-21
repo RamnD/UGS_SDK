@@ -80,6 +80,16 @@ public sealed class MockAuthService : IAuthService
     }
 
     /// <inheritdoc/>
+    public Task<bool> DeleteAccountAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        IsSignedIn = false;
+        _playerName = "";
+        Debug.Log("[Mock Auth] DeleteAccount — mock.");
+        return Task.FromResult(true);
+    }
+
+    /// <inheritdoc/>
     public void Reset()
     {
         IsSignedIn = false;
