@@ -22,6 +22,13 @@ public sealed class MockItemService<TItem> : IItemService<TItem>
     public bool IsOwned(TItem id) => _owned.Contains(id);
 
     /// <inheritdoc/>
+    public void ClearLocalCache()
+    {
+        _owned.Clear();
+        Debug.Log("[Mock Items] ClearLocalCache.");
+    }
+
+    /// <inheritdoc/>
     public Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

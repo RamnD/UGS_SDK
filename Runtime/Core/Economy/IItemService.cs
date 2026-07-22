@@ -17,6 +17,12 @@ public interface IItemService<TItem> where TItem : struct, Enum
     bool IsOwned(TItem id);
 
     /// <summary>
+    /// Clears the in-memory ownership cache and durable PlayerPrefs snapshot.
+    /// Use after account wipe / switch so a new player does not inherit stale ownership.
+    /// </summary>
+    void ClearLocalCache();
+
+    /// <summary>
     /// Syncs the item list with the server.
     /// If offline — loads the last cache from PlayerPrefs without throwing.
     /// </summary>

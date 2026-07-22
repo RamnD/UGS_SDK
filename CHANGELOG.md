@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.8.6] - 2026-07-22
+
+### Added
+- `IItemService.ClearLocalCache` — wipe in-memory + PlayerPrefs ownership cache (account switch / delete).
+- `UGSItemService` loads the last ownership cache from PlayerPrefs in the constructor for instant `IsOwned` reads.
+
 ## [1.8.5] - 2026-07-22
 
 ### Fixed

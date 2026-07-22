@@ -22,10 +22,20 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
     {
         _mapper  = mapper  ?? throw new ArgumentNullException(nameof(mapper));
         _economy = economy ?? throw new ArgumentNullException(nameof(economy));
+        LoadFromPrefs();
     }
 
     /// <inheritdoc/>
     public bool IsOwned(TItem id) => _ownedItems.Contains(id);
+
+    /// <inheritdoc/>
+    public void ClearLocalCache()
+    {
+        _ownedItems.Clear();
+        if (PlayerPrefs.HasKey(CachePrefsKey))
+            PlayerPrefs.DeleteKey(CachePrefsKey);
+        PlayerPrefs.Save();
+    }
 
     /// <inheritdoc/>
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
