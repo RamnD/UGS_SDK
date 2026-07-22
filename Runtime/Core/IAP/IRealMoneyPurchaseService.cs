@@ -12,6 +12,12 @@ public interface IRealMoneyPurchaseService
     bool IsInitialized { get; }
 
     /// <summary>
+    /// True after at least one successful store product fetch completed.
+    /// Product metadata may still be incomplete if the store omitted some SKUs.
+    /// </summary>
+    bool AreProductsReady { get; }
+
+    /// <summary>
     /// Initializes the purchase service and registers all product definitions with the store.
     /// Safe to call multiple times.
     /// </summary>
@@ -38,8 +44,20 @@ public interface IRealMoneyPurchaseService
     bool HasEntitlement(string entitlementId);
 
     /// <summary>
+    /// Tries to read store-localized metadata for a registered product.
+    /// Returns false when the product has not been fetched yet or metadata is missing.
+    /// </summary>
+    bool TryGetProductInfo(string productId, out RealMoneyProductInfo info);
+
+    /// <summary>
     /// Fired after a purchase has been processed successfully.
     /// Argument = product id.
     /// </summary>
     event Action<string> PurchaseSucceeded;
+
+    /// <summary>
+    /// Fired after store product metadata becomes available or is refreshed.
+    /// Use this to update buy-button price labels.
+    /// </summary>
+    event Action ProductsUpdated;
 }

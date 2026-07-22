@@ -203,9 +203,39 @@ _iap.PurchaseSucceeded += productId =>
 {
     Debug.Log($"Purchased: {productId}");
 };
+
+_iap.ProductsUpdated += () =>
+{
+    if (_iap.TryGetProductInfo("COIN_PACK_SMALL", out RealMoneyProductInfo info))
+        priceLabel.text = info.LocalizedPriceString;
+};
 ```
 
-Use this if your UI wants to react to a completed purchase without coupling to the service internals.
+Use `PurchaseSucceeded` if your UI wants to react to a completed purchase without coupling to the service internals.
+
+Use `ProductsUpdated` / `TryGetProductInfo` to fill buy-button price labels from App Store / Google Play. Keep a prefab placeholder price as fallback until `AreProductsReady` is true or when `TryGetProductInfo` returns false.
+
+---
+
+## Store product metadata (UI prices)
+
+After `InitializeAsync`, Unity IAP fetches products asynchronously. When fetch succeeds:
+
+- `AreProductsReady` becomes `true`
+- `ProductsUpdated` fires
+- `TryGetProductInfo(productId, out info)` returns localized price / title / currency
+
+```csharp
+if (_iap.TryGetProductInfo(productId, out RealMoneyProductInfo info) && info.HasLocalizedPrice)
+    buyButtonLabel.text = info.LocalizedPriceString;
+// else keep the prefab / hardcoded placeholder
+```
+
+| Field | Typical use |
+|------|-------------|
+| `LocalizedPriceString` | Buy button label (preferred) |
+| `LocalizedTitle` / `LocalizedDescription` | Optional; games usually keep their own localization |
+| `IsoCurrencyCode` / `LocalizedPrice` | Analytics / debugging |
 
 ---
 

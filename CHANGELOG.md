@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.4] - 2026-07-22
+
+### Added
+- `RealMoneyProductInfo` — store-localized product metadata for UI (price string, title, currency).
+- `IRealMoneyPurchaseService.TryGetProductInfo` / `AreProductsReady` / `ProductsUpdated` — expose Apple/Google prices after Unity IAP product fetch.
+- [docs/iap.md](docs/iap.md) section on populating buy-button labels from store metadata.
+
 ## [1.8.3] - 2026-07-21
 
 ### Changed

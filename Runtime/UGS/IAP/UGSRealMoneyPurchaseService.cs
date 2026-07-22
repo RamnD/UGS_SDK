@@ -31,10 +31,15 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     StoreController _storeController;
     bool _isInitialized;
     bool _fetchRequested;
+    bool _areProductsReady;
 
     public bool IsInitialized => _isInitialized;
 
+    public bool AreProductsReady => _areProductsReady;
+
     public event Action<string> PurchaseSucceeded;
+
+    public event Action ProductsUpdated;
 
     public UGSRealMoneyPurchaseService(
         ICloudSaveService<TKey> cloudSave,
@@ -70,6 +75,8 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         _storeController.OnPurchaseFailed += OnPurchaseFailed;
         _storeController.OnPurchasesFetched += OnPurchasesFetched;
         _storeController.OnPurchasesFetchFailed += OnPurchasesFetchFailed;
+        _storeController.OnProductsFetched += OnProductsFetched;
+        _storeController.OnProductsFetchFailed += OnProductsFetchFailed;
 
         await _storeController.Connect();
         FetchProducts();
@@ -133,6 +140,34 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     public bool HasEntitlement(string entitlementId) =>
         _entitlements.Has(entitlementId);
 
+    public bool TryGetProductInfo(string productId, out RealMoneyProductInfo info)
+    {
+        info = null;
+        if (!_isInitialized || _storeController == null || string.IsNullOrWhiteSpace(productId))
+            return false;
+
+        Product product = _storeController
+            .GetProducts()
+            .FirstOrDefault(candidate => candidate.definition.id == productId);
+        if (product?.metadata == null)
+            return false;
+
+        ProductMetadata metadata = product.metadata;
+        if (string.IsNullOrWhiteSpace(metadata.localizedPriceString))
+            return false;
+
+        info = new RealMoneyProductInfo
+        {
+            ProductId = productId,
+            LocalizedPriceString = metadata.localizedPriceString,
+            LocalizedTitle = metadata.localizedTitle ?? string.Empty,
+            LocalizedDescription = metadata.localizedDescription ?? string.Empty,
+            IsoCurrencyCode = metadata.isoCurrencyCode ?? string.Empty,
+            LocalizedPrice = metadata.localizedPrice,
+        };
+        return true;
+    }
+
     void FetchProducts()
     {
         if (_fetchRequested)
@@ -143,6 +178,21 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             _productsById.Values
                 .Select(product => new ProductDefinition(product.ProductId, product.ProductType))
                 .ToList());
+    }
+
+    void OnProductsFetched(List<Product> products)
+    {
+        _areProductsReady = true;
+        int count = products?.Count ?? 0;
+        Debug.Log($"[SDK][IAP] Products fetched: {count}.");
+        ProductsUpdated?.Invoke();
+    }
+
+    void OnProductsFetchFailed(ProductFetchFailed failure)
+    {
+        Debug.LogWarning(
+            $"[SDK][IAP] Products fetch failed: {failure?.FailureReason}; " +
+            $"failedCount={failure?.FailedFetchProducts?.Count ?? 0}");
     }
 
     void OnPurchasePending(PendingOrder order)
