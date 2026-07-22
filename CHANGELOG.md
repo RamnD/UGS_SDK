@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.8.5] - 2026-07-22
+
+### Fixed
+- IAP: separate Economy `ProductId` from store SKU via optional `StoreProductId` on `RealMoneyProductDefinition`.
+- Unity IAP fetch/purchase/restore use the store SKU; Economy redeem uses the Economy Real Money Purchase id.
+- Fixes Apple/Google catalogs when store ids differ in case/format from Economy ids (e.g. `ad_block_forever` vs `AD_BLOCK_FOREVER`).
+
+### Changed
+- [docs/iap.md](docs/iap.md) documents `StoreProductId` and the Economy vs store id split.
+
 ## [1.8.4] - 2026-07-22
 
 ### Added

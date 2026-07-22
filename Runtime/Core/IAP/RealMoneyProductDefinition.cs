@@ -3,19 +3,30 @@ using UnityEngine.Purchasing;
 
 /// <summary>
 /// Cross-project product description used by the portable real-money purchase service.
-/// Product IDs must match both the store configuration and the Economy Real Money Purchase ID.
+/// <see cref="ProductId"/> is the Economy Real Money Purchase id (uppercase).
+/// <see cref="StoreProductId"/> is the Apple/Google store SKU (may differ in case/format).
 /// </summary>
 [Serializable]
 public sealed class RealMoneyProductDefinition
 {
-    /// <summary>Store product id / Economy real money purchase id.</summary>
+    /// <summary>Economy real money purchase id (also the game-facing purchase key).</summary>
     public string ProductId;
+
+    /// <summary>
+    /// Apple App Store / Google Play product id used by Unity IAP.
+    /// When empty, <see cref="ProductId"/> is used (backward compatible).
+    /// </summary>
+    public string StoreProductId;
+
+    /// <summary>Resolved store SKU for Unity IAP fetch / purchase / restore.</summary>
+    public string ResolvedStoreProductId =>
+        string.IsNullOrWhiteSpace(StoreProductId) ? ProductId : StoreProductId;
 
     /// <summary>Unity IAP product type.</summary>
     public ProductType ProductType;
 
     /// <summary>
-    /// If true, successful purchases are redeemed through Economy using the product id as purchase id.
+    /// If true, successful purchases are redeemed through Economy using <see cref="ProductId"/>.
     /// </summary>
     public bool RedeemWithEconomy = true;
 

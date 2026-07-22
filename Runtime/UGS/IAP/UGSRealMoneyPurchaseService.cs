@@ -9,7 +9,8 @@ using UnityEngine.Purchasing;
 
 /// <summary>
 /// Unity IAP + UGS Economy bridge for portable real-money purchases.
-/// Uses the configured product id as the Economy real-money purchase id.
+/// Unity IAP uses <see cref="RealMoneyProductDefinition.ResolvedStoreProductId"/>;
+/// Economy redeem uses <see cref="RealMoneyProductDefinition.ProductId"/>.
 /// </summary>
 public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPurchaseService
     where TKey : struct, Enum
@@ -27,6 +28,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     readonly CloudSaveEntitlementStore<TKey> _entitlements;
     readonly Dictionary<string, TaskCompletionSource<bool>> _purchaseRequests = new(StringComparer.Ordinal);
     readonly Dictionary<string, RealMoneyProductDefinition> _productsById = new(StringComparer.Ordinal);
+    readonly Dictionary<string, RealMoneyProductDefinition> _productsByStoreId = new(StringComparer.Ordinal);
 
     StoreController _storeController;
     bool _isInitialized;
@@ -66,7 +68,20 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             if (product == null || string.IsNullOrWhiteSpace(product.ProductId))
                 throw new ArgumentException("Each real-money product must have a non-empty ProductId.", nameof(products));
 
+            string storeId = product.ResolvedStoreProductId;
+            if (string.IsNullOrWhiteSpace(storeId))
+                throw new ArgumentException($"Product '{product.ProductId}' has an empty store product id.", nameof(products));
+
+            if (_productsByStoreId.ContainsKey(storeId) &&
+                !string.Equals(_productsByStoreId[storeId].ProductId, product.ProductId, StringComparison.Ordinal))
+            {
+                throw new ArgumentException(
+                    $"Store product id '{storeId}' is registered for more than one Economy product.",
+                    nameof(products));
+            }
+
             _productsById[product.ProductId] = product;
+            _productsByStoreId[storeId] = product;
         }
 
         _storeController = UnityIAPServices.StoreController();
@@ -92,7 +107,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         if (!_isInitialized || _storeController == null)
             throw new InvalidOperationException("InitializeAsync must complete before PurchaseAsync.");
 
-        if (!_productsById.ContainsKey(productId))
+        if (!_productsById.TryGetValue(productId, out RealMoneyProductDefinition definition))
             throw new InvalidOperationException($"Product '{productId}' is not registered in this purchase service.");
 
         if (_purchaseRequests.ContainsKey(productId))
@@ -101,12 +116,12 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             return false;
         }
 
-        Product product = _storeController
-            .GetProducts()
-            .FirstOrDefault(candidate => candidate.definition.id == productId);
+        string storeId = definition.ResolvedStoreProductId;
+        Product product = FindStoreProduct(storeId);
         if (product == null)
         {
-            Debug.LogWarning($"[SDK][IAP] Product '{productId}' not fetched from the store.");
+            Debug.LogWarning(
+                $"[SDK][IAP] Product '{productId}' (store id '{storeId}') not fetched from the store.");
             return false;
         }
 
@@ -146,9 +161,10 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         if (!_isInitialized || _storeController == null || string.IsNullOrWhiteSpace(productId))
             return false;
 
-        Product product = _storeController
-            .GetProducts()
-            .FirstOrDefault(candidate => candidate.definition.id == productId);
+        if (!_productsById.TryGetValue(productId, out RealMoneyProductDefinition definition))
+            return false;
+
+        Product product = FindStoreProduct(definition.ResolvedStoreProductId);
         if (product?.metadata == null)
             return false;
 
@@ -176,7 +192,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         _fetchRequested = true;
         _storeController.FetchProducts(
             _productsById.Values
-                .Select(product => new ProductDefinition(product.ProductId, product.ProductType))
+                .Select(product => new ProductDefinition(product.ResolvedStoreProductId, product.ProductType))
                 .ToList());
     }
 
@@ -203,25 +219,25 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     async Task HandlePurchasePendingAsync(PendingOrder order)
     {
         Product product = order?.CartOrdered?.Items().FirstOrDefault()?.Product;
-        string productId = product?.definition?.id;
-        if (product == null || string.IsNullOrWhiteSpace(productId))
+        string storeId = product?.definition?.id;
+        if (product == null || string.IsNullOrWhiteSpace(storeId))
         {
             Debug.LogWarning("[SDK][IAP] Pending order has no product; cannot process.");
             return;
         }
 
-        if (!_productsById.TryGetValue(productId, out RealMoneyProductDefinition definition))
+        if (!TryResolveDefinition(storeId, out RealMoneyProductDefinition definition))
         {
-            Debug.LogWarning($"[SDK][IAP] Pending order contains unknown product '{productId}'.");
-            CompletePurchaseRequest(productId, false);
+            Debug.LogWarning($"[SDK][IAP] Pending order contains unknown store product '{storeId}'.");
             return;
         }
 
+        string productId = definition.ProductId;
         try
         {
             if (definition.RedeemWithEconomy)
             {
-                bool redeemed = await RedeemEconomyPurchaseAsync(product);
+                bool redeemed = await RedeemEconomyPurchaseAsync(product, definition);
                 if (!redeemed)
                 {
                     CompletePurchaseRequest(productId, false);
@@ -241,13 +257,14 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         }
     }
 
-    async Task<bool> RedeemEconomyPurchaseAsync(Product product)
+    async Task<bool> RedeemEconomyPurchaseAsync(Product product, RealMoneyProductDefinition definition)
     {
-        string productId = product.definition.id;
+        string economyPurchaseId = definition.ProductId;
+        string storeId = definition.ResolvedStoreProductId;
         string receipt = product.receipt;
         if (string.IsNullOrWhiteSpace(receipt))
         {
-            Debug.LogWarning($"[SDK][IAP] Product '{productId}' has no receipt.");
+            Debug.LogWarning($"[SDK][IAP] Product '{economyPurchaseId}' (store id '{storeId}') has no receipt.");
             return false;
         }
 
@@ -259,7 +276,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             UnifiedReceipt unifiedReceipt = JsonUtility.FromJson<UnifiedReceipt>(receipt);
             if (unifiedReceipt == null || string.IsNullOrWhiteSpace(unifiedReceipt.Payload))
             {
-                Debug.LogWarning($"[SDK][IAP] Unified receipt payload missing for '{productId}'.");
+                Debug.LogWarning($"[SDK][IAP] Unified receipt payload missing for '{economyPurchaseId}'.");
                 return false;
             }
 
@@ -270,12 +287,12 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                     string.IsNullOrWhiteSpace(googleReceipt.json) ||
                     string.IsNullOrWhiteSpace(googleReceipt.signature))
                 {
-                    Debug.LogWarning($"[SDK][IAP] Invalid Google receipt payload for '{productId}'.");
+                    Debug.LogWarning($"[SDK][IAP] Invalid Google receipt payload for '{economyPurchaseId}'.");
                     return false;
                 }
 
                 var args = new RedeemGooglePlayStorePurchaseArgs(
-                    productId,
+                    economyPurchaseId,
                     googleReceipt.json,
                     googleReceipt.signature,
                     localCost,
@@ -285,7 +302,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             else
             {
                 var args = new RedeemAppleAppStorePurchaseArgs(
-                    productId,
+                    economyPurchaseId,
                     unifiedReceipt.Payload,
                     localCost,
                     localCurrency);
@@ -295,17 +312,17 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             if (_economy != null)
                 await _economy.RefreshBalancesAsync();
 
-            Debug.Log($"[SDK][IAP] Economy redeem succeeded for '{productId}'.");
+            Debug.Log($"[SDK][IAP] Economy redeem succeeded for '{economyPurchaseId}'.");
             return true;
         }
         catch (EconomyException ex)
         {
-            Debug.LogError($"[SDK][IAP] Economy redeem failed for '{productId}': {ex}");
+            Debug.LogError($"[SDK][IAP] Economy redeem failed for '{economyPurchaseId}': {ex}");
             return false;
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[SDK][IAP] Unexpected redeem failure for '{productId}': {ex}");
+            Debug.LogError($"[SDK][IAP] Unexpected redeem failure for '{economyPurchaseId}': {ex}");
             return false;
         }
     }
@@ -320,9 +337,13 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     void OnPurchaseFailed(FailedOrder order)
     {
         Product product = order?.CartOrdered?.Items().FirstOrDefault()?.Product;
-        string productId = product?.definition?.id ?? "unknown";
+        string storeId = product?.definition?.id ?? "unknown";
+        string productId = TryResolveDefinition(storeId, out RealMoneyProductDefinition definition)
+            ? definition.ProductId
+            : storeId;
         Debug.LogWarning(
-            $"[SDK][IAP] Purchase failed: {productId}; reason={order?.FailureReason}; details={order?.Details}");
+            $"[SDK][IAP] Purchase failed: {productId}; storeId={storeId}; " +
+            $"reason={order?.FailureReason}; details={order?.Details}");
         CompletePurchaseRequest(productId, false);
     }
 
@@ -336,9 +357,10 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             if (!definition.RestoreEntitlementsFromExistingPurchases)
                 continue;
 
+            string storeId = definition.ResolvedStoreProductId;
             bool foundExistingPurchase =
-                orders.ConfirmedOrders.Any(order => ContainsProduct(order, definition.ProductId))
-                || orders.PendingOrders.Any(order => ContainsProduct(order, definition.ProductId));
+                orders.ConfirmedOrders.Any(order => ContainsProduct(order, storeId))
+                || orders.PendingOrders.Any(order => ContainsProduct(order, storeId));
 
             if (!foundExistingPurchase)
                 continue;
@@ -354,6 +376,18 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         Debug.LogWarning($"[SDK][IAP] Existing purchases fetch failed: {failure?.Message}");
     }
 
+    Product FindStoreProduct(string storeId) =>
+        _storeController
+            .GetProducts()
+            .FirstOrDefault(candidate => candidate.definition.id == storeId);
+
+    bool TryResolveDefinition(string storeOrEconomyId, out RealMoneyProductDefinition definition)
+    {
+        if (_productsByStoreId.TryGetValue(storeOrEconomyId, out definition))
+            return true;
+        return _productsById.TryGetValue(storeOrEconomyId, out definition);
+    }
+
     void CompletePurchaseRequest(string productId, bool success)
     {
         if (string.IsNullOrWhiteSpace(productId))
@@ -366,8 +400,8 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         }
     }
 
-    static bool ContainsProduct(Order order, string productId) =>
-        order?.CartOrdered?.Items().Any(item => item.Product?.definition?.id == productId) == true;
+    static bool ContainsProduct(Order order, string storeProductId) =>
+        order?.CartOrdered?.Items().Any(item => item.Product?.definition?.id == storeProductId) == true;
 
     static int ToMinorUnits(Product product)
     {

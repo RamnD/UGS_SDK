@@ -75,19 +75,22 @@ RealMoneyProductDefinition[] products =
 {
     new RealMoneyProductDefinition
     {
-        ProductId = "COIN_PACK_SMALL",
+        ProductId = "COIN_PACK_SMALL",          // Economy Real Money Purchase id
+        StoreProductId = "coin_pack_small",     // App Store / Play SKU
         ProductType = ProductType.Consumable,
         RedeemWithEconomy = true,
     },
     new RealMoneyProductDefinition
     {
         ProductId = "BUNDLE_STAGE_0",
+        StoreProductId = "bundle_stage_0",
         ProductType = ProductType.Consumable,
         RedeemWithEconomy = true,
     },
     new RealMoneyProductDefinition
     {
         ProductId = "AD_BLOCK_FOREVER",
+        StoreProductId = "ad_block_forever",
         ProductType = ProductType.NonConsumable,
         RedeemWithEconomy = true,               // validates via Economy
         GrantedEntitlementIds = new[] { "no_ads" },
@@ -96,13 +99,16 @@ RealMoneyProductDefinition[] products =
 };
 ```
 
+Economy Resource IDs are uppercase (`A-Z0-9_`). Apple/Google store product ids are configured separately on the Economy Real Money Purchase (`storeIdentifiers`) and may use a different case/format. Unity IAP must fetch/purchase with the **store** SKU; redeem uses the **Economy** id.
+
 ### Definition fields
 
 | Field | Purpose |
 |------|---------|
-| `ProductId` | Store product id and Economy real-money purchase id |
+| `ProductId` | Economy real-money purchase id (game-facing key for `PurchaseAsync`) |
+| `StoreProductId` | Apple/Google SKU for Unity IAP; when empty, falls back to `ProductId` |
 | `ProductType` | Unity IAP product type |
-| `RedeemWithEconomy` | If true, submit the receipt to UGS Economy |
+| `RedeemWithEconomy` | If true, submit the receipt to UGS Economy using `ProductId` |
 | `GrantedEntitlementIds` | Local entitlements to persist after success |
 | `RestoreEntitlementsFromExistingPurchases` | Re-grant entitlements on restore / purchases fetch |
 
@@ -241,7 +247,8 @@ if (_iap.TryGetProductInfo(productId, out RealMoneyProductInfo info) && info.Has
 
 ## Important constraints
 
-- `ProductId` must match the Economy `Real Money Purchase` id.
+- `ProductId` must match the Economy `Real Money Purchase` id (uppercase).
+- `StoreProductId` must match the Apple/Google product id configured on that Economy purchase (`storeIdentifiers`) and in the store consoles.
 - Rewards are **not** hardcoded in the SDK. Economy Dashboard remains the source of truth.
 - The service assumes Unity IAP + Economy redeem, not a custom backend.
 - Entitlements are a separate concept from Economy rewards; use them for things like `no_ads`.
