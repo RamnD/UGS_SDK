@@ -4,7 +4,7 @@
 |---|---|
 | **Found** | 2026-07-24 |
 | **Affects** | 1.8.6 |
-| **Status** | in-progress — Stage 1 fixed in **1.8.7** (C1, C3, H3, H6/H7); remaining items open on 1.8.x |
+| **Status** | in-progress — Stage 1 **1.8.7**, Stage 2 **1.8.8**; remaining items open on 1.8.x |
 | **Severity** | Critical + High batch (see table below) |
 | **Branch** | main |
 | **Scope** | 77 `.cs` files, ~4700 lines UGS; Auth, IAP, Economy, CloudSave, Items, Analytics, Ads, RemoteConfig, Leaderboard, Achievements |
@@ -16,16 +16,17 @@ Hotfixes for items below ship as **patch** releases (`1.8.7+`). Product epics (C
 | ID | Title | Target patch | Status |
 |----|-------|--------------|--------|
 | C1 | Achievements wipe on failed load | 1.8.7 | **fixed-in 1.8.7** |
-| C2 | Economy double flush / no single-flight | 1.8.x | open |
+| C2 | Economy double flush / no single-flight | 1.8.8 | **fixed-in 1.8.8** |
 | C3 | Auth DeleteAccount on AlreadyLinked | 1.8.7 | **fixed-in 1.8.7** (empty→Delete, else SignOut) |
-| H1 | No client idempotency on balance ops | 1.8.x (client queue states); full idempotency → [ROADMAP 1.9.0](../ROADMAP.md) | open |
+| H1 | No client idempotency on balance ops | 1.8.8 (in_flight states); full idempotency → [ROADMAP 1.9.0](../ROADMAP.md) | partial — server dedupe still 1.9.0 |
 | H2 | Entitlements from PendingOrders | 1.8.x | open |
 | H3 | Items cancel-after-grant refund exploit | 1.8.7 | **fixed-in 1.8.7** |
 | H4 | Offline consumable grant lost on refresh | 1.8.x | open |
 | H5 | CloudSave ±1s version match | 1.8.x | open |
 | H6 | Ads overlapping shows lose callbacks | 1.8.7 | **fixed-in 1.8.7** |
 | H7 | Ads close-before-reward fails grant | 1.8.7 | **fixed-in 1.8.7** |
-| H8 | Enqueue during flush dropped | 1.8.x | open |
+| H8 | Enqueue during flush dropped | 1.8.8 | **fixed-in 1.8.8** |
+| M4 | Error classification by substring | 1.8.8 | **fixed-in 1.8.8** |
 | M* / L* | Medium / Low batch | 1.8.x or later patches | open |
 
 ---
@@ -246,8 +247,8 @@ Hotfixes for items below ship as **patch** releases (`1.8.7+`). Product epics (C
 
 **1.8.x hotfix stream** (this report):
 
-1. **C1, C3, H3, H6/H7** — начать сейчас (потеря данных / эксплойт / дабл-реклама).
-2. **C2 + H8 + M4** — single-flight и безопасный persist Economy-очереди (+ клиентские tx states для H1).
+1. ~~**C1, C3, H3, H6/H7**~~ → **1.8.7**
+2. ~~**C2 + H8 + M4**~~ → **1.8.8** (queue in_flight; full server idempotency → 1.9.0)
 3. **H4, H5, H2** — consumable pending, CloudSave exact version, ConfirmedOrders-only restore.
 4. **M2 и прочий M/L** — точечные патчи по мере.
 

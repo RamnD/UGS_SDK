@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.8.8] - 2026-07-24
+
+### Fixed
+- **Economy (C2/H8):** single-flight `RefreshBalancesAsync` / pending `FlushAsync`; enqueue and flush serialize with re-read-before-persist so mid-flush credits are not dropped.
+- **Economy queue:** durable row `id` + `pending → in_flight` status (persist in-flight before UGS call; remove on success; revert on recoverable failure).
+- **Economy (M4):** `EconomyErrorClassifier` uses typed `EconomyExceptionReason` (no `"http 5"` substring matching).
+
+### Changed
+- [docs/economy.md](docs/economy.md) documents queue lifecycle and single-flight behaviour.
+
 ## [1.8.7] - 2026-07-24
 
 ### Fixed

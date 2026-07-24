@@ -17,6 +17,8 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
     readonly ICurrencyMapper<TCurrency> _mapper;
     readonly BalanceCache<TCurrency> _cache;
     readonly PendingTransactionQueue<TCurrency> _pendingQueue;
+    readonly object _refreshGate = new object();
+    Task _refreshTask;
 
     public UGSEconomyService(ICurrencyMapper<TCurrency> mapper)
     {
@@ -31,6 +33,35 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
 
     /// <inheritdoc/>
     public async Task RefreshBalancesAsync(CancellationToken cancellationToken = default)
+    {
+        Task refresh;
+        lock (_refreshGate)
+        {
+            if (_refreshTask != null && !_refreshTask.IsCompleted)
+                refresh = _refreshTask;
+            else
+            {
+                refresh = RefreshCoreAsync(cancellationToken);
+                _refreshTask = refresh;
+            }
+        }
+
+        try
+        {
+            await refresh;
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        finally
+        {
+            lock (_refreshGate)
+            {
+                if (ReferenceEquals(_refreshTask, refresh) && refresh.IsCompleted)
+                    _refreshTask = null;
+            }
+        }
+    }
+
+    async Task RefreshCoreAsync(CancellationToken cancellationToken)
     {
         if (!NetworkStatus.IsOnline)
         {

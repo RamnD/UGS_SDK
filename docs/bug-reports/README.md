@@ -29,4 +29,4 @@ Update **Status** when a fix lands in CHANGELOG; keep the original **Found** dat
 
 | Found | Report | Affects | Status |
 |-------|--------|---------|--------|
-| 2026-07-24 | [Security & correctness review](./2026-07-24-security-correctness-review.md) | 1.8.6 | in-progress (Stage 1 → **1.8.7**) |
+| 2026-07-24 | [Security & correctness review](./2026-07-24-security-correctness-review.md) | 1.8.6 | in-progress (Stage 2 → **1.8.8**) |

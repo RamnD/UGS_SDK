@@ -120,16 +120,24 @@ if (!spent)
 | PlayerPrefs key | Purpose |
 |-----------------|----------|
 | `economy_cached_balances` | Last known balances (UI + offline boot) |
-| `economy_pending_tx` | Coalesced signed deltas waiting for upload |
+| `economy_pending_tx` | Signed deltas waiting for upload (`id`, `amount`, `status`) |
 
 Legacy key `economy_pending_adds` is migrated automatically on first load.
+
+### Queue row lifecycle
+
+`pending` → mark `in_flight` + persist **before** the UGS call → remove on success → revert to `pending` on recoverable failure / cancel.
+
+`RefreshBalancesAsync` and `FlushAsync` are **single-flight** (concurrent callers await the same run). Enqueue always re-reads disk under a lock so mid-flush credits are not overwritten.
+
+Full at-most-once server dedupe requires Cloud Code — see [ROADMAP 1.9.0](./ROADMAP.md).
 
 ### When deltas are queued
 
 1. Device is offline (`NetworkStatus.IsOnline == false`) and the mapper allows the operation.
-2. Device looks online, but the UGS call fails with a **recoverable** transport error (timeout, connection, 5xx-style messages) and the mapper allows the operation.
+2. Device looks online, but the UGS call fails with a **recoverable** typed error (`EconomyExceptionReason` network / timeout / 502–504 / rate limit / 500, or `TimeoutException` / socket / `HttpRequestException`) and the mapper allows the operation.
 
-Queued amounts for the same currency are **coalesced** into one net delta (`+5` then `-2` → `+3`).
+Queued **pending** amounts for the same currency are **coalesced** into one net delta (`+5` then `-2` → `+3`). In-flight rows are not coalesced into; a new pending row is added beside them.
 
 ### When the queue flushes
 
