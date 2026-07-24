@@ -28,6 +28,7 @@ public interface IRealMoneyPurchaseService
     /// <summary>
     /// Starts a purchase flow for a configured product.
     /// Returns true when the purchase has been processed successfully.
+    /// Rejects with false if another purchase is already in flight (single-flight).
     /// </summary>
     Task<bool> PurchaseAsync(
         string productId,
@@ -35,8 +36,9 @@ public interface IRealMoneyPurchaseService
 
     /// <summary>
     /// True when the most recent <see cref="PurchaseAsync"/> returned false because the
-    /// player cancelled the store sheet. False after success or a real failure.
-    /// Platforms that do not distinguish cancel may leave this false.
+    /// player cancelled the store sheet. False after success, a real failure, busy reject,
+    /// or when the platform does not distinguish cancel.
+    /// Valid to read immediately after <see cref="PurchaseAsync"/> returns false.
     /// </summary>
     bool LastPurchaseWasUserCancelled { get; }
 

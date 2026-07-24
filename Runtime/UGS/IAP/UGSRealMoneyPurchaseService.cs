@@ -115,9 +115,12 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         if (!_productsById.TryGetValue(productId, out RealMoneyProductDefinition definition))
             throw new InvalidOperationException($"Product '{productId}' is not registered in this purchase service.");
 
-        if (_purchaseRequests.ContainsKey(productId))
+        // Single-flight: overlapping purchases would race LastPurchaseWasUserCancelled
+        // and leave orphan store sheets / TCS entries.
+        if (_purchaseRequests.Count > 0)
         {
-            Debug.LogWarning($"[SDK][IAP] Purchase already pending for '{productId}'.");
+            Debug.LogWarning(
+                $"[SDK][IAP] Purchase rejected for '{productId}' — another purchase is already in flight.");
             return false;
         }
 
@@ -373,7 +376,13 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             : storeId;
         bool userCancelled = order != null
             && order.FailureReason == PurchaseFailureReason.UserCancelled;
-        _lastPurchaseWasUserCancelled = userCancelled;
+
+        // Only attribute cancel/failure to LastPurchaseWasUserCancelled when this failure
+        // still owns an in-flight PurchaseAsync (ignore late callbacks after token cancel).
+        bool hadRequest = !string.IsNullOrWhiteSpace(productId)
+            && _purchaseRequests.ContainsKey(productId);
+        if (hadRequest)
+            _lastPurchaseWasUserCancelled = userCancelled;
 
         if (userCancelled)
             Debug.Log($"[SDK][IAP] Purchase cancelled by user: {productId}; storeId={storeId}");

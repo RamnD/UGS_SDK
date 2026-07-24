@@ -222,6 +222,30 @@ Use `PurchaseSucceeded` if your UI wants to react to a completed purchase withou
 
 Use `ProductsUpdated` / `TryGetProductInfo` to fill buy-button price labels from App Store / Google Play. Keep a prefab placeholder price as fallback until `AreProductsReady` is true or when `TryGetProductInfo` returns false.
 
+### User cancel vs real failure
+
+`PurchaseAsync` returns `false` for both store cancel and real failures. After it returns, check:
+
+```csharp
+bool ok = await _iap.PurchaseAsync(productId);
+if (ok)
+    return;
+
+if (_iap.LastPurchaseWasUserCancelled)
+{
+    // Store sheet dismissed — skip error UI / ServiceFault.
+    return;
+}
+
+// Real failure — show error.
+```
+
+Notes:
+- Flag is reset at the start of each `PurchaseAsync`.
+- Only set when the failure still belongs to that in-flight request (`PurchaseFailureReason.UserCancelled`).
+- Platforms that do not distinguish cancel leave the flag `false` (treat as failure).
+- Purchases are **single-flight**: a second `PurchaseAsync` while one is open returns `false` immediately (flag stays `false`).
+
 ---
 
 ## Store product metadata (UI prices)

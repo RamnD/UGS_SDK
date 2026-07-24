@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.1] - 2026-07-24
+
+### Fixed
+- **IAP:** `PurchaseAsync` is single-flight (reject while any purchase is in flight) so `LastPurchaseWasUserCancelled` cannot race across overlapping products.
+- **IAP:** set `LastPurchaseWasUserCancelled` only when completing an in-flight `PurchaseAsync` (ignore late store callbacks after token cancel).
+
+### Changed
+- [docs/iap.md](docs/iap.md) documents cancel-vs-failure and single-flight purchase behaviour.
+- Changelog hygiene: `LastPurchaseWasUserCancelled` listed under **1.8.9** (where the code shipped), not 1.8.8.
+
 ## [1.9.0] - 2026-07-24
 
 ### Changed
@@ -41,6 +51,9 @@
 - **IAP (H2):** restore entitlements only from `ConfirmedOrders` (ignore pending deferred payments).
 - **Items/Consumables (M8):** PlayerPrefs cache keys namespaced by `typeof(TItem).Name` (with legacy migration).
 
+### Added
+- **IAP:** `IRealMoneyPurchaseService.LastPurchaseWasUserCancelled` so games can skip error UI on store-sheet cancel.
+
 ### Changed
 - [docs/cloud-save.md](docs/cloud-save.md), [docs/iap.md](docs/iap.md) updated for exact versioning and confirmed-order restore.
 
@@ -50,9 +63,6 @@
 - **Economy (C2/H8):** single-flight `RefreshBalancesAsync` / pending `FlushAsync`; enqueue and flush serialize with re-read-before-persist so mid-flush credits are not dropped.
 - **Economy queue:** durable row `id` + `pending → in_flight` status (persist in-flight before UGS call; remove on success; revert on recoverable failure).
 - **Economy (M4):** `EconomyErrorClassifier` uses typed `EconomyExceptionReason` (no `"http 5"` substring matching).
-
-### Added
-- **IAP:** `IRealMoneyPurchaseService.LastPurchaseWasUserCancelled` so games can skip error UI on store-sheet cancel.
 
 ### Changed
 - [docs/economy.md](docs/economy.md) documents queue lifecycle and single-flight behaviour.
