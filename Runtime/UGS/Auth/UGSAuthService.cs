@@ -28,9 +28,19 @@ using GooglePlayGames.BasicApi;
 public class UGSAuthService : IAuthService
 {
     private const string LastAuthMethodKey = "last_auth_method";
+    private const int RecoverEmptyCheckTimeoutMs = 8000;
 
     private readonly NameValidatorConfig            _validatorConfig;
     private readonly GameServicesAuthProviderConfig _providerConfig;
+
+#if UNITY_ANDROID
+    /// <summary>GPGS auth code from the Link attempt — reused for recover SignIn (avoid second native prompt).</summary>
+    string _recoverGoogleAuthCode;
+#endif
+#if UNITY_IOS
+    string _recoverAppleIdentityToken;
+    AppleGameCenterCredentials _recoverGameCenterCredentials;
+#endif
 
     /// <param name="config">
     /// Profanity-filter configuration. Passed from <see cref="UGSServicesBuilder"/>.
@@ -282,26 +292,41 @@ public class UGSAuthService : IAuthService
             }
 
             SaveLastMethod(platform);
+            ClearRecoverCredentials();
             Debug.Log($"[Auth] Account linked: {platform}. PlayerId={GetPlayerId()}");
             return AccountLinkResult.Linked;
         }
         catch (OperationCanceledException)
         {
+            ClearRecoverCredentials();
             Debug.LogWarning("[Auth] Account link cancelled.");
             return AccountLinkResult.Cancelled;
         }
         catch (AuthenticationException e) when (e.ErrorCode == AuthenticationErrorCodes.AccountAlreadyLinked)
         {
+            // Unity AuthenticationExceptionHandler already logged the 409 stack — that is expected.
             Debug.LogWarning(
                 $"[Auth] External ID already linked to another player ({platform}) — " +
-                "leaving current session (delete only if empty) and signing into existing account.");
+                "recover: leave current session then SignIn existing (not ForceLink).");
             return await SignIntoExistingAfterAlreadyLinkedAsync(platform, cancellationToken);
         }
         catch (Exception e)
         {
+            ClearRecoverCredentials();
             Debug.LogError($"[Auth] Account link failed ({platform}): {e.Message}");
             return AccountLinkResult.Failed;
         }
+    }
+
+    void ClearRecoverCredentials()
+    {
+#if UNITY_ANDROID
+        _recoverGoogleAuthCode = null;
+#endif
+#if UNITY_IOS
+        _recoverAppleIdentityToken = null;
+        _recoverGameCenterCredentials = null;
+#endif
     }
 
     /// <summary>
@@ -322,54 +347,89 @@ public class UGSAuthService : IAuthService
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Debug.Log($"[Auth] Recover begin ({platform}). IsSignedIn={IsSignedIn} PlayerId={GetPlayerId()}");
 
             if (IsSignedIn)
             {
                 await LeaveCurrentSessionForRecoverAsync(cancellationToken);
                 PlayerPrefs.DeleteKey(LastAuthMethodKey);
                 PlayerPrefs.Save();
+                Debug.Log($"[Auth] Recover session left. IsSignedIn={IsSignedIn}");
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            Debug.Log($"[Auth] Recover SignInWith {platform}…");
             await SignInWithMethodAsync(platform, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
             if (!IsSignedIn)
             {
+                ClearRecoverCredentials();
                 Debug.LogError($"[Auth] Recover SignIn failed — still not signed in ({platform}).");
+                await EnsureAnonymousFallbackAsync(cancellationToken);
                 return AccountLinkResult.Failed;
             }
 
             SaveLastMethod(platform);
+            ClearRecoverCredentials();
             Debug.Log(
                 $"[Auth] Signed into existing account via {platform}. PlayerId={GetPlayerId()}");
             return AccountLinkResult.SignedIntoExisting;
         }
         catch (OperationCanceledException)
         {
+            ClearRecoverCredentials();
             Debug.LogWarning("[Auth] Recover SignIn cancelled.");
+            await EnsureAnonymousFallbackAsync(CancellationToken.None);
             return AccountLinkResult.Cancelled;
         }
         catch (Exception e)
         {
+            ClearRecoverCredentials();
             Debug.LogError($"[Auth] Recover SignIn failed ({platform}): {e.Message}");
+            await EnsureAnonymousFallbackAsync(cancellationToken);
             return AccountLinkResult.Failed;
         }
     }
 
     /// <summary>
+    /// After recover SignOut, platform SignIn may fail (offline / expired GC signature).
+    /// Always try to restore an anonymous session so the game is not stuck NotReady forever.
+    /// </summary>
+    async Task EnsureAnonymousFallbackAsync(CancellationToken cancellationToken)
+    {
+        if (IsSignedIn)
+            return;
+
+        try
+        {
+            Debug.LogWarning("[Auth] Restoring anonymous session after failed recover…");
+            bool ok = await SignInAsync(AuthPlatform.Anonymous, cancellationToken);
+            Debug.Log(
+                ok && IsSignedIn
+                    ? $"[Auth] Anonymous fallback OK. PlayerId={GetPlayerId()}"
+                    : "[Auth] Anonymous fallback failed — still signed out.");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[Auth] Anonymous fallback failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Deletes only when Cloud Save looks empty; otherwise SignOut so non-empty anonymous progress is not wiped.
-    /// Fail-safe on network/check errors: SignOut (never Delete).
+    /// Fail-safe on network/check errors / timeout: SignOut (never Delete).
     /// </summary>
     private async Task LeaveCurrentSessionForRecoverAsync(CancellationToken cancellationToken)
     {
         string orphanId = GetPlayerId();
-        bool deleteOrphan = await IsCurrentPlayerEffectivelyEmptyAsync(cancellationToken);
+        bool deleteOrphan = await TryIsCurrentPlayerEffectivelyEmptyAsync(cancellationToken);
 
         if (deleteOrphan)
         {
             try
             {
+                Debug.Log($"[Auth] Recover: deleting empty anonymous PlayerId={orphanId}…");
                 await AuthenticationService.Instance.DeleteAccountAsync();
                 Debug.Log($"[Auth] Deleted empty anonymous PlayerId={orphanId} before recover SignIn.");
                 return;
@@ -383,12 +443,38 @@ public class UGSAuthService : IAuthService
         else
         {
             Debug.Log(
-                $"[Auth] Signed out non-empty anonymous PlayerId={orphanId} before recover " +
+                $"[Auth] Recover: SignOut non-empty/unverifiable anonymous PlayerId={orphanId} " +
                 "(server data preserved; cannot delete after switch).");
         }
 
         if (IsSignedIn)
+        {
             AuthenticationService.Instance.SignOut(clearCredentials: true);
+            Debug.Log("[Auth] Recover: SignOut(clearCredentials: true) done.");
+        }
+    }
+
+    /// <summary>
+    /// Empty-check with a hard timeout so recover cannot stall before SignOut
+    /// (Cloud Save / Economy LoadAll can hang on flaky networks).
+    /// </summary>
+    private static async Task<bool> TryIsCurrentPlayerEffectivelyEmptyAsync(
+        CancellationToken cancellationToken)
+    {
+        const int EmptyCheckTimeoutMs = RecoverEmptyCheckTimeoutMs;
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(EmptyCheckTimeoutMs);
+
+        try
+        {
+            return await IsCurrentPlayerEffectivelyEmptyAsync(timeoutCts.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            Debug.LogWarning(
+                $"[Auth] Empty-check timed out after {EmptyCheckTimeoutMs}ms — SignOut instead of Delete.");
+            return false;
+        }
     }
 
     /// <summary>
@@ -531,7 +617,13 @@ public class UGSAuthService : IAuthService
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        string serverAuthCode = await GetGoogleServerAuthCodeAsync(cancellationToken);
+        string serverAuthCode = _recoverGoogleAuthCode;
+        _recoverGoogleAuthCode = null;
+        if (string.IsNullOrWhiteSpace(serverAuthCode))
+            serverAuthCode = await GetGoogleServerAuthCodeAsync(cancellationToken);
+        else
+            Debug.Log("[Auth] Recover: reusing Google Play Games auth code from Link attempt.");
+
         cancellationToken.ThrowIfCancellationRequested();
         await AuthenticationService.Instance.SignInWithGooglePlayGamesAsync(serverAuthCode);
     }
@@ -540,6 +632,7 @@ public class UGSAuthService : IAuthService
     {
         cancellationToken.ThrowIfCancellationRequested();
         string serverAuthCode = await GetGoogleServerAuthCodeAsync(cancellationToken);
+        _recoverGoogleAuthCode = serverAuthCode;
         cancellationToken.ThrowIfCancellationRequested();
         await AuthenticationService.Instance.LinkWithGooglePlayGamesAsync(serverAuthCode);
     }
@@ -647,7 +740,13 @@ public class UGSAuthService : IAuthService
                 "[Auth] AppleServicesId is empty — ensure UGS Dashboard Apple provider + game config are set.");
         }
 
-        string identityToken = await RequestAppleIdentityTokenAsync(cancellationToken);
+        string identityToken = _recoverAppleIdentityToken;
+        _recoverAppleIdentityToken = null;
+        if (string.IsNullOrWhiteSpace(identityToken))
+            identityToken = await RequestAppleIdentityTokenAsync(cancellationToken);
+        else
+            Debug.Log("[Auth] Recover: reusing Apple identity token from Link attempt.");
+
         cancellationToken.ThrowIfCancellationRequested();
         await AuthenticationService.Instance.SignInWithAppleAsync(identityToken);
     }
@@ -663,6 +762,7 @@ public class UGSAuthService : IAuthService
         }
 
         string identityToken = await RequestAppleIdentityTokenAsync(cancellationToken);
+        _recoverAppleIdentityToken = identityToken;
         cancellationToken.ThrowIfCancellationRequested();
         await AuthenticationService.Instance.LinkWithAppleAsync(identityToken);
     }
@@ -670,7 +770,13 @@ public class UGSAuthService : IAuthService
     private async Task SignInWithAppleGameCenterAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        AppleGameCenterCredentials credentials = await RequestAppleGameCenterCredentialsAsync(cancellationToken);
+        AppleGameCenterCredentials credentials = _recoverGameCenterCredentials;
+        _recoverGameCenterCredentials = null;
+        if (credentials == null || !credentials.IsValid)
+            credentials = await RequestAppleGameCenterCredentialsAsync(cancellationToken);
+        else
+            Debug.Log("[Auth] Recover: reusing Game Center credentials from Link attempt.");
+
         cancellationToken.ThrowIfCancellationRequested();
         await AuthenticationService.Instance.SignInWithAppleGameCenterAsync(
             credentials.Signature,
@@ -684,6 +790,7 @@ public class UGSAuthService : IAuthService
     {
         cancellationToken.ThrowIfCancellationRequested();
         AppleGameCenterCredentials credentials = await RequestAppleGameCenterCredentialsAsync(cancellationToken);
+        _recoverGameCenterCredentials = credentials;
         cancellationToken.ThrowIfCancellationRequested();
         await AuthenticationService.Instance.LinkWithAppleGameCenterAsync(
             credentials.Signature,

@@ -103,6 +103,16 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         Debug.Log("[SDK][IAP] Store connected.");
     }
 
+    public void EnsureProductsFetched()
+    {
+        if (!_isInitialized || _storeController == null || _areProductsReady)
+            return;
+
+        // Allow a fresh request after failure or if the first FetchProducts never completed.
+        _fetchRequested = false;
+        FetchProducts();
+    }
+
     public async Task<bool> PurchaseAsync(
         string productId,
         CancellationToken cancellationToken = default)
@@ -128,8 +138,9 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         Product product = FindStoreProduct(storeId);
         if (product == null)
         {
+            EnsureProductsFetched();
             Debug.LogWarning(
-                $"[SDK][IAP] Product '{productId}' (store id '{storeId}') not fetched from the store.");
+                $"[SDK][IAP] Product '{productId}' (store id '{storeId}') not fetched from the store — refetch kicked.");
             return false;
         }
 
@@ -214,6 +225,8 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
 
     void OnProductsFetchFailed(ProductFetchFailed failure)
     {
+        // Let EnsureProductsFetched / next purchase attempt request again.
+        _fetchRequested = false;
         Debug.LogWarning(
             $"[SDK][IAP] Products fetch failed: {failure?.FailureReason}; " +
             $"failedCount={failure?.FailedFetchProducts?.Count ?? 0}");

@@ -256,6 +256,13 @@ After `InitializeAsync`, Unity IAP fetches products asynchronously. When fetch s
 - `ProductsUpdated` fires
 - `TryGetProductInfo(productId, out info)` returns localized price / title / currency
 
+If the first fetch fails (offline at boot, store outage), call `EnsureProductsFetched()` on resume or before purchase — failure clears the latch so a retry is allowed. A purchase that finds no store product also kicks a refetch and returns `false`.
+
+```csharp
+if (!_iap.AreProductsReady)
+    _iap.EnsureProductsFetched();
+```
+
 ```csharp
 if (_iap.TryGetProductInfo(productId, out RealMoneyProductInfo info) && info.HasLocalizedPrice)
     buyButtonLabel.text = info.LocalizedPriceString;

@@ -26,6 +26,12 @@ public interface IRealMoneyPurchaseService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Re-requests store product metadata when <see cref="AreProductsReady"/> is false.
+    /// No-op when already ready or not initialized. Safe after a previous fetch failure.
+    /// </summary>
+    void EnsureProductsFetched();
+
+    /// <summary>
     /// Starts a purchase flow for a configured product.
     /// Returns true when the purchase has been processed successfully.
     /// Rejects with false if another purchase is already in flight (single-flight).

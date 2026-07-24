@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.4] - 2026-07-24
+
+### Fixed
+- **Auth recover:** empty-check before SignOut timed out after 8s (Cloud Save / Economy could stall recover); clearer step logs; reuse Link credentials for recover SignIn (GPGS / Apple / Game Center).
+- **Auth recover:** if platform SignIn fails after SignOut, fall back to anonymous SignIn so the client is not stuck `NotReady` / unsigned.
+- **IAP:** product fetch failure clears the in-flight latch so a later `EnsureProductsFetched` / purchase can retry; missing store product kicks a refetch instead of leaving fetch stuck.
+
+### Added
+- **IAP:** `IRealMoneyPurchaseService.EnsureProductsFetched()` for resume / offline→online recovery when `AreProductsReady` is still false.
+
 ## [1.9.3] - 2026-07-24
 
 ### Fixed
