@@ -17,7 +17,10 @@ public sealed class UGSAchievementService : IAchievementService
 
     private readonly Dictionary<string, AchievementStateData> _states = new(StringComparer.Ordinal);
     private bool _isLoaded;
+    /// <summary>True after a successful online LoadAll (including "no payload"). Flush must not overwrite cloud without this.</summary>
+    private bool _hasCloudBaseline;
     private bool _isDirty;
+    private Task _loadTask;
 
     public async Task WarmupAsync(CancellationToken cancellationToken = default)
     {
@@ -144,10 +147,23 @@ public sealed class UGSAchievementService : IAchievementService
             return;
         }
 
+        // Never overwrite cloud from an empty/partial cache that never loaded successfully.
+        if (!_hasCloudBaseline)
+        {
+            await EnsureCloudBaselineAsync(cancellationToken);
+            if (!_hasCloudBaseline)
+            {
+                Debug.LogWarning("[Achievements] Flush skipped — cloud baseline unavailable; local dirty kept in memory.");
+                return;
+            }
+        }
+
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var payload = new AchievementStateCollection { items = _states };
+            // Snapshot to avoid concurrent mutation during serialize.
+            var snapshot = new Dictionary<string, AchievementStateData>(_states, StringComparer.Ordinal);
+            var payload = new AchievementStateCollection { items = snapshot };
             string json = JsonConvert.SerializeObject(payload);
             await CloudSaveService.Instance.Data.Player.SaveAsync(new Dictionary<string, object>
             {
@@ -156,7 +172,7 @@ public sealed class UGSAchievementService : IAchievementService
             cancellationToken.ThrowIfCancellationRequested();
 
             _isDirty = false;
-            Debug.Log($"[Achievements] Flushed {_states.Count} achievements to Cloud Save.");
+            Debug.Log($"[Achievements] Flushed {snapshot.Count} achievements to Cloud Save.");
         }
         catch (OperationCanceledException)
         {
@@ -174,30 +190,92 @@ public sealed class UGSAchievementService : IAchievementService
         if (_isLoaded)
             return;
 
-        _isLoaded = true;
+        if (_loadTask != null)
+        {
+            await _loadTask;
+            return;
+        }
 
+        _loadTask = LoadCoreAsync(cancellationToken);
+        try
+        {
+            await _loadTask;
+        }
+        finally
+        {
+            _loadTask = null;
+        }
+    }
+
+    private async Task LoadCoreAsync(CancellationToken cancellationToken)
+    {
         if (!NetworkStatus.IsOnline)
         {
-            Debug.LogWarning("[Achievements] Offline during warmup — starting with empty local cache.");
+            // Local-only: allow in-memory progress, but do not claim a cloud baseline (blocks wipe-on-flush).
+            _isLoaded = true;
+            _hasCloudBaseline = false;
+            Debug.LogWarning("[Achievements] Offline during warmup — local cache only; flush deferred until cloud baseline loads.");
             return;
         }
 
         try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var items = await CloudSaveService.Instance.Data.Player.LoadAllAsync();
-            cancellationToken.ThrowIfCancellationRequested();
+            await LoadCloudBaselineMergingLocalAsync(cancellationToken);
+            _isLoaded = true;
+        }
+        catch (OperationCanceledException)
+        {
+            _isLoaded = false;
+            _hasCloudBaseline = false;
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _isLoaded = false;
+            _hasCloudBaseline = false;
+            Debug.LogError($"[Achievements] Warmup failed: {ex.Message}");
+            throw new AchievementOperationException("Failed to load achievements from Cloud Save.", ex);
+        }
+    }
 
-            if (!items.TryGetValue(CloudSaveKey, out var item))
-            {
-                Debug.Log("[Achievements] No cloud payload found — starting with empty state.");
-                return;
-            }
+    private async Task EnsureCloudBaselineAsync(CancellationToken cancellationToken)
+    {
+        if (_hasCloudBaseline)
+            return;
 
+        if (!NetworkStatus.IsOnline)
+            return;
+
+        try
+        {
+            await LoadCloudBaselineMergingLocalAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[Achievements] Cloud baseline load failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Loads cloud payload, then re-applies any in-memory local keys on top (local wins per key).
+    /// </summary>
+    private async Task LoadCloudBaselineMergingLocalAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var localOverlay = new Dictionary<string, AchievementStateData>(_states, StringComparer.Ordinal);
+
+        var items = await CloudSaveService.Instance.Data.Player.LoadAllAsync();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        _states.Clear();
+        if (items.TryGetValue(CloudSaveKey, out var item))
+        {
             string json = item.Value.GetAs<string>();
             var payload = JsonConvert.DeserializeObject<AchievementStateCollection>(json);
-
-            _states.Clear();
             if (payload?.items != null)
             {
                 foreach (var kvp in payload.items)
@@ -206,19 +284,17 @@ public sealed class UGSAchievementService : IAchievementService
                         _states[kvp.Key] = kvp.Value;
                 }
             }
+        }
+        else
+        {
+            Debug.Log("[Achievements] No cloud payload found — starting with empty state.");
+        }
 
-            Debug.Log($"[Achievements] Loaded {_states.Count} achievements from Cloud Save.");
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _states.Clear();
-            Debug.LogError($"[Achievements] Warmup failed: {ex.Message}");
-            throw new AchievementOperationException("Failed to load achievements from Cloud Save.", ex);
-        }
+        foreach (var kvp in localOverlay)
+            _states[kvp.Key] = kvp.Value;
+
+        _hasCloudBaseline = true;
+        Debug.Log($"[Achievements] Loaded cloud baseline ({_states.Count} achievements, local overlay keys={localOverlay.Count}).");
     }
 
     static void ValidateAchievementId(string achievementId)

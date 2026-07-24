@@ -8,7 +8,7 @@ public enum AccountLinkResult
 
     /// <summary>
     /// Platform identity was already tied to another UGS player.
-    /// SDK signed out the current session and signed into that existing player
+    /// SDK left the current session (Delete if empty Cloud Save, else SignOut) and signed into that existing player
     /// (typical after reinstall). Reload Cloud Save / Economy on the game side.
     /// </summary>
     SignedIntoExisting,

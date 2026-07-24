@@ -107,29 +107,71 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
 
         if (!paid) return false;
 
+        bool granted = false;
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
             await EconomyService.Instance.PlayerInventory.AddInventoryItemAsync(_mapper.ToServiceId(id));
-            cancellationToken.ThrowIfCancellationRequested();
+            granted = true;
 
             _ownedItems.Add(id);
             SaveToPrefs();
             return true;
         }
+        catch (OperationCanceledException)
+        {
+            // Grant may have landed on the server even if the client was cancelled.
+            if (!granted)
+                await TryConfirmGrantOrRefundAsync(id, costCurrency, cost);
+
+            throw;
+        }
         catch (Exception e)
         {
             Debug.LogError($"[Items] Grant failed for {id}, rolling back {cost} {costCurrency}: {e.Message}");
-            try
-            {
-                await _economy.AddCurrencyAsync(costCurrency, cost, cancellationToken);
-            }
-            catch (InventoryOperationException)
-            {
-                Debug.LogError("[Items] Currency rollback after item grant failure was incomplete.");
-            }
+            if (!granted)
+                await RefundCurrencyAsync(costCurrency, cost);
 
             return false;
+        }
+    }
+
+    /// <summary>
+    /// After cancel during grant: refresh ownership — if owned, keep (no refund); else refund.
+    /// </summary>
+    private async Task TryConfirmGrantOrRefundAsync(TItem id, TCurrency costCurrency, int cost)
+    {
+        try
+        {
+            await RefreshAsync(CancellationToken.None);
+        }
+        catch (Exception refreshEx)
+        {
+            Debug.LogWarning($"[Items] Post-cancel ownership refresh failed: {refreshEx.Message}");
+        }
+
+        if (IsOwned(id))
+        {
+            Debug.Log($"[Items] Grant confirmed after cancel for {id} — no currency refund.");
+            return;
+        }
+
+        await RefundCurrencyAsync(costCurrency, cost);
+    }
+
+    private async Task RefundCurrencyAsync(TCurrency costCurrency, int cost)
+    {
+        try
+        {
+            await _economy.AddCurrencyAsync(costCurrency, cost, CancellationToken.None);
+        }
+        catch (InventoryOperationException)
+        {
+            Debug.LogError("[Items] Currency rollback after item grant failure was incomplete.");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[Items] Currency rollback failed: {ex.Message}");
         }
     }
 

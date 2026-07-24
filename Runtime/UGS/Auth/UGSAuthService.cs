@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Unity.Services.Core;
 using Unity.Services.Authentication;
+using Unity.Services.CloudSave;
 using UnityEngine;
 #if UNITY_ANDROID
 using GooglePlayGames;
@@ -227,7 +228,7 @@ public class UGSAuthService : IAuthService
         {
             Debug.LogWarning(
                 $"[Auth] External ID already linked to another player ({platform}) — " +
-                "deleting current anonymous session and signing into existing account.");
+                "leaving current session (delete only if empty) and signing into existing account.");
             return await SignIntoExistingAfterAlreadyLinkedAsync(platform, cancellationToken);
         }
         catch (Exception e)
@@ -238,11 +239,15 @@ public class UGSAuthService : IAuthService
     }
 
     /// <summary>
-    /// After <see cref="AuthenticationErrorCodes.AccountAlreadyLinked"/>: permanently delete the
-    /// current (usually fresh anonymous) UGS player so it does not linger as an empty orphan,
-    /// then SignIn with the platform identity into the existing linked account.
+    /// After <see cref="AuthenticationErrorCodes.AccountAlreadyLinked"/>: leave the current
+    /// anonymous session, then SignIn with the platform identity into the existing linked account.
+    /// <list type="bullet">
+    /// <item>Empty Cloud Save (or offline-unverifiable treated as non-empty) → <c>DeleteAccount</c> to avoid orphans.</item>
+    /// <item>Non-empty → <c>SignOut</c> only — server data for the anonymous player is preserved.</item>
+    /// </list>
     /// Does not touch game local saves — the caller resolves SaveConflict in UI.
     /// Does not use ForceLink — that would steal the identity onto the wrong player.
+    /// After switch, the previous anonymous player can no longer be deleted from the client.
     /// </summary>
     private async Task<AccountLinkResult> SignIntoExistingAfterAlreadyLinkedAsync(
         AuthPlatform platform,
@@ -254,21 +259,7 @@ public class UGSAuthService : IAuthService
 
             if (IsSignedIn)
             {
-                string orphanId = GetPlayerId();
-                try
-                {
-                    await AuthenticationService.Instance.DeleteAccountAsync();
-                    Debug.Log($"[Auth] Deleted orphan anonymous PlayerId={orphanId} before recover SignIn.");
-                }
-                catch (Exception deleteEx)
-                {
-                    // Recover must still proceed; SignOut leaves an orphan but unblocks SignIn.
-                    Debug.LogWarning(
-                        $"[Auth] Could not delete orphan anonymous ({deleteEx.Message}) — SignOut fallback.");
-                    if (IsSignedIn)
-                        AuthenticationService.Instance.SignOut(clearCredentials: true);
-                }
-
+                await LeaveCurrentSessionForRecoverAsync(cancellationToken);
                 PlayerPrefs.DeleteKey(LastAuthMethodKey);
                 PlayerPrefs.Save();
             }
@@ -297,6 +288,84 @@ public class UGSAuthService : IAuthService
         {
             Debug.LogError($"[Auth] Recover SignIn failed ({platform}): {e.Message}");
             return AccountLinkResult.Failed;
+        }
+    }
+
+    /// <summary>
+    /// Deletes only when Cloud Save looks empty; otherwise SignOut so non-empty anonymous progress is not wiped.
+    /// Fail-safe on network/check errors: SignOut (never Delete).
+    /// </summary>
+    private async Task LeaveCurrentSessionForRecoverAsync(CancellationToken cancellationToken)
+    {
+        string orphanId = GetPlayerId();
+        bool deleteOrphan = await IsCurrentPlayerEffectivelyEmptyAsync(cancellationToken);
+
+        if (deleteOrphan)
+        {
+            try
+            {
+                await AuthenticationService.Instance.DeleteAccountAsync();
+                Debug.Log($"[Auth] Deleted empty anonymous PlayerId={orphanId} before recover SignIn.");
+                return;
+            }
+            catch (Exception deleteEx)
+            {
+                Debug.LogWarning(
+                    $"[Auth] Could not delete empty anonymous ({deleteEx.Message}) — SignOut fallback.");
+            }
+        }
+        else
+        {
+            Debug.Log(
+                $"[Auth] Signed out non-empty anonymous PlayerId={orphanId} before recover " +
+                "(server data preserved; cannot delete after switch).");
+        }
+
+        if (IsSignedIn)
+            AuthenticationService.Instance.SignOut(clearCredentials: true);
+    }
+
+    /// <summary>
+    /// True when online Cloud Save has no player keys (or only ignorable internals).
+    /// Offline / load failure → false (do not Delete).
+    /// </summary>
+    private static async Task<bool> IsCurrentPlayerEffectivelyEmptyAsync(CancellationToken cancellationToken)
+    {
+        if (!NetworkStatus.IsOnline)
+        {
+            Debug.LogWarning("[Auth] Cannot verify empty orphan offline — SignOut instead of Delete.");
+            return false;
+        }
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var items = await CloudSaveService.Instance.Data.Player.LoadAllAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (items == null || items.Count == 0)
+                return true;
+
+            foreach (var key in items.Keys)
+            {
+                if (string.IsNullOrEmpty(key))
+                    continue;
+                // Reserved / internal keys used by this SDK's Cloud Save helpers.
+                if (string.Equals(key, "__ts", StringComparison.Ordinal))
+                    continue;
+                return false;
+            }
+
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[Auth] Empty-check failed ({ex.Message}) — SignOut instead of Delete.");
+            return false;
         }
     }
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.8.7] - 2026-07-24
+
+### Fixed
+- **Achievements (C1):** `_isLoaded` only after successful path; failed warmup no longer leaves an empty cache that can wipe Cloud Save on flush. In-flight load Task; flush requires a cloud baseline and merges local overlay after offline edits.
+- **Auth link recover (C3):** on `AccountAlreadyLinked`, delete current player only when Cloud Save is empty; otherwise `SignOut` so non-empty anonymous server data is not destroyed before `SignedIntoExisting`.
+- **Items purchase (H3):** no cancel-check after inventory grant; `OperationCanceledException` confirms ownership before refund; refunds use `CancellationToken.None`.
+- **LevelPlay ads (H6/H7):** reject overlapping rewarded/interstitial shows with `onFailed`; `_rewardEarned` + late-reward grace so close-before-reward adapters still grant.
+
+### Changed
+- [docs/auth.md](docs/auth.md) / [docs/achievements.md](docs/achievements.md) updated for recover + baseline flush behaviour.
+- Docs layout: [bug-reports/](docs/bug-reports/README.md) + [ROADMAP.md](docs/ROADMAP.md) (replaces `docs/audit`).
+
 ## [1.8.6] - 2026-07-22
 
 ### Added

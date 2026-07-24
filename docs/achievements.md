@@ -106,8 +106,10 @@ if (GameServicesLocator.Services?.Achievements?.TryGetState(AchievementIds.First
 The default `UGSAchievementService`:
 
 - loads achievement state from Cloud Save after auth (`WithAchievements()`)
+- marks a **cloud baseline** only after a successful online load (or confirmed empty payload)
 - keeps an in-memory cache for runtime reads
-- flushes mutations back to Cloud Save immediately when online
+- flushes mutations back to Cloud Save when online **and** a cloud baseline exists (never overwrites cloud from a failed/empty warmup)
+- merges local overlay onto cloud when baseline loads after offline edits
 - keeps pending changes in memory if the device goes offline
 
 This is intentionally **portable**, not a wrapper over platform-native achievements such as Google Play Games or Game Center.

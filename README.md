@@ -45,6 +45,8 @@ Optional sample: **Package Manager → RamnD Game Services SDK → Samples → I
 | Achievements | [docs/achievements.md](docs/achievements.md) |
 | Analytics | [docs/analytics.md](docs/analytics.md) |
 | Remote Config | [docs/remote-config.md](docs/remote-config.md) |
+| Roadmap (`1.N.0` epics) | [docs/ROADMAP.md](docs/ROADMAP.md) |
+| Bug reports (dated hotfixes) | [docs/bug-reports/](docs/bug-reports/README.md) |
 | Security & credentials | [below](#security--credentials) |
 
 > **Quick start:** see [docs/bootstrap.md](docs/bootstrap.md) or the condensed summary below.

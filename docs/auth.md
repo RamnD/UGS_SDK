@@ -113,10 +113,11 @@ switch (result)
 
 If Game Center / Google Play is already tied to a previous UGS `PlayerId`, `LinkWith*` fails with `AccountAlreadyLinked`. The SDK then:
 
-1. **Deletes** the current anonymous UGS player (`DeleteAccountAsync`) so it does not linger as an empty orphan
-2. Requests **fresh** platform credentials
-3. Calls `SignInWith*` into the existing linked player
-4. Returns `AccountLinkResult.SignedIntoExisting`
+1. Checks whether the **current** anonymous player looks empty (online Cloud Save has no keys)
+2. **Empty** → `DeleteAccountAsync` (avoid orphan) · **Non-empty / offline / check failed** → `SignOut` only (server data preserved; cannot delete after switch)
+3. Requests **fresh** platform credentials
+4. Calls `SignInWith*` into the existing linked player
+5. Returns `AccountLinkResult.SignedIntoExisting`
 
 Local game saves are **not** wiped — the game should show a SaveConflict UI (keep local vs apply cloud). Do **not** use UGS `ForceLink`.
 
@@ -124,7 +125,7 @@ Local game saves are **not** wiped — the game should show a SaveConflict UI (k
 
 | Flow | Behaviour |
 |------|-----------|
-| Anonymous links an already-used social ID | Delete orphan anonymous → SignIn existing → SaveConflict UI |
+| Anonymous links an already-used social ID | Leave current session (Delete if empty, else SignOut) → SignIn existing → SaveConflict UI |
 | Profile «Delete account» | Wipe game data while signed in → `DeleteAccountAsync` → reload / new anonymous |
 
 ---

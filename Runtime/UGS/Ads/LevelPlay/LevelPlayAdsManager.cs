@@ -42,6 +42,10 @@ public sealed class LevelPlayAdsManager : IAdsManager
     private Action _pendingSuccess;
     private Action _pendingFailed;
     private string _activeRewardedUnitId;
+    private bool _rewardEarned;
+    private bool _rewardedClosed;
+    private int _rewardedGeneration;
+    private const int LateRewardGraceMs = 2000;
 
     // Current interstitial show state (only one at a time)
     private Action _pendingInterstitialClosed;
@@ -114,6 +118,13 @@ public sealed class LevelPlayAdsManager : IAdsManager
 
         if (_initState == InitState.InProgress)
         {
+            if (!string.IsNullOrWhiteSpace(_deferredRewardedShow.PlacementId))
+            {
+                Debug.LogWarning("[LevelPlay] Rewarded already deferred — rejecting new show.");
+                onFailed?.Invoke();
+                return;
+            }
+
             _deferredRewardedShow = new PendingRewardedShow
             {
                 PlacementId = placementId,
@@ -130,12 +141,23 @@ public sealed class LevelPlayAdsManager : IAdsManager
             return;
         }
 
+        if (_activeRewardedUnitId != null)
+        {
+            Debug.LogWarning(
+                $"[LevelPlay] Rewarded already in progress ({_activeRewardedUnitId}) — rejecting '{placementId}'.");
+            onFailed?.Invoke();
+            return;
+        }
+
         var adUnitId = placementId;
         var ad       = GetOrCreateRewarded(adUnitId);
 
         _pendingSuccess       = onSuccess;
         _pendingFailed        = onFailed;
         _activeRewardedUnitId = adUnitId;
+        _rewardEarned         = false;
+        _rewardedClosed       = false;
+        _rewardedGeneration++;
 
         if (ad.IsAdReady())
             ad.ShowAd();
@@ -151,6 +173,13 @@ public sealed class LevelPlayAdsManager : IAdsManager
 
         if (_initState == InitState.InProgress)
         {
+            if (!string.IsNullOrWhiteSpace(_deferredInterstitialShow.PlacementId))
+            {
+                Debug.LogWarning("[LevelPlay] Interstitial already deferred — rejecting new show.");
+                onFailed?.Invoke();
+                return;
+            }
+
             _deferredInterstitialShow = new PendingInterstitialShow
             {
                 PlacementId = placementId,
@@ -163,6 +192,14 @@ public sealed class LevelPlayAdsManager : IAdsManager
         if (_initState == InitState.Failed)
         {
             Debug.LogWarning("[LevelPlay] ShowInterstitial: SDK init failed.");
+            onFailed?.Invoke();
+            return;
+        }
+
+        if (_activeInterstitialUnitId != null)
+        {
+            Debug.LogWarning(
+                $"[LevelPlay] Interstitial already in progress ({_activeInterstitialUnitId}) — rejecting '{placementId}'.");
             onFailed?.Invoke();
             return;
         }
@@ -266,20 +303,74 @@ public sealed class LevelPlayAdsManager : IAdsManager
 
     private void OnRewardEarned(string adUnitId)
     {
-        if (adUnitId != _activeRewardedUnitId) return;
-        // Keep callback before reset — OnAdClosed may arrive after
+        if (adUnitId != _activeRewardedUnitId)
+            return;
+
+        if (_rewardEarned)
+            return;
+
+        _rewardEarned = true;
         var callback = _pendingSuccess;
-        ResetCallbacks(); // _activeRewardedUnitId → null before OnAdClosed
+        _pendingSuccess = null;
+        _pendingFailed = null;
         callback?.Invoke();
+
+        if (_rewardedClosed)
+            FinishRewardedSession(adUnitId);
     }
 
     private void OnRewardedClosed(string adUnitId)
     {
-        // If OnAdRewarded has not fired yet (user skipped) → call onFailed
-        if (adUnitId == _activeRewardedUnitId)
+        if (adUnitId != _activeRewardedUnitId)
+        {
+            if (_rewardedAds.TryGetValue(adUnitId, out var preloadMiss))
+                preloadMiss.LoadAd();
+            return;
+        }
+
+        _rewardedClosed = true;
+
+        if (_rewardEarned)
+        {
+            FinishRewardedSession(adUnitId);
+            return;
+        }
+
+        // Adapter may deliver OnAdRewarded after OnAdClosed — short grace before fail.
+        int generation = _rewardedGeneration;
+        WaitForLateRewardThenFailAsync(adUnitId, generation);
+    }
+
+    async void WaitForLateRewardThenFailAsync(string adUnitId, int generation)
+    {
+        try
+        {
+            await Task.Delay(LateRewardGraceMs);
+        }
+        catch
+        {
+            return;
+        }
+
+        if (generation != _rewardedGeneration)
+            return;
+
+        if (_rewardEarned)
+        {
+            FinishRewardedSession(adUnitId);
+            return;
+        }
+
+        if (adUnitId == _activeRewardedUnitId || _rewardedClosed)
             InvokeFailedAndReset();
 
-        // Preload the next video right after close
+        if (_rewardedAds.TryGetValue(adUnitId, out var ad))
+            ad.LoadAd();
+    }
+
+    void FinishRewardedSession(string adUnitId)
+    {
+        ResetCallbacks();
         if (_rewardedAds.TryGetValue(adUnitId, out var ad))
             ad.LoadAd();
     }
@@ -362,6 +453,8 @@ public sealed class LevelPlayAdsManager : IAdsManager
         _pendingSuccess       = null;
         _pendingFailed        = null;
         _activeRewardedUnitId = null;
+        _rewardEarned         = false;
+        _rewardedClosed       = false;
     }
 
     private void ResetInterstitialCallbacks()
