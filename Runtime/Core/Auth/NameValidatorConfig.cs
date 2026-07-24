@@ -1,3 +1,4 @@
+using System;
 using System.Text.RegularExpressions;
 
 /// <summary>
@@ -34,10 +35,25 @@ public sealed class NameValidatorConfig
 
     /// <summary>Creates a configuration with banned words and/or a pattern.</summary>
     /// <param name="bannedWords">Banned word list. Null is treated as an empty array.</param>
-    /// <param name="bannedPattern">Regex for banned patterns. Null — not applied.</param>
+    /// <param name="bannedPattern">Regex for banned patterns. Null — not applied.
+    /// Prefer constructing with <see cref="Regex.MatchTimeout"/> to avoid ReDoS on input.</param>
     public NameValidatorConfig(string[] bannedWords = null, Regex bannedPattern = null)
     {
         BannedWords   = bannedWords ?? System.Array.Empty<string>();
-        BannedPattern = bannedPattern;
+        BannedPattern = EnsureMatchTimeout(bannedPattern);
+    }
+
+    static Regex EnsureMatchTimeout(Regex pattern)
+    {
+        if (pattern == null)
+            return null;
+        if (pattern.MatchTimeout != Regex.InfiniteMatchTimeout)
+            return pattern;
+
+        // Rebuild with a short timeout when caller omitted MatchTimeout.
+        return new Regex(
+            pattern.ToString(),
+            pattern.Options | RegexOptions.CultureInvariant,
+            TimeSpan.FromMilliseconds(100));
     }
 }

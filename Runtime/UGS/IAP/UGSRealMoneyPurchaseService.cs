@@ -418,6 +418,58 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     static int ToMinorUnits(Product product)
     {
         decimal localizedPrice = product?.metadata?.localizedPrice ?? 0m;
-        return (int)decimal.Round(localizedPrice * 100m, MidpointRounding.AwayFromZero);
+        string currencyCode = product?.metadata?.isoCurrencyCode;
+        int fractionDigits = GetIso4217FractionDigits(currencyCode);
+        decimal scale = 1m;
+        for (int i = 0; i < fractionDigits; i++)
+            scale *= 10m;
+
+        long minor = (long)decimal.Round(localizedPrice * scale, MidpointRounding.AwayFromZero);
+        if (minor > int.MaxValue)
+            return int.MaxValue;
+        if (minor < int.MinValue)
+            return int.MinValue;
+        return (int)minor;
+    }
+
+    /// <summary>ISO 4217 minor-unit exponent (0 / 2 / 3). Unknown codes default to 2.</summary>
+    static int GetIso4217FractionDigits(string isoCurrencyCode)
+    {
+        if (string.IsNullOrWhiteSpace(isoCurrencyCode))
+            return 2;
+
+        switch (isoCurrencyCode.Trim().ToUpperInvariant())
+        {
+            // Zero-decimal
+            case "BIF":
+            case "CLP":
+            case "DJF":
+            case "GNF":
+            case "ISK":
+            case "JPY":
+            case "KMF":
+            case "KRW":
+            case "PYG":
+            case "RWF":
+            case "UGX":
+            case "UYI":
+            case "VND":
+            case "VUV":
+            case "XAF":
+            case "XOF":
+            case "XPF":
+                return 0;
+            // Three-decimal
+            case "BHD":
+            case "IQD":
+            case "JOD":
+            case "KWD":
+            case "LYD":
+            case "OMR":
+            case "TND":
+                return 3;
+            default:
+                return 2;
+        }
     }
 }

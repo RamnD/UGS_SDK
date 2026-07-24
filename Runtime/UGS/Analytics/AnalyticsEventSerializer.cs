@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Reflection;
 using Unity.Services.Analytics;
 
@@ -80,7 +81,8 @@ internal static class AnalyticsEventSerializer
         {
             null => string.Empty,
             bool b => b ? "true" : "false",
-            _ => value.ToString(),
+            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+            _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty,
         };
     }
 
@@ -93,19 +95,19 @@ internal static class AnalyticsEventSerializer
                     customEvent.Add(key, boolValue);
                 break;
             case nameof(Int32):
-                if (int.TryParse(value, out int intValue))
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int intValue))
                     customEvent.Add(key, intValue);
                 break;
             case nameof(Int64):
-                if (long.TryParse(value, out long longValue))
+                if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long longValue))
                     customEvent.Add(key, longValue);
                 break;
             case nameof(Single):
-                if (float.TryParse(value, out float floatValue))
+                if (float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float floatValue))
                     customEvent.Add(key, floatValue);
                 break;
             case nameof(Double):
-                if (double.TryParse(value, out double doubleValue))
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double doubleValue))
                     customEvent.Add(key, doubleValue);
                 break;
             default:

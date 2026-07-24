@@ -25,7 +25,7 @@ public sealed class UGSGameServices : IGameServices
     public IAchievementService Achievements { get; }
 
     /// <inheritdoc/>
-    public bool              IsAuthenticated { get; }
+    public bool IsAuthenticated => Auth?.IsSignedIn ?? false;
 
     internal UGSGameServices(
         IAuthService          auth,
@@ -41,6 +41,5 @@ public sealed class UGSGameServices : IGameServices
         Leaderboards    = leaderboards;  // null allowed (not authenticated)
         RemoteConfig    = remoteConfig;  // null allowed (not enabled / not authenticated)
         Achievements    = achievements;  // null allowed (not enabled / not authenticated)
-        IsAuthenticated = auth.IsSignedIn;
     }
 }

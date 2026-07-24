@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Unity.Services.Core;
 using Unity.Services.Leaderboards;
 using Unity.Services.Leaderboards.Models;
 using UnityEngine;
@@ -81,11 +82,9 @@ public sealed class UGSLeaderboardService : ILeaderboardService
         }
         catch (Exception e)
         {
-            var m = e.Message ?? "";
-            // First-time player row: some UGS versions surface 404 in the message — treat as null.
-            if (m.IndexOf("404", StringComparison.Ordinal) >= 0)
+            if (IsMissingPlayerScore(e))
             {
-                Debug.Log($"[Leaderboard] Player has no row yet '{leaderboardId}' (404).");
+                Debug.Log($"[Leaderboard] Player has no row yet '{leaderboardId}'.");
                 return null;
             }
 
@@ -93,5 +92,20 @@ public sealed class UGSLeaderboardService : ILeaderboardService
             throw new LeaderboardOperationException(
                 $"Failed to get player entry for '{leaderboardId}'.", e);
         }
+    }
+
+    static bool IsMissingPlayerScore(Exception exception)
+    {
+        for (Exception walk = exception; walk != null; walk = walk.InnerException)
+        {
+            if (walk is Unity.Services.Core.RequestFailedException requestFailed)
+            {
+                // UGS commonly uses 404 for "no score yet".
+                if (requestFailed.ErrorCode == 404)
+                    return true;
+            }
+        }
+
+        return false;
     }
 }

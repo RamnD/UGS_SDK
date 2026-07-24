@@ -71,21 +71,33 @@ public sealed class CachedAnalyticsSystem : IAnalyticsSystem
         if (_inner == null || _sdk == null || !NetworkStatus.IsOnline)
             return;
 
-        while (_queue.TryDequeue(out PendingAnalyticsRecord record))
+        // Batch dequeue so we persist once per batch instead of O(n²) per event.
+        const int batchSize = 64;
+        while (true)
         {
-            try
+            var batch = _queue.DequeueBatch(batchSize);
+            if (batch.Count == 0)
+                break;
+
+            for (int i = 0; i < batch.Count; i++)
             {
-                CustomEvent customEvent = AnalyticsEventSerializer.ToCustomEvent(record);
-                AnalyticsCustomEventEnricher.ApplyUgsPlayerId(customEvent, _playerId ?? _inner?.PlayerId);
-                _sdk.RecordEvent(customEvent);
-                Debug.Log($"[Analytics] Replayed queued event '{record.eventName}'");
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogError($"[Analytics] Failed to replay queued event '{record?.eventName}': {ex.Message}");
-                if (record != null)
-                    _queue.Enqueue(record);
-                return;
+                PendingAnalyticsRecord record = batch[i];
+                try
+                {
+                    CustomEvent customEvent = AnalyticsEventSerializer.ToCustomEvent(record);
+                    AnalyticsCustomEventEnricher.ApplyUgsPlayerId(customEvent, _playerId ?? _inner?.PlayerId);
+                    _sdk.RecordEvent(customEvent);
+                    Debug.Log($"[Analytics] Replayed queued event '{record.eventName}'");
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogError($"[Analytics] Failed to replay queued event '{record?.eventName}': {ex.Message}");
+                    var remaining = new System.Collections.Generic.List<PendingAnalyticsRecord>();
+                    for (int j = i; j < batch.Count; j++)
+                        remaining.Add(batch[j]);
+                    _queue.RequeueFront(remaining);
+                    return;
+                }
             }
         }
     }

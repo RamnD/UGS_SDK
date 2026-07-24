@@ -68,7 +68,15 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
     public void Set<TValue>(TKey key, TValue value)
     {
         EnsureLocalLoaded();
-        _local[_mapper.ToCloudKey(key)] = JsonConvert.SerializeObject(value);
+        string cloudKey = _mapper.ToCloudKey(key);
+        if (string.Equals(cloudKey, TimestampCloudKey, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                $"Save key maps to reserved cloud key '{TimestampCloudKey}' and cannot be used for player data.",
+                nameof(key));
+        }
+
+        _local[cloudKey] = JsonConvert.SerializeObject(value);
         LocalTimestamp = DateTime.UtcNow;
         PersistLocalToPrefs();
     }

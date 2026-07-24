@@ -4,7 +4,7 @@
 |---|---|
 | **Found** | 2026-07-24 |
 | **Affects** | 1.8.6 |
-| **Status** | in-progress — Stages 1–3 → **1.8.7–1.8.9**; remaining M/L open |
+| **Status** | in-progress — Stages 1–4 → **1.8.7–1.8.10**; M1/M10 + remaining L open |
 | **Severity** | Critical + High batch (see table below) |
 | **Branch** | main |
 | **Scope** | 77 `.cs` files, ~4700 lines UGS; Auth, IAP, Economy, CloudSave, Items, Analytics, Ads, RemoteConfig, Leaderboard, Achievements |
@@ -26,9 +26,18 @@ Hotfixes for items below ship as **patch** releases (`1.8.7+`). Product epics (C
 | H6 | Ads overlapping shows lose callbacks | 1.8.7 | **fixed-in 1.8.7** |
 | H7 | Ads close-before-reward fails grant | 1.8.7 | **fixed-in 1.8.7** |
 | H8 | Enqueue during flush dropped | 1.8.8 | **fixed-in 1.8.8** |
+| M2 | SignIn without environment | 1.8.10 | **fixed-in 1.8.10** |
+| M3 | ToMinorUnits ×100 hardcode | 1.8.10 | **fixed-in 1.8.10** |
 | M4 | Error classification by substring | 1.8.8 | **fixed-in 1.8.8** |
+| M5 | Analytics culture-dependent numbers | 1.8.10 | **fixed-in 1.8.10** |
+| M6 | GPGS TCS cancel / sync continuations | 1.8.10 | **fixed-in 1.8.10** |
+| M7 | IsAuthenticated frozen snapshot | 1.8.10 | **fixed-in 1.8.10** |
 | M8 | Item/consumable prefs not namespaced | 1.8.9 | **fixed-in 1.8.9** |
-| M* / L* | Medium / Low batch | 1.8.x or later patches | open |
+| M9 | Analytics queue lock / batch drain | 1.8.10 | **fixed-in 1.8.10** |
+| M11 | `__ts` mapper collision | 1.8.10 | **fixed-in 1.8.10** |
+| M1 | Server entitlement verify | → [ROADMAP 1.10.0](../ROADMAP.md) | deferred |
+| M10 | Profanity Unicode homoglyphs | later | open |
+| L* | Low batch (partial) | 1.8.10+ | partial — TestAds, regex timeout, LB 404 done |
 
 ---
 
@@ -251,7 +260,8 @@ Hotfixes for items below ship as **patch** releases (`1.8.7+`). Product epics (C
 1. ~~**C1, C3, H3, H6/H7**~~ → **1.8.7**
 2. ~~**C2 + H8 + M4**~~ → **1.8.8** (queue in_flight; full server idempotency → 1.9.0)
 3. ~~**H4, H5, H2**~~ → **1.8.9** (+ M8 prefs namespace)
-4. **M2 и прочий M/L** — точечные патчи по мере.
+4. ~~**M2/M3/M5/M6/M7/M9/M11**~~ → **1.8.10** (+ TestAds / regex timeout / LB 404)
+5. **M10 + remaining L** — точечные патчи; **M1** → 1.10.0.
 
 **Не в 1.8.x** (см. [ROADMAP](../ROADMAP.md)):
 

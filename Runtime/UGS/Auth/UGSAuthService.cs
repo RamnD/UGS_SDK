@@ -2,6 +2,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.RegularExpressions;
 using Unity.Services.Core;
 using Unity.Services.Authentication;
 using Unity.Services.CloudSave;
@@ -115,9 +116,19 @@ public class UGSAuthService : IAuthService
             if (lower.Contains(word.ToLowerInvariant()))
                 return NameValidationError.Profanity;
 
-        if (_validatorConfig.BannedPattern != null &&
-            _validatorConfig.BannedPattern.IsMatch(name))
-            return NameValidationError.Profanity;
+        if (_validatorConfig.BannedPattern != null)
+        {
+            try
+            {
+                if (_validatorConfig.BannedPattern.IsMatch(name))
+                    return NameValidationError.Profanity;
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                Debug.LogWarning("[Auth] BannedPattern match timed out — treating as invalid.");
+                return NameValidationError.Profanity;
+            }
+        }
 
         return null;
     }
@@ -130,7 +141,7 @@ public class UGSAuthService : IAuthService
             if (UnityServices.State == ServicesInitializationState.Uninitialized)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                await UnityServices.InitializeAsync();
+                await UGSUnityServicesInitializer.EnsureInitializedAsync(cancellationToken);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -461,7 +472,12 @@ public class UGSAuthService : IAuthService
 
     private Task<string> GetGoogleServerAuthCodeAsync(CancellationToken cancellationToken)
     {
-        var tcs = new TaskCompletionSource<string>();
+        var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationTokenRegistration ctr = default;
+        if (cancellationToken.CanBeCanceled)
+        {
+            ctr = cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken));
+        }
 
         // Activate so PlayGamesPlatform.Instance is the Social implementation.
         PlayGamesPlatform.Activate();
@@ -516,7 +532,21 @@ public class UGSAuthService : IAuthService
             PlayGamesPlatform.Instance.ManuallyAuthenticate(OnAuthComplete);
         }
 
-        return tcs.Task;
+        return AwaitAuthCodeAndDisposeAsync(tcs.Task, ctr);
+    }
+
+    static async Task<string> AwaitAuthCodeAndDisposeAsync(
+        Task<string> task,
+        CancellationTokenRegistration ctr)
+    {
+        try
+        {
+            return await task;
+        }
+        finally
+        {
+            ctr.Dispose();
+        }
     }
 #else
     private Task SignInWithGooglePlayGamesAsync(CancellationToken cancellationToken)

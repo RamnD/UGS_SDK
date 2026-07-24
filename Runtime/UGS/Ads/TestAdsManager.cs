@@ -5,6 +5,7 @@ using UnityEngine;
 /// <summary>
 /// Stub <see cref="IAdsManager"/> without a real SDK.
 /// Prefer <see cref="MockAdsManager"/> for editor tests.
+/// Only grants simulated rewards in Editor / Development builds.
 /// </summary>
 public class TestAdsManager : IAdsManager
 {
@@ -17,16 +18,36 @@ public class TestAdsManager : IAdsManager
     /// <inheritdoc/>
     public async void ShowRewardedAd(string placementId, Action onSuccess, Action onFailed = null)
     {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
         Debug.Log($"[Ads] Rewarded: simulating view ({placementId})...");
-        await Task.Delay(1500);
-        Debug.Log("[Ads] Rewarded: view complete, grant reward.");
-        onSuccess?.Invoke();
+        try
+        {
+            await Task.Delay(1500);
+            Debug.Log("[Ads] Rewarded: view complete, grant reward.");
+            onSuccess?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[Ads] Test rewarded simulation failed: {ex.Message}");
+            onFailed?.Invoke();
+        }
+#else
+        Debug.LogError(
+            $"[Ads] TestAdsManager.ShowRewardedAd called in non-dev build ({placementId}) — failing.");
+        onFailed?.Invoke();
+#endif
     }
 
     /// <inheritdoc/>
     public void ShowInterstitial(string placementId, Action onClosed = null, Action onFailed = null)
     {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
         Debug.Log($"[Ads] Interstitial: simulating show ({placementId}).");
         onClosed?.Invoke();
+#else
+        Debug.LogError(
+            $"[Ads] TestAdsManager.ShowInterstitial called in non-dev build ({placementId}) — failing.");
+        onFailed?.Invoke();
+#endif
     }
 }

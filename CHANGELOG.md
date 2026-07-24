@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.8.10] - 2026-07-24
+
+### Fixed
+- **Bootstrap (M2):** shared `UGSUnityServicesInitializer` — Auth `SignInAsync` and `BuildAsync` both init Unity Services with the resolved environment (no silent prod when calling Auth alone).
+- **Bootstrap (M7):** `IGameServices.IsAuthenticated` is live (`Auth?.IsSignedIn`), not a constructor snapshot.
+- **Analytics (M5):** event number serialize/parse uses `InvariantCulture`.
+- **Analytics (M9):** pending queue locked; batch `DequeueBatch` / `RequeueFront`; drain persists once per batch.
+- **Auth (M6):** GPGS TCS uses `RunContinuationsAsynchronously` + cancellation registration (no hang on cancel).
+- **IAP (M3):** `ToMinorUnits` uses ISO 4217 fraction digits (JPY/KRW/BHD-safe).
+- **CloudSave (M11):** `Set` rejects mapper keys equal to reserved `__ts`.
+- **Ads:** `TestAdsManager` only simulates rewards in Editor / Development builds.
+- **Auth:** profanity `Regex` rebuilt with a short `MatchTimeout` when callers omit one.
+- **Leaderboard:** prefer `RequestFailedException.ErrorCode == 404` over message substring.
+
 ## [1.8.9] - 2026-07-24
 
 ### Fixed
