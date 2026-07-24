@@ -57,11 +57,30 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
     /// <inheritdoc/>
     public TValue Get<TValue>(TKey key, TValue defaultValue = default)
     {
+        return TryGet(key, out TValue value) ? value : defaultValue;
+    }
+
+    /// <inheritdoc/>
+    public bool TryGet<TValue>(TKey key, out TValue value)
+    {
         EnsureLocalLoaded();
+        value = default;
         if (!_local.TryGetValue(_mapper.ToCloudKey(key), out var json))
-            return defaultValue;
-        try   { return JsonConvert.DeserializeObject<TValue>(json); }
-        catch { return defaultValue; }
+            return false;
+
+        try
+        {
+            value = JsonConvert.DeserializeObject<TValue>(json);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError(
+                $"[CloudSave] Corrupt local value for key '{key}' — leaving raw JSON intact. {ex.Message}");
+            throw new InvalidOperationException(
+                $"Cloud save key '{key}' contains corrupt data and cannot be read safely.",
+                ex);
+        }
     }
 
     /// <inheritdoc/>
@@ -131,8 +150,12 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
             ParseCloudItemsIntoSnapshot(items);
 
             Debug.Log($"[CloudSave] Loaded from cloud: {_cloudSnapshot.Count} keys, ts={_cloudSnapshotTimestamp:O}");
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
             foreach (var kvp in _cloudSnapshot)
-                Debug.Log($"  [{kvp.Key}] = {kvp.Value}");
+                Debug.Log($"  [CloudSave] key={kvp.Key} bytes={kvp.Value?.Length ?? 0}");
+#else
+            Debug.Log($"[CloudSave] Cloud key names: {string.Join(", ", _cloudSnapshot.Keys)}");
+#endif
 
             // Cloud has only __ts and no data — keep local data
             if (_cloudSnapshot.Count == 0)
@@ -357,8 +380,12 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
         cloudData[TimestampCloudKey] = ts.ToString("O");
 
         Debug.Log($"[CloudSave] Pushing to cloud: {_local.Count} keys + __ts");
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
         foreach (var kvp in _local)
-            Debug.Log($"  [{kvp.Key}] = {kvp.Value}");
+            Debug.Log($"  [CloudSave] key={kvp.Key} bytes={kvp.Value?.Length ?? 0}");
+#else
+        Debug.Log($"[CloudSave] Push key names: {string.Join(", ", _local.Keys)}");
+#endif
 
         await CloudSaveService.Instance.Data.Player.SaveAsync(cloudData);
         cancellationToken.ThrowIfCancellationRequested();

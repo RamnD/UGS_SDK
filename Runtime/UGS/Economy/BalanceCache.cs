@@ -50,6 +50,7 @@ internal sealed class BalanceCache<TCurrency> where TCurrency : struct, Enum
     {
         var json    = PlayerPrefs.GetString(PrefsKey, "{}");
         var payload = JsonUtility.FromJson<CachePayload>(json) ?? new CachePayload();
+        payload.entries ??= new List<CacheEntry>();
         foreach (var entry in payload.entries)
         {
             if (Enum.TryParse<TCurrency>(entry.currency, out var type))
@@ -59,15 +60,29 @@ internal sealed class BalanceCache<TCurrency> where TCurrency : struct, Enum
 
     /// <summary>
     /// Updates cache from a server response and saves to disk immediately.
-    /// Call after every successful GetBalancesAsync().
+    /// Only currencies present in <paramref name="serverBalances"/> are overwritten;
+    /// missing ids keep the previous cached value (avoids wiping optimistic/local state
+    /// on partial responses).
     /// </summary>
     public void UpdateFromServer(List<PlayerBalance> serverBalances, ICurrencyMapper<TCurrency> mapper)
     {
-        foreach (TCurrency type in Enum.GetValues(typeof(TCurrency)))
+        if (serverBalances == null)
+            return;
+
+        foreach (var balance in serverBalances)
         {
-            var item = serverBalances.Find(b => b.CurrencyId == mapper.ToServiceId(type));
-            _data[type] = item?.Balance ?? 0L;
+            if (balance == null || string.IsNullOrEmpty(balance.CurrencyId))
+                continue;
+
+            foreach (TCurrency type in Enum.GetValues(typeof(TCurrency)))
+            {
+                if (!string.Equals(balance.CurrencyId, mapper.ToServiceId(type), StringComparison.Ordinal))
+                    continue;
+                _data[type] = balance.Balance;
+                break;
+            }
         }
+
         Save();
     }
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.8.11] - 2026-07-24
+
+### Fixed
+- **Auth (M10):** NFKC normalize + Cyrillic/Greek lookalike fold for ban-list / pattern checks; names stored NFKC-normalized.
+- **Auth (L):** stop logging player display names (PII).
+- **CloudSave (L):** corrupt JSON no longer returns `default` (throws); new `TryGet` for missing vs present; payload logs are key/size only (values only in Editor/Dev builds).
+- **Economy (L):** `UpdateFromServer` updates only currencies present in the response (no zeroing of missing ids).
+- **IAP (L):** after Economy/entitlement grant, store `ConfirmPurchase` failure still completes purchase as success.
+- **Achievements (L):** deep-copy state snapshot before Cloud Save serialize.
+
+### Added
+- `ICloudSaveService.TryGet<TValue>` — false when missing; throws on corrupt data.
+
 ## [1.8.10] - 2026-07-24
 
 ### Fixed

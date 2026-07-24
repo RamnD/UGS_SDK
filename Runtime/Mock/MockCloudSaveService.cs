@@ -39,10 +39,29 @@ public sealed class MockCloudSaveService<TKey> : ICloudSaveService<TKey>
     /// <inheritdoc/>
     public TValue Get<TValue>(TKey key, TValue defaultValue = default)
     {
+        return TryGet(key, out TValue value) ? value : defaultValue;
+    }
+
+    /// <inheritdoc/>
+    public bool TryGet<TValue>(TKey key, out TValue value)
+    {
+        value = default;
         if (!_data.TryGetValue(_mapper.ToCloudKey(key), out var json))
-            return defaultValue;
-        try   { return JsonConvert.DeserializeObject<TValue>(json); }
-        catch { return defaultValue; }
+            return false;
+
+        try
+        {
+            value = JsonConvert.DeserializeObject<TValue>(json);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError(
+                $"[Mock CloudSave] Corrupt value for key '{key}' — leaving raw JSON intact. {ex.Message}");
+            throw new InvalidOperationException(
+                $"Cloud save key '{key}' contains corrupt data and cannot be read safely.",
+                ex);
+        }
     }
 
     /// <inheritdoc/>

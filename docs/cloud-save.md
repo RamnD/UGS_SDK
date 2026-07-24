@@ -92,6 +92,12 @@ _cloudSave.Set(SaveKey.SelectedSkin, (int)chosenSkin);
 int    highScore = _cloudSave.Get<int>(SaveKey.HighScore, defaultValue: 0);
 bool   sfxOn     = _cloudSave.Get<bool>(SaveKey.SfxEnabled, defaultValue: true);
 int    skinId    = _cloudSave.Get<int>(SaveKey.SelectedSkin, defaultValue: 0);
+
+// Prefer TryGet when you must distinguish missing vs present.
+// Corrupt JSON throws InvalidOperationException (raw entry left intact) — do not
+// read-modify-write over a failed Get with a default.
+if (_cloudSave.TryGet(SaveKey.HighScore, out int score))
+    /* use score */;
 ```
 
 Supported `TValue` types: `int`, `long`, `float`, `bool`, `string`, and any **JSON-serializable** struct or class (Newtonsoft.Json).

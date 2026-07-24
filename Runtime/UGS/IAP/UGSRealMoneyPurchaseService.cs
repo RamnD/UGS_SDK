@@ -238,6 +238,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         }
 
         string productId = definition.ProductId;
+        bool granted = false;
         try
         {
             if (definition.RedeemWithEconomy)
@@ -248,17 +249,41 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                     CompletePurchaseRequest(productId, false);
                     return;
                 }
+
+                granted = true;
             }
 
             _entitlements.GrantRange(definition.GrantedEntitlementIds);
-            _storeController.ConfirmPurchase(order);
+            granted = true;
+
+            // Complete success before store confirm so a sync OnPurchaseFailed from Confirm
+            // cannot flip the awaiter to false after Economy/entitlements already applied.
             CompletePurchaseRequest(productId, true);
             PurchaseSucceeded?.Invoke(productId);
+
+            try
+            {
+                _storeController.ConfirmPurchase(order);
+            }
+            catch (Exception confirmEx)
+            {
+                Debug.LogWarning(
+                    $"[SDK][IAP] Store confirm failed after grant for '{productId}': {confirmEx.Message}. " +
+                    "Purchase already reported as success; store may retry confirm later.");
+            }
         }
         catch (Exception ex)
         {
             Debug.LogError($"[SDK][IAP] Failed to process purchase '{productId}': {ex}");
-            CompletePurchaseRequest(productId, false);
+            if (granted)
+            {
+                CompletePurchaseRequest(productId, true);
+                PurchaseSucceeded?.Invoke(productId);
+            }
+            else
+            {
+                CompletePurchaseRequest(productId, false);
+            }
         }
     }
 

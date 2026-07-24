@@ -161,8 +161,21 @@ public sealed class UGSAchievementService : IAchievementService
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            // Snapshot to avoid concurrent mutation during serialize.
-            var snapshot = new Dictionary<string, AchievementStateData>(_states, StringComparer.Ordinal);
+            // Deep snapshot so concurrent mutation of AchievementStateData cannot race serialize.
+            var snapshot = new Dictionary<string, AchievementStateData>(StringComparer.Ordinal);
+            foreach (var kvp in _states)
+            {
+                AchievementStateData src = kvp.Value;
+                snapshot[kvp.Key] = new AchievementStateData
+                {
+                    currentProgress = src.currentProgress,
+                    targetProgress  = src.targetProgress,
+                    isUnlocked      = src.isUnlocked,
+                    unlockedAtUtc   = src.unlockedAtUtc,
+                    updatedAtUtc    = src.updatedAtUtc
+                };
+            }
+
             var payload = new AchievementStateCollection { items = snapshot };
             string json = JsonConvert.SerializeObject(payload);
             await CloudSaveService.Instance.Data.Player.SaveAsync(new Dictionary<string, object>

@@ -1,5 +1,6 @@
 // UGSAuthService.cs
 using System;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Text.RegularExpressions;
@@ -71,17 +72,20 @@ public class UGSAuthService : IAuthService
             return clientError;
         }
 
+        // Persist the same NFKC form used for validation / ban checks.
+        string normalized = name.Normalize(NormalizationForm.FormKC);
+
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await AuthenticationService.Instance.UpdatePlayerNameAsync(name);
+            await AuthenticationService.Instance.UpdatePlayerNameAsync(normalized);
             cancellationToken.ThrowIfCancellationRequested();
-            Debug.Log($"[Auth] PlayerName updated: \"{GetPlayerName()}\"");
+            Debug.Log("[Auth] PlayerName updated.");
             return null;
         }
         catch (AuthenticationException e) when (e.ErrorCode == AuthenticationErrorCodes.InvalidParameters)
         {
-            Debug.LogWarning($"[Auth] Server rejected name \"{name}\": {e.Message}");
+            Debug.LogWarning($"[Auth] Server rejected player name: {e.Message}");
             return NameValidationError.ServerRejected;
         }
         catch (OperationCanceledException)
@@ -101,26 +105,37 @@ public class UGSAuthService : IAuthService
         if (string.IsNullOrWhiteSpace(name))
             return NameValidationError.Empty;
 
-        if (name.Length < 3)
+        // NFKC collapses compatibility forms; length/charset checks use the normalized form.
+        string normalized = name.Normalize(NormalizationForm.FormKC);
+
+        if (normalized.Length < 3)
             return NameValidationError.TooShort;
 
-        if (name.Length > 50)
+        if (normalized.Length > 50)
             return NameValidationError.TooLong;
 
-        foreach (char c in name)
+        foreach (char c in normalized)
             if (!char.IsLetterOrDigit(c) && c != ' ' && c != '-' && c != '_' && c != '.')
                 return NameValidationError.InvalidCharacter;
 
-        string lower = name.ToLowerInvariant();
+        // Ban list: compare against a Latin-lookalike fold so Cyrillic а/е/о etc. cannot bypass ASCII bans.
+        string folded = FoldHomoglyphsForBanCheck(normalized).ToLowerInvariant();
         foreach (var word in _validatorConfig.BannedWords)
-            if (lower.Contains(word.ToLowerInvariant()))
+        {
+            if (string.IsNullOrEmpty(word))
+                continue;
+            string foldedWord = FoldHomoglyphsForBanCheck(word.Normalize(NormalizationForm.FormKC))
+                .ToLowerInvariant();
+            if (foldedWord.Length > 0 && folded.Contains(foldedWord))
                 return NameValidationError.Profanity;
+        }
 
         if (_validatorConfig.BannedPattern != null)
         {
             try
             {
-                if (_validatorConfig.BannedPattern.IsMatch(name))
+                if (_validatorConfig.BannedPattern.IsMatch(normalized)
+                    || _validatorConfig.BannedPattern.IsMatch(folded))
                     return NameValidationError.Profanity;
             }
             catch (RegexMatchTimeoutException)
@@ -131,6 +146,45 @@ public class UGSAuthService : IAuthService
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Maps common Cyrillic/Greek lookalikes to Latin letters for ban-list matching only.
+    /// Does not change the name sent to the server.
+    /// </summary>
+    static string FoldHomoglyphsForBanCheck(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return value;
+
+        var sb = new StringBuilder(value.Length);
+        foreach (char c in value)
+        {
+            sb.Append(c switch
+            {
+                // Cyrillic → Latin lookalikes
+                '\u0430' or '\u0410' => 'a', // а А
+                '\u0435' or '\u0415' => 'e', // е Е
+                '\u043E' or '\u041E' => 'o', // о О
+                '\u0440' or '\u0420' => 'p', // р Р
+                '\u0441' or '\u0421' => 'c', // с С
+                '\u0443' or '\u0423' => 'y', // у У
+                '\u0445' or '\u0425' => 'x', // х Х
+                '\u0456' or '\u0406' => 'i', // і І
+                '\u04CF' or '\u04C0' => 'i', // ӏ Ӏ
+                // Greek → Latin lookalikes
+                '\u03B1' or '\u0391' => 'a', // α Α
+                '\u03B5' or '\u0395' => 'e', // ε Ε
+                '\u03BF' or '\u039F' => 'o', // ο Ο
+                '\u03C1' or '\u03A1' => 'p', // ρ Ρ
+                '\u03C5' or '\u03A5' => 'y', // υ Υ
+                '\u03C7' or '\u03A7' => 'x', // χ Χ
+                '\u03B9' or '\u0399' => 'i', // ι Ι
+                _ => c
+            });
+        }
+
+        return sb.ToString();
     }
 
     /// <inheritdoc/>

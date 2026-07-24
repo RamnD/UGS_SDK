@@ -38,11 +38,22 @@ public interface ICloudSaveService<TKey> where TKey : struct, Enum
 
     /// <summary>
     /// Reads a value from the local cache. Safe to call synchronously from UI/Update.
+    /// Missing keys return <paramref name="defaultValue"/>. Corrupt JSON logs an error and
+    /// throws <see cref="InvalidOperationException"/> so callers do not overwrite good cloud
+    /// data with a default via read-modify-write.
+    /// Prefer <see cref="TryGet{TValue}"/> when you need missing vs present without exceptions.
     /// </summary>
     /// <typeparam name="TValue">Value type (int, long, bool, string, or a serializable class).</typeparam>
     /// <param name="key">Save key.</param>
     /// <param name="defaultValue">Returned if the key is missing.</param>
     TValue Get<TValue>(TKey key, TValue defaultValue = default);
+
+    /// <summary>
+    /// Tries to read a value from the local cache.
+    /// Returns false when the key is missing. Throws <see cref="InvalidOperationException"/>
+    /// when the stored JSON cannot be deserialized (corrupt entry left intact).
+    /// </summary>
+    bool TryGet<TValue>(TKey key, out TValue value);
 
     /// <summary>
     /// Writes a value to the local cache and PlayerPrefs. Does not upload to the cloud.

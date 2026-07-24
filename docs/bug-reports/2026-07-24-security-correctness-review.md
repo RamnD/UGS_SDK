@@ -4,12 +4,12 @@
 |---|---|
 | **Found** | 2026-07-24 |
 | **Affects** | 1.8.6 |
-| **Status** | in-progress — Stages 1–4 → **1.8.7–1.8.10**; M1/M10 + remaining L open |
+| **Status** | **closed** — hotfix stream **1.8.7–1.8.11**; product epics → [ROADMAP](../ROADMAP.md) |
 | **Severity** | Critical + High batch (see table below) |
 | **Branch** | main |
 | **Scope** | 77 `.cs` files, ~4700 lines UGS; Auth, IAP, Economy, CloudSave, Items, Analytics, Ads, RemoteConfig, Leaderboard, Achievements |
 
-Hotfixes for items below ship as **patch** releases (`1.8.7+`). Product epics (Cloud Code, server entitlements, …) live in [../ROADMAP.md](../ROADMAP.md).
+Hotfixes for items below shipped as **patch** releases (`1.8.7`–`1.8.11`). Product epics (Cloud Code, server entitlements, …) live in [../ROADMAP.md](../ROADMAP.md).
 
 ### Hotfix tracking (1.8.x)
 
@@ -18,7 +18,7 @@ Hotfixes for items below ship as **patch** releases (`1.8.7+`). Product epics (C
 | C1 | Achievements wipe on failed load | 1.8.7 | **fixed-in 1.8.7** |
 | C2 | Economy double flush / no single-flight | 1.8.8 | **fixed-in 1.8.8** |
 | C3 | Auth DeleteAccount on AlreadyLinked | 1.8.7 | **fixed-in 1.8.7** (empty→Delete, else SignOut) |
-| H1 | No client idempotency on balance ops | 1.8.8 (in_flight states); full idempotency → [ROADMAP 1.9.0](../ROADMAP.md) | partial — server dedupe still 1.9.0 |
+| H1 | No client idempotency on balance ops | 1.8.8 (in_flight); full → [ROADMAP 1.9.0](../ROADMAP.md) | **partial** — client queue done; server dedupe 1.9.0 |
 | H2 | Entitlements from PendingOrders | 1.8.9 | **fixed-in 1.8.9** |
 | H3 | Items cancel-after-grant refund exploit | 1.8.7 | **fixed-in 1.8.7** |
 | H4 | Offline consumable grant lost on refresh | 1.8.9 | **fixed-in 1.8.9** |
@@ -26,6 +26,7 @@ Hotfixes for items below ship as **patch** releases (`1.8.7+`). Product epics (C
 | H6 | Ads overlapping shows lose callbacks | 1.8.7 | **fixed-in 1.8.7** |
 | H7 | Ads close-before-reward fails grant | 1.8.7 | **fixed-in 1.8.7** |
 | H8 | Enqueue during flush dropped | 1.8.8 | **fixed-in 1.8.8** |
+| M1 | Server entitlement verify | → [ROADMAP 1.10.0](../ROADMAP.md) | **deferred** |
 | M2 | SignIn without environment | 1.8.10 | **fixed-in 1.8.10** |
 | M3 | ToMinorUnits ×100 hardcode | 1.8.10 | **fixed-in 1.8.10** |
 | M4 | Error classification by substring | 1.8.8 | **fixed-in 1.8.8** |
@@ -34,10 +35,18 @@ Hotfixes for items below ship as **patch** releases (`1.8.7+`). Product epics (C
 | M7 | IsAuthenticated frozen snapshot | 1.8.10 | **fixed-in 1.8.10** |
 | M8 | Item/consumable prefs not namespaced | 1.8.9 | **fixed-in 1.8.9** |
 | M9 | Analytics queue lock / batch drain | 1.8.10 | **fixed-in 1.8.10** |
+| M10 | Profanity Unicode homoglyphs | 1.8.11 | **fixed-in 1.8.11** |
 | M11 | `__ts` mapper collision | 1.8.10 | **fixed-in 1.8.10** |
-| M1 | Server entitlement verify | → [ROADMAP 1.10.0](../ROADMAP.md) | deferred |
-| M10 | Profanity Unicode homoglyphs | later | open |
-| L* | Low batch (partial) | 1.8.10+ | partial — TestAds, regex timeout, LB 404 done |
+| L1 | CloudSave Get swallows corrupt JSON | 1.8.11 | **fixed-in 1.8.11** (`TryGet` + throw) |
+| L2 | CloudSave full payload in logs | 1.8.11 | **fixed-in 1.8.11** |
+| L3 | Player name in Auth logs (PII) | 1.8.11 | **fixed-in 1.8.11** |
+| L4 | BannedPattern without MatchTimeout | 1.8.10 | **fixed-in 1.8.10** |
+| L5 | BalanceCache zeros missing currencies | 1.8.11 | **fixed-in 1.8.11** |
+| L6 | IAP confirm fail after redeem → false | 1.8.11 | **fixed-in 1.8.11** |
+| L7 | Leaderboard 404 by substring | 1.8.10 | **fixed-in 1.8.10** |
+| L8 | JsonUtility null list NRE | 1.8.9 / 1.8.11 | **fixed-in** (`??=` guards) |
+| L9 | TestAdsManager always rewards | 1.8.10 | **fixed-in 1.8.10** |
+| L10 | Achievements serialize by reference | 1.8.11 | **fixed-in 1.8.11** (deep snapshot) |
 
 ---
 
@@ -45,197 +54,58 @@ Hotfixes for items below ship as **patch** releases (`1.8.7+`). Product epics (C
 
 Секретов/токенов в репозитории и логах нет, `.gitignore` корректен для Unity-пакета.
 
-Главная системная проблема: **несколько подсистем при сбое загрузки/сети затирают серверные данные игрока, а критичные для экономики решения принимаются по подстроке в тексте ошибки (нет типизированной классификации и ключей идемпотентности).**
+Главная системная проблема на момент аудита: **несколько подсистем при сбое загрузки/сети затирали серверные данные игрока, а критичные для экономики решения принимались по подстроке в тексте ошибки.** Клиентский hotfix-stream **1.8.7–1.8.11** закрыл Critical/High/Medium/Low из этого отчёта; серверные эпики (идемпотентность Economy, entitlements) вынесены в ROADMAP.
 
 Находки, помеченные *(проверено по коду)*, перепроверены вручную по исходникам, остальные — по результатам направленного ревью с указанием строк.
 
-| Severity | Кол-во |
-|----------|--------|
-| 🔴 Critical | 3 |
-| 🟠 High | 8 |
-| 🟡 Medium | 11 |
-| 🟢 Low | 10 |
+| Severity | Кол-во | Outcome |
+|----------|--------|---------|
+| 🔴 Critical | 3 | fixed in 1.8.7–1.8.8 |
+| 🟠 High | 8 | fixed / H1 partial→1.9.0 |
+| 🟡 Medium | 11 | fixed; M1 deferred→1.10.0 |
+| 🟢 Low | 10 | fixed in 1.8.10–1.8.11 |
 
 ---
 
 ## 🔴 CRITICAL
 
-### C1. Achievements — сбой загрузки затирает все ачивки в облаке
-**Файл:** `Runtime/UGS/Achievements/UGSAchievementService.cs:174-177` *(проверено по коду)*
+### C1. Achievements: failed load → empty cache → Flush wipes Cloud Save *(проверено по коду)*
+**Файл:** `Runtime/UGS/Achievements/UGSAchievementService.cs`  
+**Fixed in 1.8.7** — `_isLoaded` only after successful path; flush requires cloud baseline.
 
-`_isLoaded = true` ставится **до** `await LoadAllAsync()` (строка 188). Если загрузка упала (таймаут/5xx) или warmup вызван fire-and-forget без await, следующий `SetProgressAsync` считает состояние загруженным, пишет одну ачивку в пустой `_states`, и `FlushAsync` перезаписывает в Cloud Save **весь прогресс единственной записью**.
+### C2. Economy: concurrent Flush / no single-flight *(проверено по коду)*
+**Файл:** `Runtime/UGS/Economy/PendingTransactionQueue.cs`  
+**Fixed in 1.8.8** — single-flight + `pending → in_flight`. Full server idempotency → 1.9.0.
 
-**Сценарий:** warmup один раз упал → вызывающий залогировал/проглотил исключение → позже `SetProgressAsync("first_win", 1, 1)` пишет одну ачивку в пустой `_states` → `FlushAsync` делает `SaveAsync({ [CloudSaveKey] = json })` только с этой ачивкой → все ранее заработанные ачивки в облаке стёрты.
-
-**Фикс:** ставить `_isLoaded = true` только после успешной загрузки (внутри `try`, после заполнения `_states`), в `catch` — сбрасывать в `false` перед rethrow. Конкурентные загрузки защитить общим in-flight `Task`, а не bool-флагом.
-
----
-
-### C2. Economy — двойное начисление на сервере при повторном/конкурентном flush
-**Файлы:** `Runtime/UGS/Economy/UGSEconomyService.cs:44` + `Runtime/UGS/Economy/PendingTransactionQueue.cs:86-145`
-
-`RefreshBalancesAsync` не имеет reentrancy-guard и вызывается минимум из двух мест: из игры (периодический/ручной sync) и внутренне после каждого IAP-redeem (`UGSRealMoneyPurchaseService.cs:313`). Два пересекающихся вызова на main-thread чередуются на точках `await`. `FlushAsync` начинается с `Load()`, читая дельты с диска, и только после цикла вызывает `PersistRemaining`. Оба конкурентных flush читают одну и ту же `+N`, оба шлют `IncrementBalanceAsync(GOLD, N)`. Сервер без клиентского idempotency-key применяет **оба → +2N**.
-
-**Сценарий:** у игрока в очереди начисленная оффлайн валюта, он инициирует покупку (redeem→refresh), одновременно срабатывает периодический refresh → дельта применяется на сервере дважды. Игрок получает валюту, которую не зарабатывал/не оплачивал.
-
-**Фикс:** single-flight (`SemaphoreSlim`/флаг) вокруг `RefreshBalancesAsync` + клиентский idempotency-key на каждую очередную транзакцию, чтобы серверные инкременты дедуплицировались.
-
----
-
-### C3. Auth — попытка «связать аккаунт» безвозвратно удаляет текущий
-**Файл:** `Runtime/UGS/Auth/UGSAuthService.cs:247-274` (особенно 260) *(проверено по коду)*
-
-При `AccountAlreadyLinked` метод `SignIntoExistingAfterAlreadyLinkedAsync` **безусловно** вызывает `DeleteAccountAsync()` на текущем игроке. Docstring предполагает «свежий анонимус-заглушку», но это нигде не проверяется.
-
-**Сценарий:** игрок неделями играл анонимно, накопив прогресс в Cloud Save / Economy, затем нажал «Войти через Google». Этот Google-идентификатор уже привязан к старому UGS-игроку (прошлое устройство/переустановка). SDK ловит `AccountAlreadyLinked` и вызывает `DeleteAccountAsync()` на **текущем** аккаунте → серверный аккаунт и Cloud Save удаляются навсегда → игрок вошёл в старый аккаунт, недавний прогресс потерян безвозвратно от действия, которое он считал «привязкой».
-
-**Фикс:** на recovery-пути не удалять — использовать `SignOut(clearCredentials: true)`, чтобы анонимный аккаунт остался; либо сначала проверять, что текущий игрок действительно пустой/свежий; либо вернуть решение о конфликте в UI (`AccountLinkResult`), чтобы игра предупредила игрока до деструктивного действия.
+### C3. Auth link: DeleteAccount on AlreadyLinked *(проверено по коду)*
+**Файл:** `Runtime/UGS/Auth/UGSAuthService.cs`  
+**Fixed in 1.8.7** — empty Cloud Save → Delete; else SignOut before SignedIntoExisting.
 
 ---
 
 ## 🟠 HIGH
 
-### H1. Economy — нет idempotency-key: таймаут-после-применения даёт двойное начисление/списание
-**Файлы:** `Runtime/UGS/Economy/UGSEconomyService.cs:98-115, 150-173`; `PendingTransactionQueue.cs:107-113`
+### H1. No client idempotency on balance ops
+**Partial in 1.8.8** (durable in_flight). **Server dedupe → [ROADMAP 1.9.0](../ROADMAP.md).**
 
-Если сервер применил инкремент, но ответ потерян (классифицируется как «recoverable»), код перевыкладывает `+amount` в очередь; следующий flush применяет его снова. Add → игрок получает 2×. Spend/`TryApplyLocalSpend` → списание дважды. `IncrementBalanceAsync`/`DecrementBalanceAsync` не несут клиентский transaction-id, поэтому ретраи не at-most-once.
-
-**Фикс:** передавать стабильный idempotency/transaction-id на каждую логическую операцию.
-
----
-
-### H2. IAP — энтайтлменты выдаются по неоплаченным pending-заказам
-**Файл:** `Runtime/UGS/IAP/UGSRealMoneyPurchaseService.cs:361-363, 368`
-
-Восстановление энтайтлментов идёт по `orders.PendingOrders` (отложенный/неподтверждённый платёж — Google «pending transactions», медленная карта, family approval). Гранта по pending-заказу означает выдачу товара до — и, возможно, без — оплаты. Если отложенный платёж провалится/отменится, энтайтлмент уже сохранён.
-
-**Фикс:** восстанавливать энтайтлменты только из `ConfirmedOrders`.
-
----
-
-### H3. Items — отмена покупки после серверной выдачи → возврат денег + товар остаётся (эксплойт)
-**Файл:** `Runtime/UGS/Items/UGSItemService.cs:110-134` *(проверено по коду)*
-
-`ThrowIfCancellationRequested()` на строке 114 стоит **после** успешного `AddInventoryItemAsync` (строка 113). Брошенный `OperationCanceledException` ловится широким `catch (Exception e)` (в отличие от consumable-сервиса, здесь нет фильтра OCE), и код рефандит валюту, хотя товар уже выдан сервером → игрок оставляет товар и получает деньги обратно.
-
-Дополнительно:
-- Рефанд `AddCurrencyAsync` использует тот же (уже отменённый) токен → откат может немедленно прерваться → валюта молча теряется (лог «incomplete», строка 129).
-- `_ownedItems.Add(id)` не выполнился → `IsOwned(id)` = false → повтор снова запускает spend + grant → двойное списание/двойная выдача.
-
-**Фикс:** не вызывать `ThrowIfCancellationRequested()` после закоммиченной серверной мутации; добавить отдельный `catch (OperationCanceledException)`, который rethrow'ит без рефанда, если грант уже прошёл; для компенсирующего рефанда использовать `CancellationToken.None`; проверять серверное владение перед рефандом (идемпотентность).
-
----
-
-### H4. Items — оффлайн-грант расходников теряется при следующем sync
-**Файл:** `Runtime/UGS/Items/UGSConsumableItemService.cs:152-161, 189`
-
-Оффлайн `TryGrantAsync` пишет грант в кэш + PlayerPrefs и возвращает `true`, но **pending-очереди для реконсиляции с сервером нет**. Следующий онлайн `RefreshAsync` вызывает `RebuildFromBalances`, который делает `_quantities.Clear()` и перезаписывает чисто из серверных балансов + `SaveToPrefs()` → оффлайн-грант стирается из памяти и с диска навсегда.
-
-**Сценарий:** игрок получил награду (Shield +5) оффлайн → UI показывает +5 → реконнект → `RefreshAsync` → сервер не знал про +5 → кэш перестроен по серверу → +5 исчезли.
-
-**Фикс:** либо требовать сеть для грантов (как для consume), либо добавить durable pending-очередь (как описано в доке `IInventoryService`) и в `RebuildFromBalances` переприменять неслитые дельты вместо слепого затирания.
-
----
-
-### H5. CloudSave — нечёткое сравнение таймстампов (±1с) как проверка версии
-**Файл:** `Runtime/UGS/CloudSave/UGSCloudSaveService.cs:232-237`
-
-`TimestampsMatch` считает равными любые два таймстампа в пределах 1 секунды, и этот же нечёткий чек управляет и dirty-проверкой, и optimistic-concurrency.
-
-- **Проявление A (правка не выгружена):** `UploadLocalAsync` ставит `BaseTimestamp = LocalTimestamp = now`. Если игра вызовет `Set()` снова в пределах 1с, новый `LocalTimestamp` в толерансе от `BaseTimestamp` → `IsDirty == false` → `PushToCloudAsync` выходит на строке 155. Правка не отправлена и уязвима к затиранию последующим `ApplyCloud`.
-- **Проявление B (кросс-клиентский clobber):** в `PushToCloudAsync` (строка 165) `TimestampsMatch(cloudTs, BaseTimestamp)` истинно → клиент A перезаписывает свежую запись клиента B без конфликта (silent last-write-wins).
-
-**Фикс:** использовать точное равенство для проверки версии/родителя (сравнивать строку `__ts` или монотонный счётчик версии). Толеранс — только для косметического отображения, никогда для dirty/concurrency.
-
----
-
-### H6. LevelPlay — перекрывающиеся запросы теряют колбэки
-**Файл:** `Runtime/UGS/Ads/LevelPlay/LevelPlayAdsManager.cs:110-144, 117-124`
-
-Отслеживается только один набор колбэков. Если `ShowRewardedAd(A, ...)` вызван пока A грузится, а затем `ShowRewardedAd(B, ...)`, поля `_pendingSuccess/_pendingFailed/_activeRewardedUnitId` перезаписываются на B. Когда A догрузится, `OnRewardedLoaded(A)` видит `A != _activeRewardedUnitId (B)` и не показывает/не фейлит A → вызывающий A не получает **ни `onSuccess`, ни `onFailed`** → вечное зависание. То же с единственными слотами `_deferredRewardedShow`/`_deferredInterstitialShow`.
-
-**Фикс:** отклонять/фейлить новый запрос пока активен предыдущий (сразу вызвать `onFailed`) либо ставить в очередь; не затирать pending-колбэки молча.
-
----
-
-### H7. LevelPlay — награда теряется, если `OnAdClosed` пришёл раньше `OnAdRewarded`
-**Файл:** `Runtime/UGS/Ads/LevelPlay/LevelPlayAdsManager.cs:267-285`
-
-Дизайн предполагает, что `OnAdRewarded` всегда до `OnAdClosed`. На адаптерах медиации, доставляющих close до reward (документировано как adapter-dependent в ironSource/LevelPlay), `OnRewardedClosed` срабатывает первым: вызывает `onFailed` и сбрасывает `_activeRewardedUnitId = null`. Затем `OnRewardEarned` видит `adUnitId != null` и делает `return` → игрок досмотрел рекламу, но получил `onFailed` без награды.
-
-**Фикс:** флаг `bool _rewardEarned`, выставляемый в `OnRewardEarned`; в `OnRewardedClosed` вызывать `onFailed` только если награда не заработана, и выдавать награду при её чуть более позднем приходе.
-
----
-
-### H8. Economy — enqueue во время flush молча теряется
-**Файлы:** `Runtime/UGS/Economy/PendingTransactionQueue.cs:118/127/142/159` (`PersistRemaining`) vs `Enqueue:37-79`
-
-`FlushAsync` держит in-memory снапшот очереди (строка 88). Конкурентный `Enqueue` (из recoverable-сбоя Add/Spend во время онлайн-flush) делает свой `Load()`→modify→`Persist()` на диск. Затем flush вызывает `PersistRemaining(queue, processed)` и пишет **устаревший** снапшот минус обработанные → новая дельта затирается. Игрок теряет валюту, заработанную во время flush.
-
-**Фикс:** перечитывать и мержить перед записью хвоста, либо сериализовать доступ enqueue/flush.
+### H2–H8
+All **fixed** in 1.8.7–1.8.9 (see tracking table). Details retained in git history of this file / CHANGELOG.
 
 ---
 
 ## 🟡 MEDIUM
 
-### M1. Энтайтлменты клиент-авторитетны, серверно не верифицируются
-**Файлы:** `Runtime/Core/IAP/CloudSaveEntitlementStore.cs`, `UGSRealMoneyPurchaseService.cs:248`
-Энтайтлменты — обычный набор строк через `ICloudSaveService` (клиент-записываемый), читается `HasEntitlement` без проверки чека/сервера. Для продуктов с `RedeemWithEconomy = false` серверной валидации нет вообще → правкой Cloud Save игрок выдаёт себе `vip`/`season_pass` бесплатно. **Фикс:** валидировать против серверных чеков/Economy, локальный набор — только кэш.
+### M1. Энтайтлменты клиент-авторитетны
+**Deferred** → [ROADMAP 1.10.0](../ROADMAP.md).
 
-### M2. `SignInAsync` инициализирует UnityServices без environment
-**Файл:** `UGSAuthService.cs:129-133`
-`await UnityServices.InitializeAsync()` без `InitializationOptions`/environment. Если вызвать напрямую (не через `UGSServicesBuilder.BuildAsync`, где резолвится environment), staging-билд молча аутентифицируется в **prod**-окружении. **Фикс:** централизовать инициализацию (resolve + set environment) в общем хелпере для обоих путей.
-
-### M3. `ToMinorUnits` жёстко умножает на 100
-**Файл:** `UGSRealMoneyPurchaseService.cs:406-410`
-Хардкод 2 знаков: JPY/KRW (0 знаков) раздуваются ×100, 3-знаковые (BHD) неверны, большие цены переполняют `int`. Значение идёт в `RedeemGooglePlayStorePurchaseArgs`/`RedeemAppleAppStorePurchaseArgs` → искажённая аналитика real-money spend (не источник гранта — чек серверно валидируется). **Фикс:** брать экспоненту minor-unit из ISO-валюты, использовать `long`.
-
-### M4. Классификация ошибок по подстроке текста
-**Файл:** `Runtime/UGS/Economy/EconomyErrorClassifier.cs:36-40, 62`
-Для прочих reason и обёрнутых исключений recoverability решается сканом текста на `"network"`, `"unavailable"`, `"http 5"`, `"503"`. `"http 5"` матчит и перманентную `500` → бесконечный requeue/оптимистичное применение и расхождение кэша с сервером. **Фикс:** классифицировать по типизированным reason/статус-кодам.
-
-### M5. Analytics: числа сериализуются/парсятся в текущей культуре
-**Файл:** `Runtime/UGS/Analytics/AnalyticsEventSerializer.cs:83, 103-110`
-`value.ToString()` и `float/double/int.TryParse` без `CultureInfo.InvariantCulture`. `1.5` в locale с запятой → `"1,5"`, после смены локали `float.TryParse("1,5")` → `15`. `UGSRemoteConfigService` уже использует `InvariantCulture` — привести к тому же.
-
-### M6. GPGS: TCS без cancellation-регистрации и без `RunContinuationsAsynchronously`
-**Файл:** `UGSAuthService.cs:393-451`
-Токен только опрашивается внутри колбэков GPGS, не зарегистрирован на TCS → отмена при открытом sign-in листе не разблокирует await (вечный hang). Континуация выполняется inline на потоке колбэка GPGS (реентрантность, off-main-thread вызовы UGS). **Фикс:** `cancellationToken.Register(() => tcs.TrySetCanceled(...))` + `TaskCreationOptions.RunContinuationsAsynchronously`.
-
-### M7. `IGameServices.IsAuthenticated` — застывший снимок
-**Файл:** `Runtime/UGS/Bootstrap/UGSGameServices.cs:44`
-`IsAuthenticated = auth.IsSignedIn` фиксируется в конструкторе. После `DeleteAccountAsync`/`Reset`/logout/истечения токена live-значение false, а свойство возвращает true. Ранний `GameServicesLocator.Set` (builder:166) создаёт инстанс до sign-in → он навсегда `IsAuthenticated=false`. **Фикс:** live-свойство `=> Auth?.IsSignedIn ?? false`.
-
-### M8. Item/Consumable кэши не разделены по generic-типу
-**Файлы:** `UGSConsumableItemService.cs:17`, `UGSItemService.cs:15`
-Константный PlayerPrefs-ключ (`consumables_currency_cache` / `items_owned_cache`) общий для всех инстанциаций `TItem`. Два enum'а пишут один blob → взаимное затирание кэша (`LoadFromPrefs` молча отбрасывает записи, не парсящиеся в `TItem`, скрывая порчу). CloudSave делает namespace по `typeof(TKey).Name` — сделать так же (`typeof(TItem).Name`).
-
-### M9. Analytics pending-queue: без блокировок + O(n²) слив + дроп старейших
-**Файл:** `Runtime/UGS/Analytics/PendingAnalyticsQueue.cs:14-61, 25-31`
-`Enqueue`/`TryDequeue` делают read-modify-write всего массива в PlayerPrefs без локов. `DrainQueue` вызывает `TryDequeue` на каждое событие, каждый пересериализует весь массив + `PlayerPrefs.Save()` → слив 500 событий = 500 сериализаций + flush'ей. При переполнении молча дропаются **старейшие** события (обычно вход воронки/`session_start`). **Фикс:** load один раз, слив в памяти, persist один раз; лог при тримминге.
-
-### M10. Профанити-фильтр обходится Unicode-гомоглифами
-**Файл:** `UGSAuthService.cs:108-119`
-`char.IsLetterOrDigit` пропускает буквы любого скрипта, а бан-лист сравнивается ordinal-ASCII-подстрокой → `nаzi` с кириллической `а` (U+0430) проходит. **Фикс:** NFKC-нормализация (и/или confusable-маппинг) перед сравнением, либо ограничить allow-list конкретным скриптом.
-
-### M11. Резервный ключ `__ts` без валидации маппера
-**Файл:** `UGSCloudSaveService.cs:283-286`
-`UploadLocalAsync` безусловно перезаписывает `cloudData["__ts"]`. Если `ISaveKeyMapper.ToCloudKey` вернёт `"__ts"`, пользовательское значение молча заменяется таймстампом, а на загрузке уходит в `_cloudSnapshotTimestamp` → ключ исчезает из данных. **Фикс:** валидировать/отклонять ключи, равные `TimestampCloudKey`.
+### M2–M11
+All **fixed** in 1.8.8–1.8.11 except M1 (deferred). M10 (homoglyphs) → **1.8.11**.
 
 ---
 
 ## 🟢 LOW
 
-- **`Get<TValue>` глотает ошибки десериализации** (`UGSCloudSaveService.cs:56-63`): возврат `defaultValue` неотличим от «ключ отсутствует»; read-modify-write превращает временную порчу в перманентную потерю. Различать missing/unparseable.
-- **Полный payload Cloud Save в `Debug.Log`** (`UGSCloudSaveService.cs:93-95, 288-290`): ключи+значения в открытом виде в логах устройства. Гейтить под debug-флаг, логировать только имена/количество.
-- **Имя игрока в логах** (`UGSAuthService.cs:77, 82`): PII. Токены/credentials — не логируются (проверено).
-- **`BannedPattern.IsMatch` без `RegexMatchTimeout`** (`UGSAuthService.cs:117-119`): ReDoS/фриз main-thread при вызове на каждый ввод.
-- **`UpdateFromServer` обнуляет валюты, отсутствующие в ответе** (`BalanceCache.cs:69`): `_data[type] = item?.Balance ?? 0L`.
-- **redeem-успешен-но-confirm-упал → возвращает false при уже выданной валюте** (`UGSRealMoneyPurchaseService.cs:249-256`): заказ остаётся pending и re-redeem'ится на следующем запуске.
-- **Leaderboard/Achievements 404 по подстроке `"404"`** (`UGSLeaderboardService.cs:84-90`): неродственная ошибка с `404` в тексте → неверная классификация «нет записи». Проверять типизированный статус.
-- **`JsonUtility.FromJson("{}")` может дать null-список** (`UGSConsumableItemService.cs:241-243`, `UGSItemService.cs:147-150`): `?? new()` покрывает только null-корень → NRE при `foreach`. Гвардить список (`entries ??= new()`).
-- **`TestAdsManager` через `async void` безусловно выдаёт награду** (`TestAdsManager.cs:18-24`): `onFailed` мёртв, исключения ненаблюдаемы. Гейтить под `#if UNITY_EDITOR`/`DEVELOPMENT_BUILD`.
-- **Корректный `AchievementStateCollection.items = _states` по ссылке** — конкурентная мутация во время сериализации flush возможна (следствие C1/H-race).
+All ten Low items **fixed** in 1.8.10–1.8.11 (see tracking table L1–L10).
 
 ---
 
@@ -255,16 +125,16 @@ Hotfixes for items below ship as **patch** releases (`1.8.7+`). Product epics (C
 
 ## Приоритет исправлений
 
-**1.8.x hotfix stream** (this report):
+**1.8.x hotfix stream** — **complete** (`1.8.7`–`1.8.11`):
 
 1. ~~**C1, C3, H3, H6/H7**~~ → **1.8.7**
-2. ~~**C2 + H8 + M4**~~ → **1.8.8** (queue in_flight; full server idempotency → 1.9.0)
-3. ~~**H4, H5, H2**~~ → **1.8.9** (+ M8 prefs namespace)
-4. ~~**M2/M3/M5/M6/M7/M9/M11**~~ → **1.8.10** (+ TestAds / regex timeout / LB 404)
-5. **M10 + remaining L** — точечные патчи; **M1** → 1.10.0.
+2. ~~**C2 + H8 + M4**~~ → **1.8.8**
+3. ~~**H4, H5, H2**~~ → **1.8.9**
+4. ~~**M2/M3/M5/M6/M7/M9/M11 + L4/L7/L9**~~ → **1.8.10**
+5. ~~**M10 + remaining L**~~ → **1.8.11**
 
 **Не в 1.8.x** (см. [ROADMAP](../ROADMAP.md)):
 
 - Полная серверная идемпотентность Economy → **1.9.0** Cloud Code  
-- Серверная верификация энтайтлментов (M1) → **1.10.0**  
+- Серверная верификация энтайтлментов (M1) / H1 server → **1.10.0** / **1.9.0**  
 - Orphan cleanup после link → **1.11.0**
