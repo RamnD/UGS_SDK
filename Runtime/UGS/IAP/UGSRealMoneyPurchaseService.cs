@@ -97,6 +97,11 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         _storeController.OnProductsFetchFailed += OnProductsFetchFailed;
 
         await _storeController.Connect();
+
+        // StoreKit 2 no longer auto-updates the legacy App Receipt that Economy redeem needs.
+        // Keep Unity's post-purchase refresh enabled so order.Info.Apple.AppReceipt can catch up.
+        _storeController.AppleStoreExtendedPurchaseService?.SetRefreshAppReceipt(true);
+
         FetchProducts();
         _storeController.FetchPurchases();
         _isInitialized = true;
@@ -259,7 +264,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         {
             if (definition.RedeemWithEconomy)
             {
-                bool redeemed = await RedeemEconomyPurchaseAsync(product, definition);
+                bool redeemed = await RedeemEconomyPurchaseAsync(order, product, definition);
                 if (!redeemed)
                 {
                     CompletePurchaseRequest(productId, false);
@@ -303,14 +308,44 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         }
     }
 
-    async Task<bool> RedeemEconomyPurchaseAsync(Product product, RealMoneyProductDefinition definition)
+    async Task<bool> RedeemEconomyPurchaseAsync(
+        PendingOrder order,
+        Product product,
+        RealMoneyProductDefinition definition)
     {
         string economyPurchaseId = definition.ProductId;
         string storeId = definition.ResolvedStoreProductId;
-        string receipt = product.receipt;
-        if (string.IsNullOrWhiteSpace(receipt))
+
+        if (!TryResolveRedeemReceipt(order, product, out string storeName, out string payload) ||
+            string.IsNullOrWhiteSpace(payload))
         {
-            Debug.LogWarning($"[SDK][IAP] Product '{economyPurchaseId}' (store id '{storeId}') has no receipt.");
+            string recovered = await ResolveReceiptPayloadWithRetryAsync(
+                order, product, economyPurchaseId, storeId);
+            if (!string.IsNullOrWhiteSpace(recovered))
+                payload = recovered;
+
+            // Prefer structured resolve after refresh/poll so Google vs Apple store name is correct.
+            if (TryResolveRedeemReceipt(order, product, out string resolvedStore, out string resolvedPayload) &&
+                !string.IsNullOrWhiteSpace(resolvedPayload))
+            {
+                storeName = resolvedStore;
+                payload = resolvedPayload;
+            }
+            else if (string.IsNullOrWhiteSpace(storeName) && !string.IsNullOrWhiteSpace(payload))
+            {
+                storeName = AppleAppStore.Name;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            string jws = order?.Info?.Apple?.jwsRepresentation;
+            Debug.LogWarning(
+                $"[SDK][IAP] Product '{economyPurchaseId}' (store id '{storeId}') has no legacy App Receipt. " +
+                $"product.receipt empty={string.IsNullOrWhiteSpace(product?.receipt)}; " +
+                $"order.tx={order?.Info?.TransactionID}; " +
+                $"jwsPresent={!string.IsNullOrWhiteSpace(jws)}. " +
+                "Economy RedeemAppleAppStorePurchaseAsync requires StoreKit 1 App Receipt, not jwsRepresentation.");
             return false;
         }
 
@@ -319,16 +354,9 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
 
         try
         {
-            UnifiedReceipt unifiedReceipt = JsonUtility.FromJson<UnifiedReceipt>(receipt);
-            if (unifiedReceipt == null || string.IsNullOrWhiteSpace(unifiedReceipt.Payload))
+            if (string.Equals(storeName, GooglePlay.Name, StringComparison.Ordinal))
             {
-                Debug.LogWarning($"[SDK][IAP] Unified receipt payload missing for '{economyPurchaseId}'.");
-                return false;
-            }
-
-            if (string.Equals(unifiedReceipt.Store, GooglePlay.Name, StringComparison.Ordinal))
-            {
-                GoogleReceiptPayload googleReceipt = JsonUtility.FromJson<GoogleReceiptPayload>(unifiedReceipt.Payload);
+                GoogleReceiptPayload googleReceipt = JsonUtility.FromJson<GoogleReceiptPayload>(payload);
                 if (googleReceipt == null ||
                     string.IsNullOrWhiteSpace(googleReceipt.json) ||
                     string.IsNullOrWhiteSpace(googleReceipt.signature))
@@ -349,7 +377,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             {
                 var args = new RedeemAppleAppStorePurchaseArgs(
                     economyPurchaseId,
-                    unifiedReceipt.Payload,
+                    payload,
                     localCost,
                     localCurrency);
                 await EconomyService.Instance.Purchases.RedeemAppleAppStorePurchaseAsync(args);
@@ -371,6 +399,129 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             Debug.LogError($"[SDK][IAP] Unexpected redeem failure for '{economyPurchaseId}': {ex}");
             return false;
         }
+    }
+
+    /// <summary>
+    /// IAP 5 + StoreKit 2: <see cref="Product.receipt"/> is null when Product.transactionID is unset,
+    /// and Apple App Receipt often lags until Unity's post-purchase refresh finishes.
+    /// Prefer <see cref="IOrderInfo"/>, then poll / RefreshAppReceipt for Economy-compatible payload.
+    /// </summary>
+    async Task<string> ResolveReceiptPayloadWithRetryAsync(
+        PendingOrder order,
+        Product product,
+        string economyPurchaseId,
+        string storeId)
+    {
+        const int pollAttempts = 6;
+        const int pollDelayMs = 250;
+
+        for (int i = 0; i < pollAttempts; i++)
+        {
+            await Task.Delay(pollDelayMs);
+            if (TryResolveRedeemReceipt(order, product, out _, out string payload) &&
+                !string.IsNullOrWhiteSpace(payload))
+            {
+                Debug.Log(
+                    $"[SDK][IAP] Legacy receipt became available after poll #{i + 1} for '{economyPurchaseId}'.");
+                return payload;
+            }
+        }
+
+        IAppleStoreExtendedPurchaseService apple = _storeController?.AppleStoreExtendedPurchaseService;
+        if (apple == null)
+            return null;
+
+        Debug.Log($"[SDK][IAP] Refreshing Apple App Receipt for '{economyPurchaseId}' (store id '{storeId}')...");
+        try
+        {
+            string refreshed = await RefreshAppleAppReceiptAsync(apple);
+            if (!string.IsNullOrWhiteSpace(refreshed))
+                return refreshed;
+
+            if (TryResolveRedeemReceipt(order, product, out _, out string afterRefresh) &&
+                !string.IsNullOrWhiteSpace(afterRefresh))
+                return afterRefresh;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[SDK][IAP] RefreshAppReceipt failed for '{economyPurchaseId}': {ex.Message}");
+        }
+
+        return null;
+    }
+
+    bool TryResolveRedeemReceipt(
+        PendingOrder order,
+        Product product,
+        out string storeName,
+        out string payload)
+    {
+        storeName = null;
+        payload = null;
+
+        // Prefer order info: Product.receipt on Apple returns null when transactionID is unset.
+        string appReceipt = order?.Info?.Apple?.AppReceipt;
+        if (!string.IsNullOrWhiteSpace(appReceipt))
+        {
+            storeName = order.Info.Apple.StoreName;
+            if (string.IsNullOrWhiteSpace(storeName))
+                storeName = AppleAppStore.Name;
+            payload = appReceipt;
+            return true;
+        }
+
+        if (TryExtractUnifiedPayload(order?.Info?.Receipt, out storeName, out payload))
+            return true;
+
+        string serviceReceipt = _storeController?.AppleStoreExtendedPurchaseService?.appReceipt;
+        if (!string.IsNullOrWhiteSpace(serviceReceipt))
+        {
+            storeName = AppleAppStore.Name;
+            payload = serviceReceipt;
+            return true;
+        }
+
+        return TryExtractUnifiedPayload(product?.receipt, out storeName, out payload);
+    }
+
+    static bool TryExtractUnifiedPayload(string unifiedReceiptJson, out string storeName, out string payload)
+    {
+        storeName = null;
+        payload = null;
+        if (string.IsNullOrWhiteSpace(unifiedReceiptJson))
+            return false;
+
+        UnifiedReceipt unified = JsonUtility.FromJson<UnifiedReceipt>(unifiedReceiptJson);
+        if (unified == null || string.IsNullOrWhiteSpace(unified.Payload))
+            return false;
+
+        storeName = unified.Store;
+        payload = unified.Payload;
+        return true;
+    }
+
+    static async Task<string> RefreshAppleAppReceiptAsync(IAppleStoreExtendedPurchaseService apple)
+    {
+        var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            apple.RefreshAppReceipt(
+                receipt => tcs.TrySetResult(receipt),
+                error => tcs.TrySetException(
+                    new InvalidOperationException(
+                        string.IsNullOrWhiteSpace(error) ? "RefreshAppReceipt failed." : error)));
+        }
+        catch (Exception ex)
+        {
+            tcs.TrySetException(ex);
+            return await tcs.Task;
+        }
+
+        Task completed = await Task.WhenAny(tcs.Task, Task.Delay(15000));
+        if (completed != tcs.Task)
+            throw new TimeoutException("RefreshAppReceipt timed out after 15s.");
+
+        return await tcs.Task;
     }
 
     void OnPurchaseConfirmed(Order order)
