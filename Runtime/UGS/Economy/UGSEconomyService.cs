@@ -138,7 +138,9 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
             cancellationToken.ThrowIfCancellationRequested();
             _cache.Set(type, result.Balance);
             _cache.Save();
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
             Debug.Log($"[Economy] Applied online +{amount} {type} → {result.Balance}");
+#endif
         }
         catch (OperationCanceledException)
         {
@@ -190,7 +192,9 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
             cancellationToken.ThrowIfCancellationRequested();
             _cache.Set(type, result.Balance);
             _cache.Save();
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
             Debug.Log($"[Economy] Applied online -{amount} {type} → {result.Balance}");
+#endif
             return true;
         }
         catch (EconomyException e) when (e.Reason == EconomyExceptionReason.UnprocessableTransaction)

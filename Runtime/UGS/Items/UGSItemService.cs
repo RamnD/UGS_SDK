@@ -17,6 +17,8 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
     private readonly IInventoryService<TCurrency>   _economy;
     private readonly HashSet<TItem>                 _ownedItems = new();
     private readonly object                         _refreshGate = new object();
+    private readonly object                         _purchaseGate = new object();
+    private bool                                    _purchaseInFlight;
     private Task                                    _refreshTask;
 
     public UGSItemService(IItemMapper<TItem, TCurrency> mapper, IInventoryService<TCurrency> economy)
@@ -114,6 +116,30 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
 
     /// <inheritdoc/>
     public async Task<bool> TryPurchaseAsync(TItem id, CancellationToken cancellationToken = default)
+    {
+        lock (_purchaseGate)
+        {
+            if (_purchaseInFlight)
+            {
+                Debug.LogWarning($"[Items] Purchase rejected for '{id}' — another purchase is already in flight.");
+                return false;
+            }
+
+            _purchaseInFlight = true;
+        }
+
+        try
+        {
+            return await TryPurchaseCoreAsync(id, cancellationToken);
+        }
+        finally
+        {
+            lock (_purchaseGate)
+                _purchaseInFlight = false;
+        }
+    }
+
+    async Task<bool> TryPurchaseCoreAsync(TItem id, CancellationToken cancellationToken)
     {
         if (IsOwned(id)) return true;
 

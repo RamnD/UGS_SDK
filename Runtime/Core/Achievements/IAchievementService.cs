@@ -47,4 +47,10 @@ public interface IAchievementService
     /// Flushes any pending local state to the backing store if needed.
     /// </summary>
     Task FlushAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Clears in-memory achievement state (does not delete Cloud Save).
+    /// Call on account delete / switch before a new player session uses this service.
+    /// </summary>
+    void ClearLocalCache();
 }

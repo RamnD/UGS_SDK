@@ -7,7 +7,7 @@ Versioned **product epics**. Each epic ships as a **minor** release: `1.N.0`.
 | Hotfixes / correctness bugs | [bug-reports/](./bug-reports/README.md) | Patch on current minor (was `1.8.x`; next patches on `1.9.x`) |
 | Planned features / architecture | **this file** | Minor `1.N.0` |
 
-Current package: **1.9.2**. The 2026-07-24 security/correctness review is **closed** on **1.8.7–1.8.11**. Prep **1.9.0**; IAP harden **1.9.1**; post-audit leftovers **1.9.2**. **Server / Cloud Code** starts at **1.10.0**.
+Current package: **1.9.3**. The 2026-07-24 security/correctness review is **closed** on **1.8.7–1.8.11**. Prep **1.9.0**; IAP harden **1.9.1**; post-audit leftovers **1.9.2**; final audit leftovers **1.9.3**. **Server / Cloud Code** starts at **1.10.0**.
 
 ---
 

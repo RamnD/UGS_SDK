@@ -94,13 +94,15 @@ internal sealed class BalanceCache<TCurrency> where TCurrency : struct, Enum
         PlayerPrefs.Save();
     }
 
-    /// <summary>Logs all cached balances to the Console.</summary>
+    /// <summary>Logs all cached balances to the Console (Editor / Development builds only).</summary>
     public void LogAll()
     {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
         var sb = new System.Text.StringBuilder("[Economy] Balances after sync:\n");
         foreach (var kvp in _data)
             sb.AppendLine($"  {kvp.Key}: {kvp.Value}");
         Debug.Log(sb.ToString());
+#endif
     }
 
     // ── Serialization ─────────────────────────────────────────────────────────

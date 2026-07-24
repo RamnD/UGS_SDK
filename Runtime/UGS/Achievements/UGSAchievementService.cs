@@ -27,6 +27,17 @@ public sealed class UGSAchievementService : IAchievementService
         await EnsureLoadedAsync(cancellationToken);
     }
 
+    /// <inheritdoc/>
+    public void ClearLocalCache()
+    {
+        _states.Clear();
+        _isLoaded = false;
+        _hasCloudBaseline = false;
+        _isDirty = false;
+        _loadTask = null;
+        Debug.Log("[Achievements] ClearLocalCache — in-memory state wiped.");
+    }
+
     public bool TryGetState(string achievementId, out AchievementState state)
     {
         ValidateAchievementId(achievementId);

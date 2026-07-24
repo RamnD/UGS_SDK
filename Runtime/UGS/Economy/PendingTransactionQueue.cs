@@ -77,7 +77,9 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
                 if (net == 0)
                 {
                     queue.items.RemoveAt(i);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
                     Debug.Log($"[Economy] Queued net 0 {key} — removed pending entry.");
+#endif
                 }
                 else
                 {
@@ -86,7 +88,9 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
                     if (string.IsNullOrEmpty(existing.id))
                         existing.id = Guid.NewGuid().ToString("N");
                     queue.items[i] = existing;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
                     Debug.Log($"[Economy] Queued {key} net → {existing.amount}");
+#endif
                 }
 
                 PersistUnlocked(queue);
@@ -100,7 +104,9 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
                 amount = amount,
                 status = StatusPending,
             });
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
             Debug.Log($"[Economy] Queued {(amount >= 0 ? "+" : "")}{amount} {key}");
+#endif
             PersistUnlocked(queue);
         }
     }
@@ -163,7 +169,9 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
         if (work.Count == 0)
             return;
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
         Debug.Log($"[Economy] Flush started ({work.Count} pending).");
+#endif
 
         foreach (PendingTx snapshot in work)
         {
@@ -196,6 +204,7 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
             catch (OperationCanceledException)
             {
                 RevertToPending(snapshot.id);
+                cache.Save();
                 throw;
             }
             catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e))
@@ -220,7 +229,9 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
         }
 
         cache.Save();
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
         Debug.Log("[Economy] Flush completed.");
+#endif
     }
 
     /// <summary>
@@ -339,7 +350,9 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
         PlayerPrefs.SetString(PrefsKey, legacyJson);
         PlayerPrefs.DeleteKey(LegacyPrefsKey);
         PlayerPrefs.Save();
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
         Debug.Log("[Economy] Migrated pending queue key economy_pending_adds → economy_pending_tx.");
+#endif
     }
 
     /// <summary>Merges duplicate pending (not in-flight) currency rows.</summary>

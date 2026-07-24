@@ -138,7 +138,7 @@ Local game saves are **not** wiped — the game should show a SaveConflict UI (k
 For a real account deletion:
 
 1. While still signed in, wipe Cloud Save / Economy / local progress in the game
-   (`ClearLocalCache` on Economy, CloudSave, Items, Consumables)
+   (`ClearLocalCache` on Economy, CloudSave, Items, Consumables, Achievements)
 2. Call `DeleteAccountAsync` — wraps `AuthenticationService.Instance.DeleteAccountAsync()`, clears `last_auth_method`
 3. Cold-start / reload so bootstrap creates a fresh anonymous session
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.9.3] - 2026-07-24
+
+### Fixed
+- **Achievements (M1):** `ClearLocalCache()` on `IAchievementService` / UGS / Mock so account switch cannot leak in-memory progress.
+- **Items / Consumables (M2):** single-flight mutations — overlapping `TryPurchaseAsync` / `TryConsumeAsync` / `TryGrantAsync` (same item) rejected while in flight.
+- **Economy (L1):** pending flush saves cache on `OperationCanceledException` after reverting in-flight rows.
+- **Docs (L2):** `docs/economy.md` ItemMapper example uses `GetCost` / `GetCostCurrency` (not `GetPrice`).
+
+### Added
+- [docs/consumables.md](docs/consumables.md) + `MockConsumableItemService<TItem>` (L3).
+
+### Changed
+- Verbose Economy / Consumables `Debug.Log` gated to Editor / Development builds (warnings/errors unchanged) (L5).
+- [docs/auth.md](docs/auth.md) wipe checklist includes Achievements.
+
 ## [1.9.2] - 2026-07-24
 
 ### Fixed

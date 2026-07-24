@@ -30,6 +30,9 @@ public interface IAchievementService
 
     Task UnlockAsync(string achievementId, CancellationToken cancellationToken = default);
     Task FlushAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Wipe in-memory state (account delete / switch).</summary>
+    void ClearLocalCache();
 }
 ```
 

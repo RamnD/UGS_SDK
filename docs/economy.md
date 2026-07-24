@@ -185,12 +185,19 @@ public sealed class ItemMapper : IItemMapper<ItemId, CurrencyType>
         _ => throw new ArgumentOutOfRangeException(nameof(item), item, null),
     };
 
-    /// <summary>Used for UI display only — price shown to player before confirming purchase.</summary>
-    public (CurrencyType currency, int amount) GetPrice(ItemId item) => item switch
+    public int GetCost(ItemId item) => item switch
     {
-        ItemId.SkinDefault    => (CurrencyType.Gold, 0),
-        ItemId.SkinFireSpirit => (CurrencyType.Gold, 5000),
-        ItemId.PowerUpMagnet  => (CurrencyType.Gems, 100),
+        ItemId.SkinDefault    => 0,
+        ItemId.SkinFireSpirit => 5000,
+        ItemId.PowerUpMagnet  => 100,
+        _ => throw new ArgumentOutOfRangeException(nameof(item), item, null),
+    };
+
+    public CurrencyType GetCostCurrency(ItemId item) => item switch
+    {
+        ItemId.SkinDefault    => CurrencyType.Gold,
+        ItemId.SkinFireSpirit => CurrencyType.Gold,
+        ItemId.PowerUpMagnet  => CurrencyType.Gems,
         _ => throw new ArgumentOutOfRangeException(nameof(item), item, null),
     };
 }

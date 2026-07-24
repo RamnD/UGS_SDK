@@ -39,6 +39,7 @@ Optional sample: **Package Manager → RamnD Game Services SDK → Samples → I
 | Initialization & bootstrap | [docs/bootstrap.md](docs/bootstrap.md) |
 | Auth & player name | [docs/auth.md](docs/auth.md) |
 | Economy (currency & items) | [docs/economy.md](docs/economy.md) |
+| Consumables (stackable) | [docs/consumables.md](docs/consumables.md) |
 | Real money purchases (IAP + Economy redeem) | [docs/iap.md](docs/iap.md) |
 | Cloud Save | [docs/cloud-save.md](docs/cloud-save.md) |
 | Leaderboard | [docs/leaderboard.md](docs/leaderboard.md) |

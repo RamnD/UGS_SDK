@@ -13,6 +13,13 @@ public sealed class MockAchievementService : IAchievementService
 {
     private readonly Dictionary<string, AchievementState> _states = new(StringComparer.Ordinal);
 
+    /// <inheritdoc/>
+    public void ClearLocalCache()
+    {
+        _states.Clear();
+        Debug.Log("[Mock Achievements] ClearLocalCache.");
+    }
+
     public bool TryGetState(string achievementId, out AchievementState state)
     {
         ValidateAchievementId(achievementId);

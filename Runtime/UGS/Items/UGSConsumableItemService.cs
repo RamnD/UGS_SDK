@@ -22,6 +22,8 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
     readonly Dictionary<TItem, int> _quantities = new();
     readonly object _pendingSync = new object();
     readonly object _refreshGate = new object();
+    readonly object _mutationGate = new object();
+    readonly HashSet<TItem> _mutatingItems = new();
     Task _refreshTask;
 
     const int StatusPending = 0;
@@ -146,6 +148,24 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
         if (!_mapper.IsConsumable(id))
             return false;
 
+        if (!TryBeginMutation(id))
+        {
+            Debug.LogWarning($"[Consumables] Consume rejected for '{id}' — mutation already in flight.");
+            return false;
+        }
+
+        try
+        {
+            return await TryConsumeCoreAsync(id, amount, cancellationToken);
+        }
+        finally
+        {
+            EndMutation(id);
+        }
+    }
+
+    async Task<bool> TryConsumeCoreAsync(TItem id, int amount, CancellationToken cancellationToken)
+    {
         if (GetQuantity(id) < amount)
         {
             if (!NetworkStatus.IsOnline)
@@ -217,6 +237,24 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
         if (!_mapper.IsConsumable(id))
             return false;
 
+        if (!TryBeginMutation(id))
+        {
+            Debug.LogWarning($"[Consumables] Grant rejected for '{id}' — mutation already in flight.");
+            return false;
+        }
+
+        try
+        {
+            return await TryGrantCoreAsync(id, amount, cancellationToken);
+        }
+        finally
+        {
+            EndMutation(id);
+        }
+    }
+
+    async Task<bool> TryGrantCoreAsync(TItem id, int amount, CancellationToken cancellationToken)
+    {
         if (!NetworkStatus.IsOnline)
         {
             if (!_mapper.IsOfflineAllowed(id, InventoryOperation.Add))
@@ -257,6 +295,18 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
         }
     }
 
+    bool TryBeginMutation(TItem id)
+    {
+        lock (_mutationGate)
+            return _mutatingItems.Add(id);
+    }
+
+    void EndMutation(TItem id)
+    {
+        lock (_mutationGate)
+            _mutatingItems.Remove(id);
+    }
+
     void ApplyLocalGrant(TItem id, int amount)
     {
         SetQuantity(id, GetQuantity(id) + amount);
@@ -288,7 +338,9 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
             work = new List<PendingGrant>(queue.items);
         }
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
         Debug.Log($"[Consumables] Flushing {work.Count} pending grant(s).");
+#endif
 
         foreach (PendingGrant snapshot in work)
         {
@@ -574,7 +626,9 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
         PlayerPrefs.SetString(_cachePrefsKey, PlayerPrefs.GetString(legacyKey, "{}"));
         PlayerPrefs.DeleteKey(legacyKey);
         PlayerPrefs.Save();
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
         Debug.Log($"[Consumables] Migrated cache key → consumables_currency_cache_{typeName}.");
+#endif
     }
 
     [Serializable]
