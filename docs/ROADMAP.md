@@ -7,7 +7,7 @@ Versioned **product epics**. Each epic ships as a **minor** release: `1.N.0`.
 | Hotfixes / correctness bugs | [bug-reports/](./bug-reports/README.md) | Patch `1.8.x` (current), then patches on whatever minor is current |
 | Planned features / architecture | **this file** | Minor `1.N.0` |
 
-Current package: **1.8.6**. Urgent security/correctness work from 2026-07-24 stays on the **1.8.x hotfix stream** — it is **not** listed here as epics.
+Current package: **1.8.11**. The 2026-07-24 security/correctness review is **closed** on the **1.8.x** hotfix stream (`1.8.7`–`1.8.11`); remaining work below is product epics only.
 
 ---
 
