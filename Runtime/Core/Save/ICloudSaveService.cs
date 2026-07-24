@@ -61,6 +61,12 @@ public interface ICloudSaveService<TKey> where TKey : struct, Enum
     /// </summary>
     void Set<TValue>(TKey key, TValue value);
 
+    /// <summary>
+    /// Clears in-memory local cache, conflict snapshot, and related PlayerPrefs.
+    /// Call on account delete / switch before a new player session uses this service.
+    /// </summary>
+    void ClearLocalCache();
+
     // ── Cloud sync ────────────────────────────────────────────────
 
     /// <summary>

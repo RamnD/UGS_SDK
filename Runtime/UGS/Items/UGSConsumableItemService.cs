@@ -21,6 +21,11 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
     readonly IConsumableItemMapper<TItem> _mapper;
     readonly Dictionary<TItem, int> _quantities = new();
     readonly object _pendingSync = new object();
+    readonly object _refreshGate = new object();
+    Task _refreshTask;
+
+    const int StatusPending = 0;
+    const int StatusInFlight = 1;
 
     public event Action<TItem, int> OnQuantityChanged;
 
@@ -39,7 +44,50 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
         _quantities.TryGetValue(id, out var qty) ? qty : 0;
 
     /// <inheritdoc/>
+    public void ClearLocalCache()
+    {
+        _quantities.Clear();
+        lock (_pendingSync)
+        {
+            PlayerPrefs.DeleteKey(_pendingPrefsKey);
+        }
+
+        if (PlayerPrefs.HasKey(_cachePrefsKey))
+            PlayerPrefs.DeleteKey(_cachePrefsKey);
+        PlayerPrefs.Save();
+    }
+
+    /// <inheritdoc/>
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
+    {
+        Task refresh;
+        lock (_refreshGate)
+        {
+            if (_refreshTask != null && !_refreshTask.IsCompleted)
+                refresh = _refreshTask;
+            else
+            {
+                refresh = RefreshCoreAsync(cancellationToken);
+                _refreshTask = refresh;
+            }
+        }
+
+        try
+        {
+            await refresh;
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        finally
+        {
+            lock (_refreshGate)
+            {
+                if (ReferenceEquals(_refreshTask, refresh) && refresh.IsCompleted)
+                    _refreshTask = null;
+            }
+        }
+    }
+
+    async Task RefreshCoreAsync(CancellationToken cancellationToken)
     {
         if (!NetworkStatus.IsOnline)
         {
@@ -52,6 +100,14 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
             cancellationToken.ThrowIfCancellationRequested();
             await FlushPendingGrantsAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+
+            if (HasPendingGrants())
+            {
+                Debug.LogWarning(
+                    "[Consumables] Pending grants not fully flushed — keeping local quantities until next refresh.");
+                SaveToPrefs();
+                return;
+            }
 
             var result = await EconomyService.Instance.PlayerBalances.GetBalancesAsync();
             cancellationToken.ThrowIfCancellationRequested();
@@ -215,6 +271,18 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
         lock (_pendingSync)
         {
             var queue = LoadPendingUnlocked();
+            for (int i = 0; i < queue.items.Count; i++)
+            {
+                PendingGrant g = queue.items[i];
+                if (g.status == StatusInFlight)
+                {
+                    g.status = StatusPending;
+                    queue.items[i] = g;
+                }
+            }
+
+            EnsurePendingIds(queue);
+            PersistPendingUnlocked(queue);
             if (queue.items.Count == 0)
                 return;
             work = new List<PendingGrant>(queue.items);
@@ -222,43 +290,61 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
 
         Debug.Log($"[Consumables] Flushing {work.Count} pending grant(s).");
 
-        foreach (PendingGrant grant in work)
+        foreach (PendingGrant snapshot in work)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (grant.amount <= 0 || !Enum.TryParse(grant.item, out TItem id) || !_mapper.IsConsumable(id))
+            if (snapshot.amount <= 0
+                || string.IsNullOrEmpty(snapshot.id)
+                || !Enum.TryParse(snapshot.item, out TItem id)
+                || !_mapper.IsConsumable(id))
             {
-                RemovePending(grant.item);
+                RemovePendingById(snapshot.id);
                 continue;
             }
+
+            if (!TryMarkGrantInFlight(snapshot.id, out int amount))
+                continue;
 
             try
             {
                 var result = await EconomyService.Instance.PlayerBalances.IncrementBalanceAsync(
                     _mapper.ToServiceId(id),
-                    grant.amount);
+                    amount);
                 SetQuantity(id, ToIntQuantity(result.Balance));
-                RemovePending(grant.item);
+                RemovePendingById(snapshot.id);
                 RaiseChanged(id);
             }
             catch (OperationCanceledException)
             {
+                RevertGrantToPending(snapshot.id);
                 throw;
             }
             catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e))
             {
                 Debug.LogWarning(
-                    $"[Consumables] Pending grant flush paused ({grant.item} +{grant.amount}): {e.Message}");
+                    $"[Consumables] Pending grant flush paused ({snapshot.item} +{amount}): {e.Message}");
+                RevertGrantToPending(snapshot.id);
                 return;
             }
             catch (Exception e)
             {
-                Debug.LogError($"[Consumables] Pending grant flush failed ({grant.item}): {e.Message}");
+                RevertGrantToPending(snapshot.id);
+                Debug.LogError($"[Consumables] Pending grant flush failed ({snapshot.item}): {e.Message}");
                 throw new InventoryOperationException(
                     InventoryFailureReason.PendingTransactionsFlushFailed,
                     "Failed to upload pending consumable grants.",
                     e);
             }
+        }
+    }
+
+    bool HasPendingGrants()
+    {
+        lock (_pendingSync)
+        {
+            var queue = LoadPendingUnlocked();
+            return queue.items != null && queue.items.Count > 0;
         }
     }
 
@@ -302,11 +388,14 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
         lock (_pendingSync)
         {
             var queue = LoadPendingUnlocked();
+            EnsurePendingIds(queue);
             string key = id.ToString();
             for (int i = 0; i < queue.items.Count; i++)
             {
                 PendingGrant existing = queue.items[i];
                 if (!string.Equals(existing.item, key, StringComparison.Ordinal))
+                    continue;
+                if (existing.status == StatusInFlight)
                     continue;
 
                 long net = (long)existing.amount + amount;
@@ -317,19 +406,52 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
                 }
 
                 existing.amount = (int)net;
+                existing.status = StatusPending;
                 queue.items[i] = existing;
                 PersistPendingUnlocked(queue);
                 return;
             }
 
-            queue.items.Add(new PendingGrant { item = key, amount = amount });
+            queue.items.Add(new PendingGrant
+            {
+                id = Guid.NewGuid().ToString("N"),
+                item = key,
+                amount = amount,
+                status = StatusPending,
+            });
             PersistPendingUnlocked(queue);
         }
     }
 
-    void RemovePending(string itemKey)
+    bool TryMarkGrantInFlight(string id, out int amount)
     {
-        if (string.IsNullOrEmpty(itemKey))
+        amount = 0;
+        if (string.IsNullOrEmpty(id))
+            return false;
+
+        lock (_pendingSync)
+        {
+            var queue = LoadPendingUnlocked();
+            for (int i = 0; i < queue.items.Count; i++)
+            {
+                PendingGrant g = queue.items[i];
+                if (!string.Equals(g.id, id, StringComparison.Ordinal))
+                    continue;
+
+                amount = g.amount;
+                g.status = StatusInFlight;
+                queue.items[i] = g;
+                PersistPendingUnlocked(queue);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    void RemovePendingById(string id)
+    {
+        if (string.IsNullOrEmpty(id))
             return;
 
         lock (_pendingSync)
@@ -337,11 +459,45 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
             var queue = LoadPendingUnlocked();
             for (int i = queue.items.Count - 1; i >= 0; i--)
             {
-                if (!string.Equals(queue.items[i].item, itemKey, StringComparison.Ordinal))
+                if (!string.Equals(queue.items[i].id, id, StringComparison.Ordinal))
                     continue;
                 queue.items.RemoveAt(i);
                 PersistPendingUnlocked(queue);
                 return;
+            }
+        }
+    }
+
+    void RevertGrantToPending(string id)
+    {
+        if (string.IsNullOrEmpty(id))
+            return;
+
+        lock (_pendingSync)
+        {
+            var queue = LoadPendingUnlocked();
+            for (int i = 0; i < queue.items.Count; i++)
+            {
+                PendingGrant g = queue.items[i];
+                if (!string.Equals(g.id, id, StringComparison.Ordinal))
+                    continue;
+                g.status = StatusPending;
+                queue.items[i] = g;
+                PersistPendingUnlocked(queue);
+                return;
+            }
+        }
+    }
+
+    static void EnsurePendingIds(PendingGrantQueue queue)
+    {
+        for (int i = 0; i < queue.items.Count; i++)
+        {
+            PendingGrant g = queue.items[i];
+            if (string.IsNullOrEmpty(g.id))
+            {
+                g.id = Guid.NewGuid().ToString("N");
+                queue.items[i] = g;
             }
         }
     }
@@ -437,8 +593,11 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
     [Serializable]
     class PendingGrant
     {
+        public string id;
         public string item;
         public int amount;
+        /// <summary>0 = pending, 1 = in_flight.</summary>
+        public int status;
     }
 
     [Serializable]

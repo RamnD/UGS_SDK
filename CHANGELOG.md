@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.9.2] - 2026-07-24
+
+### Fixed
+- **Economy (C1):** flush sends amount re-read at `TryMarkInFlight` (not the pre-flush snapshot) so mid-flush coalesced deltas are not deleted unread.
+- **Consumables (C2):** single-flight `RefreshAsync`; pending grants use `id` + `pending → in_flight` with re-read amount (no double-grant on concurrent refresh).
+- **Auth (C3):** orphan empty-check also requires zero Economy balances and empty Player Inventory (not Cloud Save alone).
+- **Ads (H-B):** `OnRewardEarned` checks show generation + pending callbacks; generation bumps on session reset.
+- **Analytics (H-C):** `CachedAnalyticsSystem` uses `LogEventOrThrow` so failed sends can fall back to the offline queue.
+- **Items (M-D):** single-flight `RefreshAsync`.
+
+### Added
+- `ClearLocalCache()` on `IInventoryService`, `ICloudSaveService`, `IConsumableItemService` (account delete/switch).
+
+### Changed
+- [docs/auth.md](docs/auth.md) documents Economy/Inventory empty-check and `ClearLocalCache` wipe guidance.
+
 ## [1.9.1] - 2026-07-24
 
 ### Fixed

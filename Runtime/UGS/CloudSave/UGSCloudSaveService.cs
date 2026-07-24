@@ -100,6 +100,21 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
         PersistLocalToPrefs();
     }
 
+    /// <inheritdoc/>
+    public void ClearLocalCache()
+    {
+        EnsureLocalLoaded();
+        _local.Clear();
+        ClearCloudSnapshot();
+        LocalTimestamp = null;
+        BaseTimestamp = null;
+        PlayerPrefs.DeleteKey(_localPrefsKey);
+        PlayerPrefs.DeleteKey(_localTimestampPrefsKey);
+        PlayerPrefs.DeleteKey(_baseTimestampPrefsKey);
+        PlayerPrefs.Save();
+        _localLoaded = true;
+    }
+
     // ── Cloud sync ────────────────────────────────────────────────
 
     /// <inheritdoc/>

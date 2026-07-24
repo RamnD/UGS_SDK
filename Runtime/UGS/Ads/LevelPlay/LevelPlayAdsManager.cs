@@ -45,6 +45,7 @@ public sealed class LevelPlayAdsManager : IAdsManager
     private bool _rewardEarned;
     private bool _rewardedClosed;
     private int _rewardedGeneration;
+    private int _activeRewardedGeneration;
     private const int LateRewardGraceMs = 2000;
 
     // Current interstitial show state (only one at a time)
@@ -158,6 +159,7 @@ public sealed class LevelPlayAdsManager : IAdsManager
         _rewardEarned         = false;
         _rewardedClosed       = false;
         _rewardedGeneration++;
+        _activeRewardedGeneration = _rewardedGeneration;
 
         if (ad.IsAdReady())
             ad.ShowAd();
@@ -304,6 +306,14 @@ public sealed class LevelPlayAdsManager : IAdsManager
     private void OnRewardEarned(string adUnitId)
     {
         if (adUnitId != _activeRewardedUnitId)
+            return;
+
+        // Reject stale adapter rewards from a previous show (generation bumped on reset / new show).
+        if (_activeRewardedGeneration != _rewardedGeneration)
+            return;
+
+        // Session already completed/failed — ignore late mediation callbacks.
+        if (_pendingSuccess == null && _pendingFailed == null)
             return;
 
         if (_rewardEarned)
@@ -455,6 +465,8 @@ public sealed class LevelPlayAdsManager : IAdsManager
         _activeRewardedUnitId = null;
         _rewardEarned         = false;
         _rewardedClosed       = false;
+        // Invalidate in-flight grace timers and late OnAdRewarded for this session.
+        _rewardedGeneration++;
     }
 
     private void ResetInterstitialCallbacks()

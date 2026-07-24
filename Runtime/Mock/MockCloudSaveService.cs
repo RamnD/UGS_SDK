@@ -73,6 +73,15 @@ public sealed class MockCloudSaveService<TKey> : ICloudSaveService<TKey>
     }
 
     /// <inheritdoc/>
+    public void ClearLocalCache()
+    {
+        _data.Clear();
+        LocalTimestamp = null;
+        BaseTimestamp = null;
+        Debug.Log("[Mock CloudSave] ClearLocalCache.");
+    }
+
+    /// <inheritdoc/>
     public Task<SaveConflict?> LoadAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

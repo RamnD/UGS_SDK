@@ -46,4 +46,10 @@ public interface IInventoryService<TCurrency> where TCurrency : struct, Enum
     /// </summary>
     /// <returns>True if applied (server-confirmed or queued locally).</returns>
     Task<bool> TrySpendCurrencyAsync(TCurrency type, int amount, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Clears in-memory balances and durable pending queue (PlayerPrefs).
+    /// Call on account delete / switch before a new player session uses this service.
+    /// </summary>
+    void ClearLocalCache();
 }

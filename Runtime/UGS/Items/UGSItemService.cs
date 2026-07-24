@@ -16,6 +16,8 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
     private readonly IItemMapper<TItem, TCurrency>  _mapper;
     private readonly IInventoryService<TCurrency>   _economy;
     private readonly HashSet<TItem>                 _ownedItems = new();
+    private readonly object                         _refreshGate = new object();
+    private Task                                    _refreshTask;
 
     public UGSItemService(IItemMapper<TItem, TCurrency> mapper, IInventoryService<TCurrency> economy)
     {
@@ -40,6 +42,35 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
 
     /// <inheritdoc/>
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
+    {
+        Task refresh;
+        lock (_refreshGate)
+        {
+            if (_refreshTask != null && !_refreshTask.IsCompleted)
+                refresh = _refreshTask;
+            else
+            {
+                refresh = RefreshCoreAsync(cancellationToken);
+                _refreshTask = refresh;
+            }
+        }
+
+        try
+        {
+            await refresh;
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        finally
+        {
+            lock (_refreshGate)
+            {
+                if (ReferenceEquals(_refreshTask, refresh) && refresh.IsCompleted)
+                    _refreshTask = null;
+            }
+        }
+    }
+
+    async Task RefreshCoreAsync(CancellationToken cancellationToken)
     {
         if (!NetworkStatus.IsOnline)
         {

@@ -37,15 +37,29 @@ public class UGSAnalyticSystem : IAnalyticsSystem
     {
         try
         {
-            var customEvent = eventPayload.ToCustomEvent();
-            AnalyticsCustomEventEnricher.ApplyUgsPlayerId(customEvent, _playerId);
-            _sdk.RecordEvent(customEvent);
-            Debug.Log($"[Analytics] {eventPayload.EventName}");
+            RecordEventCore(eventPayload);
         }
         catch (System.Exception ex)
         {
             Debug.LogError($"[Analytics] Event '{eventPayload.EventName}' failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Records without swallowing exceptions — used by <see cref="CachedAnalyticsSystem"/>
+    /// so failed sends fall through to the offline queue.
+    /// </summary>
+    internal void LogEventOrThrow<T>(T eventPayload) where T : struct, IAnalyticsEvent
+    {
+        RecordEventCore(eventPayload);
+    }
+
+    void RecordEventCore<T>(T eventPayload) where T : struct, IAnalyticsEvent
+    {
+        var customEvent = eventPayload.ToCustomEvent();
+        AnalyticsCustomEventEnricher.ApplyUgsPlayerId(customEvent, _playerId);
+        _sdk.RecordEvent(customEvent);
+        Debug.Log($"[Analytics] {eventPayload.EventName}");
     }
 
     /// <inheritdoc/>

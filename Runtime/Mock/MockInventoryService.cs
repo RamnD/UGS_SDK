@@ -19,6 +19,9 @@ public sealed class MockInventoryService<TCurrency> : IInventoryService<TCurrenc
         _balances.TryGetValue(type, out var value) ? value : 0;
 
     /// <inheritdoc/>
+    public void ClearLocalCache() => _balances.Clear();
+
+    /// <inheritdoc/>
     public Task RefreshBalancesAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

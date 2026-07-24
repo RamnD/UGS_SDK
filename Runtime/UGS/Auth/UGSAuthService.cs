@@ -1,12 +1,13 @@
 // UGSAuthService.cs
 using System;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text;
 using System.Text.RegularExpressions;
 using Unity.Services.Core;
 using Unity.Services.Authentication;
 using Unity.Services.CloudSave;
+using Unity.Services.Economy;
 using UnityEngine;
 #if UNITY_ANDROID
 using GooglePlayGames;
@@ -391,8 +392,8 @@ public class UGSAuthService : IAuthService
     }
 
     /// <summary>
-    /// True when online Cloud Save has no player keys (or only ignorable internals).
-    /// Offline / load failure → false (do not Delete).
+    /// True when online Cloud Save has no player keys (or only ignorable internals)
+    /// <b>and</b> Economy balances/inventory are empty. Offline / load failure → false (do not Delete).
     /// </summary>
     private static async Task<bool> IsCurrentPlayerEffectivelyEmptyAsync(CancellationToken cancellationToken)
     {
@@ -408,18 +409,37 @@ public class UGSAuthService : IAuthService
             var items = await CloudSaveService.Instance.Data.Player.LoadAllAsync();
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (items == null || items.Count == 0)
-                return true;
-
-            foreach (var key in items.Keys)
+            if (items != null)
             {
-                if (string.IsNullOrEmpty(key))
-                    continue;
-                // Reserved / internal keys used by this SDK's Cloud Save helpers.
-                if (string.Equals(key, "__ts", StringComparison.Ordinal))
-                    continue;
-                return false;
+                foreach (var key in items.Keys)
+                {
+                    if (string.IsNullOrEmpty(key))
+                        continue;
+                    // Reserved / internal keys used by this SDK's Cloud Save helpers.
+                    if (string.Equals(key, "__ts", StringComparison.Ordinal))
+                        continue;
+                    return false;
+                }
             }
+
+            // Cloud Save empty is not enough — IAP/currency may exist only in Economy.
+            cancellationToken.ThrowIfCancellationRequested();
+            var balances = await EconomyService.Instance.PlayerBalances.GetBalancesAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (balances?.Balances != null)
+            {
+                for (int i = 0; i < balances.Balances.Count; i++)
+                {
+                    if (balances.Balances[i] != null && balances.Balances[i].Balance > 0)
+                        return false;
+                }
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var inventory = await EconomyService.Instance.PlayerInventory.GetInventoryAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (inventory?.PlayersInventoryItems != null && inventory.PlayersInventoryItems.Count > 0)
+                return false;
 
             return true;
         }

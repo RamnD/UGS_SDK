@@ -113,7 +113,8 @@ switch (result)
 
 If Game Center / Google Play is already tied to a previous UGS `PlayerId`, `LinkWith*` fails with `AccountAlreadyLinked`. The SDK then:
 
-1. Checks whether the **current** anonymous player looks empty (online Cloud Save has no keys)
+1. Checks whether the **current** anonymous player looks empty:
+   online Cloud Save has no player keys (ignoring `__ts`), **and** Economy balances are all 0, **and** Player Inventory is empty
 2. **Empty** → `DeleteAccountAsync` (avoid orphan) · **Non-empty / offline / check failed** → `SignOut` only (server data preserved; cannot delete after switch)
 3. Requests **fresh** platform credentials
 4. Calls `SignInWith*` into the existing linked player
@@ -137,6 +138,7 @@ Local game saves are **not** wiped — the game should show a SaveConflict UI (k
 For a real account deletion:
 
 1. While still signed in, wipe Cloud Save / Economy / local progress in the game
+   (`ClearLocalCache` on Economy, CloudSave, Items, Consumables)
 2. Call `DeleteAccountAsync` — wraps `AuthenticationService.Instance.DeleteAccountAsync()`, clears `last_auth_method`
 3. Cold-start / reload so bootstrap creates a fresh anonymous session
 

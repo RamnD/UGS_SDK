@@ -32,6 +32,13 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
     public long GetCachedBalance(TCurrency type) => _cache.Get(type);
 
     /// <inheritdoc/>
+    public void ClearLocalCache()
+    {
+        _cache.Clear();
+        _pendingQueue.Clear();
+    }
+
+    /// <inheritdoc/>
     public async Task RefreshBalancesAsync(CancellationToken cancellationToken = default)
     {
         Task refresh;

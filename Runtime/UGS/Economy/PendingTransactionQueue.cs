@@ -177,16 +177,18 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
                 continue;
             }
 
-            if (!TryMarkInFlight(snapshot.id))
+            if (!TryMarkInFlight(snapshot.id, out int amount))
                 continue; // removed / coalesced away while waiting
 
             try
             {
-                var balance = snapshot.amount >= 0
+                // Use amount re-read at mark-in-flight time — not the pre-flush snapshot —
+                // so mid-flush Enqueue coalesces are not lost when RemoveById runs.
+                var balance = amount >= 0
                     ? await EconomyService.Instance.PlayerBalances
-                        .IncrementBalanceAsync(_mapper.ToServiceId(type), snapshot.amount)
+                        .IncrementBalanceAsync(_mapper.ToServiceId(type), amount)
                     : await EconomyService.Instance.PlayerBalances
-                        .DecrementBalanceAsync(_mapper.ToServiceId(type), Math.Abs(snapshot.amount));
+                        .DecrementBalanceAsync(_mapper.ToServiceId(type), Math.Abs(amount));
 
                 cache.Set(type, balance.Balance);
                 RemoveById(snapshot.id);
@@ -199,7 +201,7 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
             catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e))
             {
                 Debug.LogWarning(
-                    $"[Economy] Flush paused ({snapshot.currency} {snapshot.amount}): {e.Message}. " +
+                    $"[Economy] Flush paused ({snapshot.currency} {amount}): {e.Message}. " +
                     "Will retry on next RefreshBalancesAsync.");
                 RevertToPending(snapshot.id);
                 cache.Save();
@@ -221,8 +223,12 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
         Debug.Log("[Economy] Flush completed.");
     }
 
-    bool TryMarkInFlight(string id)
+    /// <summary>
+    /// Marks the row in-flight and returns its <b>current</b> amount (after any mid-flush coalesce).
+    /// </summary>
+    bool TryMarkInFlight(string id, out int amount)
     {
+        amount = 0;
         if (string.IsNullOrEmpty(id))
             return false;
 
@@ -235,6 +241,7 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
                 if (!string.Equals(tx.id, id, StringComparison.Ordinal))
                     continue;
 
+                amount = tx.amount;
                 tx.status = StatusInFlight;
                 queue.items[i] = tx;
                 PersistUnlocked(queue);
@@ -243,6 +250,17 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
         }
 
         return false;
+    }
+
+    /// <summary>Wipes the durable queue from memory and PlayerPrefs (account switch / delete).</summary>
+    public void Clear()
+    {
+        lock (_sync)
+        {
+            PlayerPrefs.DeleteKey(PrefsKey);
+            PlayerPrefs.DeleteKey(LegacyPrefsKey);
+            PlayerPrefs.Save();
+        }
     }
 
     void RemoveById(string id)

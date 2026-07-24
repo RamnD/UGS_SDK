@@ -41,4 +41,10 @@ public interface IConsumableItemService<TItem> where TItem : struct, Enum
 
     /// <summary>Fires after quantity changes (consume, grant, refresh).</summary>
     event Action<TItem, int> OnQuantityChanged;
+
+    /// <summary>
+    /// Clears in-memory quantities and durable pending grants (PlayerPrefs).
+    /// Call on account delete / switch before a new player session uses this service.
+    /// </summary>
+    void ClearLocalCache();
 }

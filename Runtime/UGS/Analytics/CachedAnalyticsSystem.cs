@@ -55,7 +55,7 @@ public sealed class CachedAnalyticsSystem : IAnalyticsSystem
     {
         try
         {
-            _inner.LogEvent(eventPayload);
+            _inner.LogEventOrThrow(eventPayload);
             DrainQueue();
             return true;
         }

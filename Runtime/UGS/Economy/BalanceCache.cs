@@ -86,6 +86,14 @@ internal sealed class BalanceCache<TCurrency> where TCurrency : struct, Enum
         Save();
     }
 
+    /// <summary>Clears in-memory balances and deletes the PlayerPrefs blob.</summary>
+    public void Clear()
+    {
+        _data.Clear();
+        PlayerPrefs.DeleteKey(PrefsKey);
+        PlayerPrefs.Save();
+    }
+
     /// <summary>Logs all cached balances to the Console.</summary>
     public void LogAll()
     {
