@@ -130,7 +130,7 @@ Legacy key `economy_pending_adds` is migrated automatically on first load.
 
 `RefreshBalancesAsync` and `FlushAsync` are **single-flight** (concurrent callers await the same run). Enqueue always re-reads disk under a lock so mid-flush credits are not overwritten.
 
-Full at-most-once server dedupe requires Cloud Code — see [ROADMAP 1.9.0](./ROADMAP.md).
+Full at-most-once server dedupe requires Cloud Code — see [ROADMAP 1.10.0](./ROADMAP.md).
 
 ### When deltas are queued
 

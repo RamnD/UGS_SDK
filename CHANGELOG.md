@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.9.0] - 2026-07-24
+
+### Changed
+- Open **1.9.0** as the prep minor after the closed **1.8.7–1.8.11** correctness stream (no Cloud Code modules in this release).
+- [docs/ROADMAP.md](docs/ROADMAP.md): server-authoritative mutations / Cloud Code moved to **1.10.0**; subsequent epics shifted (+1).
+
 ## [1.8.11] - 2026-07-24
 
 ### Fixed

@@ -18,7 +18,7 @@ Hotfixes for items below shipped as **patch** releases (`1.8.7`–`1.8.11`). Pro
 | C1 | Achievements wipe on failed load | 1.8.7 | **fixed-in 1.8.7** |
 | C2 | Economy double flush / no single-flight | 1.8.8 | **fixed-in 1.8.8** |
 | C3 | Auth DeleteAccount on AlreadyLinked | 1.8.7 | **fixed-in 1.8.7** (empty→Delete, else SignOut) |
-| H1 | No client idempotency on balance ops | 1.8.8 (in_flight); full → [ROADMAP 1.9.0](../ROADMAP.md) | **partial** — client queue done; server dedupe 1.9.0 |
+| H1 | No client idempotency on balance ops | 1.8.8 (in_flight); full → [ROADMAP 1.10.0](../ROADMAP.md) | **partial** — client queue done; server dedupe 1.10.0 |
 | H2 | Entitlements from PendingOrders | 1.8.9 | **fixed-in 1.8.9** |
 | H3 | Items cancel-after-grant refund exploit | 1.8.7 | **fixed-in 1.8.7** |
 | H4 | Offline consumable grant lost on refresh | 1.8.9 | **fixed-in 1.8.9** |
@@ -26,7 +26,7 @@ Hotfixes for items below shipped as **patch** releases (`1.8.7`–`1.8.11`). Pro
 | H6 | Ads overlapping shows lose callbacks | 1.8.7 | **fixed-in 1.8.7** |
 | H7 | Ads close-before-reward fails grant | 1.8.7 | **fixed-in 1.8.7** |
 | H8 | Enqueue during flush dropped | 1.8.8 | **fixed-in 1.8.8** |
-| M1 | Server entitlement verify | → [ROADMAP 1.10.0](../ROADMAP.md) | **deferred** |
+| M1 | Server entitlement verify | → [ROADMAP 1.11.0](../ROADMAP.md) | deferred |
 | M2 | SignIn without environment | 1.8.10 | **fixed-in 1.8.10** |
 | M3 | ToMinorUnits ×100 hardcode | 1.8.10 | **fixed-in 1.8.10** |
 | M4 | Error classification by substring | 1.8.8 | **fixed-in 1.8.8** |
@@ -61,8 +61,8 @@ Hotfixes for items below shipped as **patch** releases (`1.8.7`–`1.8.11`). Pro
 | Severity | Кол-во | Outcome |
 |----------|--------|---------|
 | 🔴 Critical | 3 | fixed in 1.8.7–1.8.8 |
-| 🟠 High | 8 | fixed / H1 partial→1.9.0 |
-| 🟡 Medium | 11 | fixed; M1 deferred→1.10.0 |
+| 🟠 High | 8 | fixed / H1 partial→1.10.0 |
+| 🟡 Medium | 11 | fixed; M1 deferred→1.11.0 |
 | 🟢 Low | 10 | fixed in 1.8.10–1.8.11 |
 
 ---
@@ -75,7 +75,7 @@ Hotfixes for items below shipped as **patch** releases (`1.8.7`–`1.8.11`). Pro
 
 ### C2. Economy: concurrent Flush / no single-flight *(проверено по коду)*
 **Файл:** `Runtime/UGS/Economy/PendingTransactionQueue.cs`  
-**Fixed in 1.8.8** — single-flight + `pending → in_flight`. Full server idempotency → 1.9.0.
+**Fixed in 1.8.8** — single-flight + `pending → in_flight`. Full server idempotency → 1.10.0.
 
 ### C3. Auth link: DeleteAccount on AlreadyLinked *(проверено по коду)*
 **Файл:** `Runtime/UGS/Auth/UGSAuthService.cs`  
@@ -86,7 +86,7 @@ Hotfixes for items below shipped as **patch** releases (`1.8.7`–`1.8.11`). Pro
 ## 🟠 HIGH
 
 ### H1. No client idempotency on balance ops
-**Partial in 1.8.8** (durable in_flight). **Server dedupe → [ROADMAP 1.9.0](../ROADMAP.md).**
+**Partial in 1.8.8** (durable in_flight). **Server dedupe → [ROADMAP 1.10.0](../ROADMAP.md).**
 
 ### H2–H8
 All **fixed** in 1.8.7–1.8.9 (see tracking table). Details retained in git history of this file / CHANGELOG.
@@ -96,7 +96,7 @@ All **fixed** in 1.8.7–1.8.9 (see tracking table). Details retained in git his
 ## 🟡 MEDIUM
 
 ### M1. Энтайтлменты клиент-авторитетны
-**Deferred** → [ROADMAP 1.10.0](../ROADMAP.md).
+**Deferred** → [ROADMAP 1.11.0](../ROADMAP.md).
 
 ### M2–M11
 All **fixed** in 1.8.8–1.8.11 except M1 (deferred). M10 (homoglyphs) → **1.8.11**.
@@ -135,6 +135,7 @@ All ten Low items **fixed** in 1.8.10–1.8.11 (see tracking table L1–L10).
 
 **Не в 1.8.x** (см. [ROADMAP](../ROADMAP.md)):
 
-- Полная серверная идемпотентность Economy → **1.9.0** Cloud Code  
-- Серверная верификация энтайтлментов (M1) / H1 server → **1.10.0** / **1.9.0**  
-- Orphan cleanup после link → **1.11.0**
+- Полная серверная идемпотентность Economy → **1.10.0** Cloud Code  
+- Серверная верификация энтайтлментов (M1) → **1.11.0**  
+- Orphan cleanup после link → **1.12.0**
+- Prep minor after 1.8.x hotfixes → **1.9.0** (shipped; no server modules)
