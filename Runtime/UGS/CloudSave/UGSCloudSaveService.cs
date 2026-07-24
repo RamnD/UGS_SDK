@@ -21,17 +21,19 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
     where TKey : struct, Enum
 {
     private const string TimestampCloudKey = "__ts";
-    private const double TimestampToleranceSeconds = 1.0;
 
     private readonly ISaveKeyMapper<TKey> _mapper;
     private readonly string _localPrefsKey;
     private readonly string _localTimestampPrefsKey;
     private readonly string _baseTimestampPrefsKey;
+    private readonly object _syncGate = new object();
 
     private Dictionary<string, string> _local        = new();
     private Dictionary<string, string> _cloudSnapshot = new(); // pending conflict snapshot
     private DateTime?                  _cloudSnapshotTimestamp;
     private bool                       _localLoaded;
+    private Task<SaveConflict?>        _loadTask;
+    private Task<SaveConflict?>        _pushTask;
 
     /// <inheritdoc/>
     public DateTime? LocalTimestamp { get; private set; }
@@ -75,6 +77,36 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
 
     /// <inheritdoc/>
     public async Task<SaveConflict?> LoadAsync(CancellationToken cancellationToken = default)
+    {
+        Task<SaveConflict?> load;
+        lock (_syncGate)
+        {
+            if (_loadTask != null && !_loadTask.IsCompleted)
+                load = _loadTask;
+            else
+            {
+                load = LoadCoreAsync(cancellationToken);
+                _loadTask = load;
+            }
+        }
+
+        try
+        {
+            SaveConflict? result = await load;
+            cancellationToken.ThrowIfCancellationRequested();
+            return result;
+        }
+        finally
+        {
+            lock (_syncGate)
+            {
+                if (ReferenceEquals(_loadTask, load) && load.IsCompleted)
+                    _loadTask = null;
+            }
+        }
+    }
+
+    async Task<SaveConflict?> LoadCoreAsync(CancellationToken cancellationToken)
     {
         EnsureLocalLoaded();
         if (!NetworkStatus.IsOnline) return null;
@@ -149,6 +181,36 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
 
     /// <inheritdoc/>
     public async Task<SaveConflict?> PushToCloudAsync(CancellationToken cancellationToken = default)
+    {
+        Task<SaveConflict?> push;
+        lock (_syncGate)
+        {
+            if (_pushTask != null && !_pushTask.IsCompleted)
+                push = _pushTask;
+            else
+            {
+                push = PushCoreAsync(cancellationToken);
+                _pushTask = push;
+            }
+        }
+
+        try
+        {
+            SaveConflict? result = await push;
+            cancellationToken.ThrowIfCancellationRequested();
+            return result;
+        }
+        finally
+        {
+            lock (_syncGate)
+            {
+                if (ReferenceEquals(_pushTask, push) && push.IsCompleted)
+                    _pushTask = null;
+            }
+        }
+    }
+
+    async Task<SaveConflict?> PushCoreAsync(CancellationToken cancellationToken)
     {
         EnsureLocalLoaded();
         if (!NetworkStatus.IsOnline) return null;
@@ -229,11 +291,12 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
     bool IsDirty =>
         LocalTimestamp.HasValue && !TimestampsMatch(LocalTimestamp, BaseTimestamp);
 
+    /// <summary>Exact version equality for dirty / optimistic concurrency (no ±1s tolerance).</summary>
     static bool TimestampsMatch(DateTime? a, DateTime? b)
     {
         if (!a.HasValue && !b.HasValue) return true;
         if (!a.HasValue || !b.HasValue) return false;
-        return Math.Abs((a.Value - b.Value).TotalSeconds) < TimestampToleranceSeconds;
+        return a.Value.Ticks == b.Value.Ticks;
     }
 
     void ParseCloudItemsIntoSnapshot(IReadOnlyDictionary<string, Unity.Services.CloudSave.Models.Item> items)

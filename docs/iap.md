@@ -191,7 +191,8 @@ _iap.RestorePurchases();
 ```
 
 When existing purchases are fetched, any matching product with
-`RestoreEntitlementsFromExistingPurchases = true` re-grants its configured entitlements.
+`RestoreEntitlementsFromExistingPurchases = true` re-grants its configured entitlements
+from **`ConfirmedOrders` only** (not pending / deferred payments).
 
 This is primarily useful for:
 

@@ -124,7 +124,7 @@ private async void OnApplicationPause(bool paused)
 
 ## Conflict resolution
 
-A conflict occurs when **local is dirty** (edits since `BaseTimestamp`) **and** cloud `__ts` moved away from `BaseTimestamp`. Typical case: two devices play from the same parent version, then both push.
+A conflict occurs when **local is dirty** (edits since `BaseTimestamp`) **and** cloud `__ts` moved away from `BaseTimestamp`. Timestamps are compared with **exact tick equality** (no ±1s tolerance). `LoadAsync` / `PushToCloudAsync` are single-flight. Typical case: two devices play from the same parent version, then both push.
 
 ```csharp
 async Task HandleConflictAsync(SaveConflict conflict)

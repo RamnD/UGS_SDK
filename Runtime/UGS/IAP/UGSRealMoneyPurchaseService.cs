@@ -34,10 +34,13 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     bool _isInitialized;
     bool _fetchRequested;
     bool _areProductsReady;
+    bool _lastPurchaseWasUserCancelled;
 
     public bool IsInitialized => _isInitialized;
 
     public bool AreProductsReady => _areProductsReady;
+
+    public bool LastPurchaseWasUserCancelled => _lastPurchaseWasUserCancelled;
 
     public event Action<string> PurchaseSucceeded;
 
@@ -104,6 +107,8 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         string productId,
         CancellationToken cancellationToken = default)
     {
+        _lastPurchaseWasUserCancelled = false;
+
         if (!_isInitialized || _storeController == null)
             throw new InvalidOperationException("InitializeAsync must complete before PurchaseAsync.");
 
@@ -341,9 +346,17 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         string productId = TryResolveDefinition(storeId, out RealMoneyProductDefinition definition)
             ? definition.ProductId
             : storeId;
-        Debug.LogWarning(
-            $"[SDK][IAP] Purchase failed: {productId}; storeId={storeId}; " +
-            $"reason={order?.FailureReason}; details={order?.Details}");
+        bool userCancelled = order != null
+            && order.FailureReason == PurchaseFailureReason.UserCancelled;
+        _lastPurchaseWasUserCancelled = userCancelled;
+
+        if (userCancelled)
+            Debug.Log($"[SDK][IAP] Purchase cancelled by user: {productId}; storeId={storeId}");
+        else
+            Debug.LogWarning(
+                $"[SDK][IAP] Purchase failed: {productId}; storeId={storeId}; " +
+                $"reason={order?.FailureReason}; details={order?.Details}");
+
         CompletePurchaseRequest(productId, false);
     }
 
@@ -359,8 +372,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
 
             string storeId = definition.ResolvedStoreProductId;
             bool foundExistingPurchase =
-                orders.ConfirmedOrders.Any(order => ContainsProduct(order, storeId))
-                || orders.PendingOrders.Any(order => ContainsProduct(order, storeId));
+                orders.ConfirmedOrders.Any(order => ContainsProduct(order, storeId));
 
             if (!foundExistingPurchase)
                 continue;

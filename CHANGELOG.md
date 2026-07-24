@@ -1,11 +1,25 @@
 # Changelog
 
+## [1.8.9] - 2026-07-24
+
+### Fixed
+- **Consumables (H4):** durable pending grant queue; refresh flushes then reapplies unflushed deltas after server rebuild so offline grants are not wiped.
+- **CloudSave (H5):** exact `__ts` / dirty comparison (no ±1s tolerance); single-flight `LoadAsync` / `PushToCloudAsync`.
+- **IAP (H2):** restore entitlements only from `ConfirmedOrders` (ignore pending deferred payments).
+- **Items/Consumables (M8):** PlayerPrefs cache keys namespaced by `typeof(TItem).Name` (with legacy migration).
+
+### Changed
+- [docs/cloud-save.md](docs/cloud-save.md), [docs/iap.md](docs/iap.md) updated for exact versioning and confirmed-order restore.
+
 ## [1.8.8] - 2026-07-24
 
 ### Fixed
 - **Economy (C2/H8):** single-flight `RefreshBalancesAsync` / pending `FlushAsync`; enqueue and flush serialize with re-read-before-persist so mid-flush credits are not dropped.
 - **Economy queue:** durable row `id` + `pending → in_flight` status (persist in-flight before UGS call; remove on success; revert on recoverable failure).
 - **Economy (M4):** `EconomyErrorClassifier` uses typed `EconomyExceptionReason` (no `"http 5"` substring matching).
+
+### Added
+- **IAP:** `IRealMoneyPurchaseService.LastPurchaseWasUserCancelled` so games can skip error UI on store-sheet cancel.
 
 ### Changed
 - [docs/economy.md](docs/economy.md) documents queue lifecycle and single-flight behaviour.

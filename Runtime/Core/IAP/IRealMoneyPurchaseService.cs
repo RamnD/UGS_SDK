@@ -34,6 +34,13 @@ public interface IRealMoneyPurchaseService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// True when the most recent <see cref="PurchaseAsync"/> returned false because the
+    /// player cancelled the store sheet. False after success or a real failure.
+    /// Platforms that do not distinguish cancel may leave this false.
+    /// </summary>
+    bool LastPurchaseWasUserCancelled { get; }
+
+    /// <summary>
     /// Triggers store restoration / purchases fetch for non-consumables and subscriptions.
     /// </summary>
     void RestorePurchases();

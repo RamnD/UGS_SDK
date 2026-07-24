@@ -12,8 +12,7 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
     where TItem     : struct, Enum
     where TCurrency : struct, Enum
 {
-    private const string CachePrefsKey = "items_owned_cache";
-
+    private readonly string _cachePrefsKey;
     private readonly IItemMapper<TItem, TCurrency>  _mapper;
     private readonly IInventoryService<TCurrency>   _economy;
     private readonly HashSet<TItem>                 _ownedItems = new();
@@ -22,6 +21,8 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
     {
         _mapper  = mapper  ?? throw new ArgumentNullException(nameof(mapper));
         _economy = economy ?? throw new ArgumentNullException(nameof(economy));
+        _cachePrefsKey = $"items_owned_cache_{typeof(TItem).Name}";
+        MigrateLegacyCacheKeyIfNeeded();
         LoadFromPrefs();
     }
 
@@ -32,8 +33,8 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
     public void ClearLocalCache()
     {
         _ownedItems.Clear();
-        if (PlayerPrefs.HasKey(CachePrefsKey))
-            PlayerPrefs.DeleteKey(CachePrefsKey);
+        if (PlayerPrefs.HasKey(_cachePrefsKey))
+            PlayerPrefs.DeleteKey(_cachePrefsKey);
         PlayerPrefs.Save();
     }
 
@@ -180,20 +181,33 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
         var cache = new ItemCache();
         foreach (var id in _ownedItems)
             cache.items.Add(id.ToString());
-        PlayerPrefs.SetString(CachePrefsKey, JsonUtility.ToJson(cache));
+        PlayerPrefs.SetString(_cachePrefsKey, JsonUtility.ToJson(cache));
         PlayerPrefs.Save();
     }
 
     private void LoadFromPrefs()
     {
-        var json  = PlayerPrefs.GetString(CachePrefsKey, "{}");
+        var json  = PlayerPrefs.GetString(_cachePrefsKey, "{}");
         var cache = JsonUtility.FromJson<ItemCache>(json) ?? new ItemCache();
+        cache.items ??= new List<string>();
         _ownedItems.Clear();
         foreach (var entry in cache.items)
         {
             if (Enum.TryParse<TItem>(entry, out var id))
                 _ownedItems.Add(id);
         }
+    }
+
+    void MigrateLegacyCacheKeyIfNeeded()
+    {
+        const string legacyKey = "items_owned_cache";
+        if (PlayerPrefs.HasKey(_cachePrefsKey) || !PlayerPrefs.HasKey(legacyKey))
+            return;
+
+        PlayerPrefs.SetString(_cachePrefsKey, PlayerPrefs.GetString(legacyKey, "{}"));
+        PlayerPrefs.DeleteKey(legacyKey);
+        PlayerPrefs.Save();
+        Debug.Log($"[Items] Migrated cache key → {_cachePrefsKey}.");
     }
 
     [Serializable] private class ItemCache { public List<string> items = new(); }
