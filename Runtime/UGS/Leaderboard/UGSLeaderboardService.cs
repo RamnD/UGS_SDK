@@ -17,15 +17,29 @@ public sealed class UGSLeaderboardService : ILeaderboardService
     public async Task SubmitScoreAsync(string leaderboardId, double score,
         CancellationToken cancellationToken = default)
     {
+        if (!NetworkStatus.IsOnline)
+            throw new LeaderboardOperationException(
+                $"Cannot submit score for '{leaderboardId}' — device is offline.");
+
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await LeaderboardsService.Instance.AddPlayerScoreAsync(leaderboardId, score);
+            await NetworkRequest.WithTimeout(
+                LeaderboardsService.Instance.AddPlayerScoreAsync(leaderboardId, score),
+                cancellationToken);
+            NetworkStatus.ReportSuccess();
             Debug.Log($"[Leaderboard] Score submitted: {leaderboardId} → {score}");
         }
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (Exception e) when (IsRecoverableTransport(e))
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogError($"[Leaderboard] Submit failed '{leaderboardId}' (transport): {e.Message}");
+            throw new LeaderboardOperationException(
+                $"Failed to submit score for '{leaderboardId}'.", e);
         }
         catch (Exception e)
         {
@@ -39,14 +53,20 @@ public sealed class UGSLeaderboardService : ILeaderboardService
     public async Task<IReadOnlyList<LeaderboardEntry>> GetTopScoresAsync(string leaderboardId, int count = 100,
         CancellationToken cancellationToken = default)
     {
+        if (!NetworkStatus.IsOnline)
+            return Array.Empty<LeaderboardEntry>();
+
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var response = await LeaderboardsService.Instance.GetScoresAsync(
-                leaderboardId,
-                new GetScoresOptions { Limit = count });
+            var response = await NetworkRequest.WithTimeout(
+                LeaderboardsService.Instance.GetScoresAsync(
+                    leaderboardId,
+                    new GetScoresOptions { Limit = count }),
+                cancellationToken);
 
             cancellationToken.ThrowIfCancellationRequested();
+            NetworkStatus.ReportSuccess();
 
             var list = response.Results
                 .Select(e => new LeaderboardEntry(e.PlayerId, e.PlayerName, e.Rank, e.Score))
@@ -56,6 +76,12 @@ public sealed class UGSLeaderboardService : ILeaderboardService
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (Exception e) when (IsRecoverableTransport(e))
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogWarning($"[Leaderboard] GetTopScores failed '{leaderboardId}' (transport): {e.Message}");
+            return Array.Empty<LeaderboardEntry>();
         }
         catch (Exception e)
         {
@@ -69,16 +95,28 @@ public sealed class UGSLeaderboardService : ILeaderboardService
     public async Task<LeaderboardEntry?> GetPlayerEntryAsync(string leaderboardId,
         CancellationToken cancellationToken = default)
     {
+        if (!NetworkStatus.IsOnline)
+            return null;
+
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var entry = await LeaderboardsService.Instance.GetPlayerScoreAsync(leaderboardId);
+            var entry = await NetworkRequest.WithTimeout(
+                LeaderboardsService.Instance.GetPlayerScoreAsync(leaderboardId),
+                cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+            NetworkStatus.ReportSuccess();
             return new LeaderboardEntry(entry.PlayerId, entry.PlayerName, entry.Rank, entry.Score);
         }
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (Exception e) when (IsRecoverableTransport(e))
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogWarning($"[Leaderboard] GetPlayerScore failed '{leaderboardId}' (transport): {e.Message}");
+            return null;
         }
         catch (Exception e)
         {
@@ -94,13 +132,29 @@ public sealed class UGSLeaderboardService : ILeaderboardService
         }
     }
 
+    static bool IsRecoverableTransport(Exception exception)
+    {
+        for (Exception walk = exception; walk != null; walk = walk.InnerException)
+        {
+            if (walk is OperationCanceledException)
+                return false;
+            if (walk is TimeoutException)
+                return true;
+            if (walk is System.Net.Sockets.SocketException)
+                return true;
+            if (walk is System.Net.Http.HttpRequestException)
+                return true;
+        }
+
+        return false;
+    }
+
     static bool IsMissingPlayerScore(Exception exception)
     {
         for (Exception walk = exception; walk != null; walk = walk.InnerException)
         {
             if (walk is Unity.Services.Core.RequestFailedException requestFailed)
             {
-                // UGS commonly uses 404 for "no score yet".
                 if (requestFailed.ErrorCode == 404)
                     return true;
             }

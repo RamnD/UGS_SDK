@@ -83,7 +83,9 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var result = await EconomyService.Instance.PlayerInventory.GetInventoryAsync();
+            var result = await NetworkRequest.WithTimeout(
+                EconomyService.Instance.PlayerInventory.GetInventoryAsync(),
+                cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
             _ownedItems.Clear();
@@ -95,6 +97,7 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
             }
 
             SaveToPrefs();
+            NetworkStatus.ReportSuccess();
         }
         catch (OperationCanceledException)
         {
@@ -104,6 +107,18 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
         {
             throw;
         }
+        catch (Exception e) when (IsRecoverableTransport(e))
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogWarning($"[Items] Inventory load failed (recoverable) — using cache: {e.Message}");
+            LoadFromPrefs();
+        }
+        catch (Exception e) when (e is TimeoutException)
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogWarning($"[Items] Inventory load timed out — using cache: {e.Message}");
+            LoadFromPrefs();
+        }
         catch (Exception e)
         {
             Debug.LogError($"[Items] Inventory load failed: {e.Message}");
@@ -112,6 +127,37 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
                 "Failed to synchronize inventory.",
                 e);
         }
+    }
+
+    static bool IsRecoverableTransport(Exception exception)
+    {
+        for (Exception walk = exception; walk != null; walk = walk.InnerException)
+        {
+            if (walk is OperationCanceledException)
+                return false;
+            if (walk is TimeoutException)
+                return true;
+            if (walk is System.Net.Sockets.SocketException)
+                return true;
+            if (walk is System.Net.Http.HttpRequestException)
+                return true;
+            if (walk is EconomyException economyException)
+            {
+                switch (economyException.Reason)
+                {
+                    case EconomyExceptionReason.NetworkError:
+                    case EconomyExceptionReason.RequestTimeOut:
+                    case EconomyExceptionReason.RateLimited:
+                    case EconomyExceptionReason.BadGateway:
+                    case EconomyExceptionReason.ServiceUnavailable:
+                    case EconomyExceptionReason.GatewayTimeout:
+                    case EconomyExceptionReason.InternalServerError:
+                        return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <inheritdoc/>
@@ -169,11 +215,14 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await EconomyService.Instance.PlayerInventory.AddInventoryItemAsync(_mapper.ToServiceId(id));
+            await NetworkRequest.WithTimeout(
+                EconomyService.Instance.PlayerInventory.AddInventoryItemAsync(_mapper.ToServiceId(id)),
+                cancellationToken);
             granted = true;
 
             _ownedItems.Add(id);
             SaveToPrefs();
+            NetworkStatus.ReportSuccess();
             return true;
         }
         catch (OperationCanceledException)
@@ -186,11 +235,15 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Items] Grant failed for {id}, rolling back {cost} {costCurrency}: {e.Message}");
+            Debug.LogError($"[Items] Grant failed for {id}: {e.Message}");
             if (!granted)
-                await RefundCurrencyAsync(costCurrency, cost);
+                await TryConfirmGrantOrRefundAsync(id, costCurrency, cost);
 
-            return false;
+            // Report after compensation so soft-offline cannot block the refund path.
+            if (IsRecoverableTransport(e) || e is TimeoutException)
+                NetworkStatus.ReportFailure();
+
+            return IsOwned(id);
         }
     }
 

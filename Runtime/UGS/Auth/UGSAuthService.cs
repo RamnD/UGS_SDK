@@ -1,5 +1,7 @@
 // UGSAuthService.cs
 using System;
+using System.Net.Http;
+using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Text;
@@ -89,8 +91,12 @@ public class UGSAuthService : IAuthService
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await AuthenticationService.Instance.UpdatePlayerNameAsync(normalized);
+            await NetworkRequest.WithTimeout(
+                AuthenticationService.Instance.UpdatePlayerNameAsync(normalized),
+                cancellationToken,
+                NetworkRequest.AuthTimeoutMs);
             cancellationToken.ThrowIfCancellationRequested();
+            NetworkStatus.ReportSuccess();
             Debug.Log("[Auth] PlayerName updated.");
             return null;
         }
@@ -105,6 +111,8 @@ public class UGSAuthService : IAuthService
         }
         catch (Exception e)
         {
+            if (IsTransportFailure(e))
+                NetworkStatus.ReportFailure();
             Debug.LogError($"[Auth] UpdatePlayerName failed: {e.Message}");
             return NameValidationError.NetworkError;
         }
@@ -217,13 +225,19 @@ public class UGSAuthService : IAuthService
             {
                 Debug.Log("[Auth] Forced anonymous sign-in.");
                 cancellationToken.ThrowIfCancellationRequested();
-                await AuthenticationService.Instance.SignInAnonymouslyAsync();
+                await NetworkRequest.WithTimeout(
+                    AuthenticationService.Instance.SignInAnonymouslyAsync(),
+                    cancellationToken,
+                    NetworkRequest.AuthTimeoutMs);
             }
             else if (!AuthenticationService.Instance.SessionTokenExists)
             {
                 Debug.Log("[Auth] First visit — anonymous sign-in.");
                 cancellationToken.ThrowIfCancellationRequested();
-                await AuthenticationService.Instance.SignInAnonymouslyAsync();
+                await NetworkRequest.WithTimeout(
+                    AuthenticationService.Instance.SignInAnonymouslyAsync(),
+                    cancellationToken,
+                    NetworkRequest.AuthTimeoutMs);
                 SaveLastMethod(AuthPlatform.Anonymous);
             }
             else
@@ -234,6 +248,7 @@ public class UGSAuthService : IAuthService
                 await SignInWithMethodAsync(lastMethod, cancellationToken);
             }
 
+            NetworkStatus.ReportSuccess();
             Debug.Log($"[Auth] Success. PlayerId={GetPlayerId()}");
             return true;
         }
@@ -244,6 +259,8 @@ public class UGSAuthService : IAuthService
         }
         catch (Exception e)
         {
+            if (IsTransportFailure(e))
+                NetworkStatus.ReportFailure();
             Debug.LogError($"[Auth] Sign-in failed: {e.Message}");
             return false;
         }
@@ -492,7 +509,9 @@ public class UGSAuthService : IAuthService
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var items = await CloudSaveService.Instance.Data.Player.LoadAllAsync();
+            var items = await NetworkRequest.WithTimeout(
+                CloudSaveService.Instance.Data.Player.LoadAllAsync(),
+                cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
             if (items != null)
@@ -510,7 +529,9 @@ public class UGSAuthService : IAuthService
 
             // Cloud Save empty is not enough — IAP/currency may exist only in Economy.
             cancellationToken.ThrowIfCancellationRequested();
-            var balances = await EconomyService.Instance.PlayerBalances.GetBalancesAsync();
+            var balances = await NetworkRequest.WithTimeout(
+                EconomyService.Instance.PlayerBalances.GetBalancesAsync(),
+                cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (balances?.Balances != null)
             {
@@ -522,7 +543,9 @@ public class UGSAuthService : IAuthService
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            var inventory = await EconomyService.Instance.PlayerInventory.GetInventoryAsync();
+            var inventory = await NetworkRequest.WithTimeout(
+                EconomyService.Instance.PlayerInventory.GetInventoryAsync(),
+                cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (inventory?.PlayersInventoryItems != null && inventory.PlayersInventoryItems.Count > 0)
                 return false;
@@ -604,7 +627,10 @@ public class UGSAuthService : IAuthService
             AuthPlatform.GooglePlayGames  => SignInWithGooglePlayGamesAsync(cancellationToken),
             AuthPlatform.Apple            => SignInWithAppleAsync(cancellationToken),
             AuthPlatform.AppleGameCenter  => SignInWithAppleGameCenterAsync(cancellationToken),
-            _                             => AuthenticationService.Instance.SignInAnonymouslyAsync()
+            _                             => NetworkRequest.WithTimeout(
+                                                 AuthenticationService.Instance.SignInAnonymouslyAsync(),
+                                                 cancellationToken,
+                                                 NetworkRequest.AuthTimeoutMs)
         };
 
 #if UNITY_ANDROID
@@ -625,7 +651,10 @@ public class UGSAuthService : IAuthService
             Debug.Log("[Auth] Recover: reusing Google Play Games auth code from Link attempt.");
 
         cancellationToken.ThrowIfCancellationRequested();
-        await AuthenticationService.Instance.SignInWithGooglePlayGamesAsync(serverAuthCode);
+        await NetworkRequest.WithTimeout(
+            AuthenticationService.Instance.SignInWithGooglePlayGamesAsync(serverAuthCode),
+            cancellationToken,
+            NetworkRequest.AuthTimeoutMs);
     }
 
     private async Task LinkWithGooglePlayGamesAsync(CancellationToken cancellationToken)
@@ -634,7 +663,10 @@ public class UGSAuthService : IAuthService
         string serverAuthCode = await GetGoogleServerAuthCodeAsync(cancellationToken);
         _recoverGoogleAuthCode = serverAuthCode;
         cancellationToken.ThrowIfCancellationRequested();
-        await AuthenticationService.Instance.LinkWithGooglePlayGamesAsync(serverAuthCode);
+        await NetworkRequest.WithTimeout(
+            AuthenticationService.Instance.LinkWithGooglePlayGamesAsync(serverAuthCode),
+            cancellationToken,
+            NetworkRequest.AuthTimeoutMs);
     }
 
     private Task<string> GetGoogleServerAuthCodeAsync(CancellationToken cancellationToken)
@@ -748,7 +780,10 @@ public class UGSAuthService : IAuthService
             Debug.Log("[Auth] Recover: reusing Apple identity token from Link attempt.");
 
         cancellationToken.ThrowIfCancellationRequested();
-        await AuthenticationService.Instance.SignInWithAppleAsync(identityToken);
+        await NetworkRequest.WithTimeout(
+            AuthenticationService.Instance.SignInWithAppleAsync(identityToken),
+            cancellationToken,
+            NetworkRequest.AuthTimeoutMs);
     }
 
     private async Task LinkWithAppleAsync(CancellationToken cancellationToken)
@@ -764,7 +799,10 @@ public class UGSAuthService : IAuthService
         string identityToken = await RequestAppleIdentityTokenAsync(cancellationToken);
         _recoverAppleIdentityToken = identityToken;
         cancellationToken.ThrowIfCancellationRequested();
-        await AuthenticationService.Instance.LinkWithAppleAsync(identityToken);
+        await NetworkRequest.WithTimeout(
+            AuthenticationService.Instance.LinkWithAppleAsync(identityToken),
+            cancellationToken,
+            NetworkRequest.AuthTimeoutMs);
     }
 
     private async Task SignInWithAppleGameCenterAsync(CancellationToken cancellationToken)
@@ -778,12 +816,15 @@ public class UGSAuthService : IAuthService
             Debug.Log("[Auth] Recover: reusing Game Center credentials from Link attempt.");
 
         cancellationToken.ThrowIfCancellationRequested();
-        await AuthenticationService.Instance.SignInWithAppleGameCenterAsync(
-            credentials.Signature,
-            credentials.TeamPlayerId,
-            credentials.PublicKeyUrl,
-            credentials.Salt,
-            credentials.Timestamp);
+        await NetworkRequest.WithTimeout(
+            AuthenticationService.Instance.SignInWithAppleGameCenterAsync(
+                credentials.Signature,
+                credentials.TeamPlayerId,
+                credentials.PublicKeyUrl,
+                credentials.Salt,
+                credentials.Timestamp),
+            cancellationToken,
+            NetworkRequest.AuthTimeoutMs);
     }
 
     private async Task LinkWithAppleGameCenterAsync(CancellationToken cancellationToken)
@@ -792,12 +833,15 @@ public class UGSAuthService : IAuthService
         AppleGameCenterCredentials credentials = await RequestAppleGameCenterCredentialsAsync(cancellationToken);
         _recoverGameCenterCredentials = credentials;
         cancellationToken.ThrowIfCancellationRequested();
-        await AuthenticationService.Instance.LinkWithAppleGameCenterAsync(
-            credentials.Signature,
-            credentials.TeamPlayerId,
-            credentials.PublicKeyUrl,
-            credentials.Salt,
-            credentials.Timestamp);
+        await NetworkRequest.WithTimeout(
+            AuthenticationService.Instance.LinkWithAppleGameCenterAsync(
+                credentials.Signature,
+                credentials.TeamPlayerId,
+                credentials.PublicKeyUrl,
+                credentials.Salt,
+                credentials.Timestamp),
+            cancellationToken,
+            NetworkRequest.AuthTimeoutMs);
     }
 
     private async Task<string> RequestAppleIdentityTokenAsync(CancellationToken cancellationToken)
@@ -862,4 +906,19 @@ public class UGSAuthService : IAuthService
         throw new PlatformNotSupportedException("Apple Game Center is only available on iOS.");
     }
 #endif
+
+    static bool IsTransportFailure(Exception exception)
+    {
+        for (Exception walk = exception; walk != null; walk = walk.InnerException)
+        {
+            if (walk is TimeoutException)
+                return true;
+            if (walk is SocketException)
+                return true;
+            if (walk is HttpRequestException)
+                return true;
+        }
+
+        return false;
+    }
 }

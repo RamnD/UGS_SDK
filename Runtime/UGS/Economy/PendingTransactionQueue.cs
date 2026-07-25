@@ -7,12 +7,9 @@ using UnityEngine;
 
 /// <summary>
 /// Durable transaction queue (positive amount — credit, negative — debit).
-/// Accumulates operations while offline / on recoverable network failure and
-/// flushes them on the next successful <see cref="FlushAsync"/>.
-/// Per-currency pending amounts are coalesced; each logical row has a stable id
-/// and status <c>pending → in_flight</c> (removed on success).
-/// Enqueue and flush serialize on <see cref="_sync"/> and always re-read before persist
-/// so mid-flush enqueues are not overwritten.
+/// Status flow: <c>pending → in_flight → (removed | unconfirmed | pending)</c>.
+/// <c>unconfirmed</c> = timed-out write that may have landed on the server; resolved after
+/// the next successful balance fetch via <see cref="ResolveUnconfirmed"/>.
 /// </summary>
 internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struct, Enum
 {
@@ -21,6 +18,7 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
 
     const int StatusPending = 0;
     const int StatusInFlight = 1;
+    const int StatusUnconfirmed = 2;
 
     readonly ICurrencyMapper<TCurrency> _mapper;
     readonly object _sync = new object();
@@ -29,7 +27,7 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
 
     public PendingTransactionQueue(ICurrencyMapper<TCurrency> mapper) => _mapper = mapper;
 
-    /// <summary>True when at least one non-zero pending/in-flight delta remains on disk.</summary>
+    /// <summary>True when any durable row remains (pending / in-flight / unconfirmed).</summary>
     public bool HasPending
     {
         get
@@ -42,11 +40,48 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
         }
     }
 
-    /// <summary>
-    /// Enqueues a signed delta and saves to disk immediately.
-    /// Same-currency <see cref="StatusPending"/> entries are coalesced; in-flight rows are left alone
-    /// and a separate pending row is created/merged for the new delta.
-    /// </summary>
+    /// <summary>True when a flushable <see cref="StatusPending"/> row exists.</summary>
+    public bool HasFlushablePending
+    {
+        get
+        {
+            lock (_sync)
+            {
+                var queue = LoadUnlocked();
+                if (queue.items == null)
+                    return false;
+                for (int i = 0; i < queue.items.Count; i++)
+                {
+                    if (queue.items[i].status == StatusPending && queue.items[i].amount != 0)
+                        return true;
+                }
+
+                return false;
+            }
+        }
+    }
+
+    /// <summary>True when an unconfirmed (timed-out) row must be reconciled after GetBalances.</summary>
+    public bool HasUnconfirmed
+    {
+        get
+        {
+            lock (_sync)
+            {
+                var queue = LoadUnlocked();
+                if (queue.items == null)
+                    return false;
+                for (int i = 0; i < queue.items.Count; i++)
+                {
+                    if (queue.items[i].status == StatusUnconfirmed)
+                        return true;
+                }
+
+                return false;
+            }
+        }
+    }
+
     public void Enqueue(TCurrency type, int amount)
     {
         if (amount == 0)
@@ -62,7 +97,7 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
                 PendingTx existing = queue.items[i];
                 if (!string.Equals(existing.currency, key, StringComparison.Ordinal))
                     continue;
-                if (existing.status == StatusInFlight)
+                if (existing.status == StatusInFlight || existing.status == StatusUnconfirmed)
                     continue;
 
                 long net = (long)existing.amount + amount;
@@ -77,9 +112,6 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
                 if (net == 0)
                 {
                     queue.items.RemoveAt(i);
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-                    Debug.Log($"[Economy] Queued net 0 {key} — removed pending entry.");
-#endif
                 }
                 else
                 {
@@ -88,9 +120,6 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
                     if (string.IsNullOrEmpty(existing.id))
                         existing.id = Guid.NewGuid().ToString("N");
                     queue.items[i] = existing;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-                    Debug.Log($"[Economy] Queued {key} net → {existing.amount}");
-#endif
                 }
 
                 PersistUnlocked(queue);
@@ -103,19 +132,89 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
                 currency = key,
                 amount = amount,
                 status = StatusPending,
+                balanceBefore = 0,
             });
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            Debug.Log($"[Economy] Queued {(amount >= 0 ? "+" : "")}{amount} {key}");
-#endif
             PersistUnlocked(queue);
         }
     }
 
     /// <summary>
-    /// Single-flight flush: concurrent callers await the in-flight flush.
-    /// On recoverable failure — stops, keeps the remaining tail on disk, returns without throwing.
-    /// On non-recoverable failure — throws <see cref="InventoryOperationException"/>.
+    /// Re-applies pending (not in-flight / unconfirmed) deltas on top of a server snapshot
+    /// so UI stays optimistic until flush completes.
     /// </summary>
+    public void ApplyPendingOnTop(BalanceCache<TCurrency> cache)
+    {
+        if (cache == null)
+            return;
+
+        lock (_sync)
+        {
+            var queue = LoadUnlocked();
+            for (int i = 0; i < queue.items.Count; i++)
+            {
+                PendingTx tx = queue.items[i];
+                if (tx.status != StatusPending || tx.amount == 0)
+                    continue;
+                if (!Enum.TryParse(tx.currency, out TCurrency type))
+                    continue;
+
+                cache.Set(type, cache.Get(type) + tx.amount);
+            }
+        }
+    }
+
+    /// <summary>
+    /// After a successful GetBalances: drop unconfirmed rows that already landed on the server;
+    /// otherwise promote them back to pending for a safe retry.
+    /// </summary>
+    public void ResolveUnconfirmed(BalanceCache<TCurrency> cache)
+    {
+        if (cache == null)
+            return;
+
+        lock (_sync)
+        {
+            var queue = LoadUnlocked();
+            bool changed = false;
+            for (int i = queue.items.Count - 1; i >= 0; i--)
+            {
+                PendingTx tx = queue.items[i];
+                if (tx.status != StatusUnconfirmed)
+                    continue;
+                if (!Enum.TryParse(tx.currency, out TCurrency type))
+                {
+                    queue.items.RemoveAt(i);
+                    changed = true;
+                    continue;
+                }
+
+                long server = cache.Get(type);
+                bool landed = tx.amount >= 0
+                    ? server >= tx.balanceBefore + tx.amount
+                    : server <= tx.balanceBefore + tx.amount;
+
+                if (landed)
+                {
+                    Debug.Log(
+                        $"[Economy] Unconfirmed {tx.currency} {tx.amount} already on server — dropping.");
+                    queue.items.RemoveAt(i);
+                }
+                else
+                {
+                    Debug.LogWarning(
+                        $"[Economy] Unconfirmed {tx.currency} {tx.amount} missing on server — re-queue pending.");
+                    tx.status = StatusPending;
+                    queue.items[i] = tx;
+                }
+
+                changed = true;
+            }
+
+            if (changed)
+                PersistUnlocked(queue);
+        }
+    }
+
     public async Task FlushAsync(BalanceCache<TCurrency> cache, CancellationToken cancellationToken = default)
     {
         Task flush;
@@ -151,19 +250,24 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
         lock (_sync)
         {
             var queue = LoadUnlocked();
-            // Crash recovery: in_flight from a previous session is retried as pending.
+            // Crash recovery: abandoned in_flight → unconfirmed (may have landed).
             for (int i = 0; i < queue.items.Count; i++)
             {
                 PendingTx tx = queue.items[i];
                 if (tx.status == StatusInFlight)
                 {
-                    tx.status = StatusPending;
+                    tx.status = StatusUnconfirmed;
                     queue.items[i] = tx;
                 }
             }
 
             PersistUnlocked(queue);
-            work = new List<PendingTx>(queue.items);
+            work = new List<PendingTx>();
+            for (int i = 0; i < queue.items.Count; i++)
+            {
+                if (queue.items[i].status == StatusPending)
+                    work.Add(queue.items[i]);
+            }
         }
 
         if (work.Count == 0)
@@ -185,30 +289,45 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
                 continue;
             }
 
-            if (!TryMarkInFlight(snapshot.id, out int amount))
-                continue; // removed / coalesced away while waiting
+            long balanceBefore = cache.Get(type);
+            if (!TryMarkInFlight(snapshot.id, balanceBefore, out int amount))
+                continue;
 
             try
             {
-                // Use amount re-read at mark-in-flight time — not the pre-flush snapshot —
-                // so mid-flush Enqueue coalesces are not lost when RemoveById runs.
                 var balance = amount >= 0
-                    ? await EconomyService.Instance.PlayerBalances
-                        .IncrementBalanceAsync(_mapper.ToServiceId(type), amount)
-                    : await EconomyService.Instance.PlayerBalances
-                        .DecrementBalanceAsync(_mapper.ToServiceId(type), Math.Abs(amount));
+                    ? await NetworkRequest.WithTimeout(
+                        EconomyService.Instance.PlayerBalances
+                            .IncrementBalanceAsync(_mapper.ToServiceId(type), amount),
+                        cancellationToken)
+                    : await NetworkRequest.WithTimeout(
+                        EconomyService.Instance.PlayerBalances
+                            .DecrementBalanceAsync(_mapper.ToServiceId(type), Math.Abs(amount)),
+                        cancellationToken);
 
                 cache.Set(type, balance.Balance);
                 RemoveById(snapshot.id);
+                NetworkStatus.ReportSuccess();
             }
             catch (OperationCanceledException)
             {
-                RevertToPending(snapshot.id);
+                MarkUnconfirmed(snapshot.id, balanceBefore);
                 cache.Save();
                 throw;
             }
+            catch (Exception e) when (EconomyErrorClassifier.IsIndeterminate(e))
+            {
+                NetworkStatus.ReportFailure();
+                Debug.LogWarning(
+                    $"[Economy] Flush indeterminate ({snapshot.currency} {amount}): {e.Message}. " +
+                    "Will reconcile after next GetBalances.");
+                MarkUnconfirmed(snapshot.id, balanceBefore);
+                cache.Save();
+                return;
+            }
             catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e))
             {
+                NetworkStatus.ReportFailure();
                 Debug.LogWarning(
                     $"[Economy] Flush paused ({snapshot.currency} {amount}): {e.Message}. " +
                     "Will retry on next RefreshBalancesAsync.");
@@ -234,10 +353,7 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
 #endif
     }
 
-    /// <summary>
-    /// Marks the row in-flight and returns its <b>current</b> amount (after any mid-flush coalesce).
-    /// </summary>
-    bool TryMarkInFlight(string id, out int amount)
+    bool TryMarkInFlight(string id, long balanceBefore, out int amount)
     {
         amount = 0;
         if (string.IsNullOrEmpty(id))
@@ -251,9 +367,12 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
                 PendingTx tx = queue.items[i];
                 if (!string.Equals(tx.id, id, StringComparison.Ordinal))
                     continue;
+                if (tx.status != StatusPending)
+                    return false;
 
                 amount = tx.amount;
                 tx.status = StatusInFlight;
+                tx.balanceBefore = balanceBefore;
                 queue.items[i] = tx;
                 PersistUnlocked(queue);
                 return true;
@@ -263,7 +382,6 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
         return false;
     }
 
-    /// <summary>Wipes the durable queue from memory and PlayerPrefs (account switch / delete).</summary>
     public void Clear()
     {
         lock (_sync)
@@ -316,6 +434,29 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
         }
     }
 
+    void MarkUnconfirmed(string id, long balanceBefore)
+    {
+        if (string.IsNullOrEmpty(id))
+            return;
+
+        lock (_sync)
+        {
+            var queue = LoadUnlocked();
+            for (int i = 0; i < queue.items.Count; i++)
+            {
+                PendingTx tx = queue.items[i];
+                if (!string.Equals(tx.id, id, StringComparison.Ordinal))
+                    continue;
+
+                tx.status = StatusUnconfirmed;
+                tx.balanceBefore = balanceBefore;
+                queue.items[i] = tx;
+                PersistUnlocked(queue);
+                return;
+            }
+        }
+    }
+
     PendingQueue LoadUnlocked()
     {
         MigrateLegacyKeyIfNeeded();
@@ -350,12 +491,8 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
         PlayerPrefs.SetString(PrefsKey, legacyJson);
         PlayerPrefs.DeleteKey(LegacyPrefsKey);
         PlayerPrefs.Save();
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-        Debug.Log("[Economy] Migrated pending queue key economy_pending_adds → economy_pending_tx.");
-#endif
     }
 
-    /// <summary>Merges duplicate pending (not in-flight) currency rows.</summary>
     static void CoalescePendingInPlace(PendingQueue queue)
     {
         if (queue.items.Count <= 1)
@@ -364,7 +501,7 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
         var pendingNets = new Dictionary<string, long>(StringComparer.Ordinal);
         var pendingIds = new Dictionary<string, string>(StringComparer.Ordinal);
         var pendingOrder = new List<string>();
-        var inFlight = new List<PendingTx>();
+        var reserved = new List<PendingTx>();
 
         for (int i = 0; i < queue.items.Count; i++)
         {
@@ -372,9 +509,9 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
             if (string.IsNullOrEmpty(tx.currency) || tx.amount == 0)
                 continue;
 
-            if (tx.status == StatusInFlight)
+            if (tx.status == StatusInFlight || tx.status == StatusUnconfirmed)
             {
-                inFlight.Add(tx);
+                reserved.Add(tx);
                 continue;
             }
 
@@ -392,8 +529,8 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
         }
 
         queue.items.Clear();
-        for (int i = 0; i < inFlight.Count; i++)
-            queue.items.Add(inFlight[i]);
+        for (int i = 0; i < reserved.Count; i++)
+            queue.items.Add(reserved[i]);
 
         for (int i = 0; i < pendingOrder.Count; i++)
         {
@@ -433,8 +570,10 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
         public string id;
         public string currency;
         public int amount;
-        /// <summary>0 = pending, 1 = in_flight.</summary>
+        /// <summary>0 = pending, 1 = in_flight, 2 = unconfirmed.</summary>
         public int status;
+        /// <summary>Cached balance before the in-flight / unconfirmed write.</summary>
+        public long balanceBefore;
     }
 
     [Serializable]

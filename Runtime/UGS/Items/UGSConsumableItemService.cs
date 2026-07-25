@@ -111,12 +111,15 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
                 return;
             }
 
-            var result = await EconomyService.Instance.PlayerBalances.GetBalancesAsync();
+            var result = await NetworkRequest.WithTimeout(
+                EconomyService.Instance.PlayerBalances.GetBalancesAsync(),
+                cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
             RebuildFromBalances(result.Balances);
             ApplyPendingOnTop();
             SaveToPrefs();
+            NetworkStatus.ReportSuccess();
         }
         catch (OperationCanceledException)
         {
@@ -125,6 +128,13 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
         catch (InventoryOperationException)
         {
             throw;
+        }
+        catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e)
+                                  || EconomyErrorClassifier.IsIndeterminate(e))
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogWarning($"[Consumables] Balance sync failed (transport) — using cache: {e.Message}");
+            LoadFromPrefs();
         }
         catch (Exception e)
         {
@@ -190,14 +200,17 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var result = await EconomyService.Instance.PlayerBalances.DecrementBalanceAsync(
-                _mapper.ToServiceId(id),
-                amount);
+            var result = await NetworkRequest.WithTimeout(
+                EconomyService.Instance.PlayerBalances.DecrementBalanceAsync(
+                    _mapper.ToServiceId(id),
+                    amount),
+                cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
             SetQuantity(id, ToIntQuantity(result.Balance));
             SaveToPrefs();
             RaiseChanged(id);
+            NetworkStatus.ReportSuccess();
             return true;
         }
         catch (EconomyException e) when (e.Reason == EconomyExceptionReason.UnprocessableTransaction)
@@ -217,6 +230,28 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (Exception e) when (EconomyErrorClassifier.IsIndeterminate(e))
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogWarning($"[Consumables] Consume indeterminate for {id} — refreshing: {e.Message}");
+            try
+            {
+                await RefreshAsync(cancellationToken);
+            }
+            catch (Exception refreshEx)
+            {
+                Debug.LogWarning($"[Consumables] Reconcile after indeterminate consume: {refreshEx.Message}");
+            }
+
+            // Do not local-debit — server may already have consumed.
+            return false;
+        }
+        catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e))
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogWarning($"[Consumables] Consume failed (recoverable) for {id}: {e.Message}");
+            return false;
         }
         catch (Exception e)
         {
@@ -264,26 +299,55 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
             return true;
         }
 
+        long before = GetQuantity(id);
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var result = await EconomyService.Instance.PlayerBalances.IncrementBalanceAsync(
-                _mapper.ToServiceId(id),
-                amount);
+            var result = await NetworkRequest.WithTimeout(
+                EconomyService.Instance.PlayerBalances.IncrementBalanceAsync(
+                    _mapper.ToServiceId(id),
+                    amount),
+                cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
             SetQuantity(id, ToIntQuantity(result.Balance));
             SaveToPrefs();
             RaiseChanged(id);
+            NetworkStatus.ReportSuccess();
             return true;
         }
         catch (OperationCanceledException)
         {
             throw;
         }
+        catch (Exception e) when (EconomyErrorClassifier.IsIndeterminate(e)
+                                  && _mapper.IsOfflineAllowed(id, InventoryOperation.Add))
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogWarning(
+                $"[Consumables] Grant {id} indeterminate — reconciling: {e.Message}");
+            try
+            {
+                await RefreshAsync(cancellationToken);
+            }
+            catch (Exception refreshEx)
+            {
+                Debug.LogWarning($"[Consumables] Reconcile refresh failed: {refreshEx.Message}");
+            }
+
+            if (GetQuantity(id) >= before + amount)
+            {
+                Debug.Log($"[Consumables] Indeterminate grant {id} +{amount} already on server.");
+                return true;
+            }
+
+            ApplyLocalGrant(id, amount);
+            return true;
+        }
         catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e)
                                   && _mapper.IsOfflineAllowed(id, InventoryOperation.Add))
         {
+            NetworkStatus.ReportFailure();
             Debug.LogWarning($"[Consumables] Grant {id} failed (recoverable) — queued locally: {e.Message}");
             ApplyLocalGrant(id, amount);
             return true;
@@ -360,20 +424,33 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
 
             try
             {
-                var result = await EconomyService.Instance.PlayerBalances.IncrementBalanceAsync(
-                    _mapper.ToServiceId(id),
-                    amount);
+                var result = await NetworkRequest.WithTimeout(
+                    EconomyService.Instance.PlayerBalances.IncrementBalanceAsync(
+                        _mapper.ToServiceId(id),
+                        amount),
+                    cancellationToken);
                 SetQuantity(id, ToIntQuantity(result.Balance));
                 RemovePendingById(snapshot.id);
                 RaiseChanged(id);
+                NetworkStatus.ReportSuccess();
             }
             catch (OperationCanceledException)
             {
                 RevertGrantToPending(snapshot.id);
                 throw;
             }
+            catch (Exception e) when (EconomyErrorClassifier.IsIndeterminate(e))
+            {
+                NetworkStatus.ReportFailure();
+                Debug.LogWarning(
+                    $"[Consumables] Pending grant flush indeterminate ({snapshot.item} +{amount}): {e.Message}");
+                // Leave as pending (not in-flight) — next refresh reconciles via GetBalances + ApplyPendingOnTop.
+                RevertGrantToPending(snapshot.id);
+                return;
+            }
             catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e))
             {
+                NetworkStatus.ReportFailure();
                 Debug.LogWarning(
                     $"[Consumables] Pending grant flush paused ({snapshot.item} +{amount}): {e.Message}");
                 RevertGrantToPending(snapshot.id);

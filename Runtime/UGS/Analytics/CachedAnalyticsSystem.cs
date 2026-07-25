@@ -11,9 +11,15 @@ public sealed class CachedAnalyticsSystem : IAnalyticsSystem
     UGSAnalyticSystem _inner;
     string _playerId;
     readonly PendingAnalyticsQueue _queue = new PendingAnalyticsQueue();
+    bool _subscribedToNetwork;
 
     /// <summary>Queue-only instance for use before UGS auth completes.</summary>
-    public static CachedAnalyticsSystem CreatePreAuth() => new CachedAnalyticsSystem();
+    public static CachedAnalyticsSystem CreatePreAuth()
+    {
+        var instance = new CachedAnalyticsSystem();
+        instance.SubscribeToNetworkStatus();
+        return instance;
+    }
 
     CachedAnalyticsSystem() { }
 
@@ -28,6 +34,7 @@ public sealed class CachedAnalyticsSystem : IAnalyticsSystem
         _inner = inner ?? throw new System.ArgumentNullException(nameof(inner));
         _sdk = sdk ?? throw new System.ArgumentNullException(nameof(sdk));
         _playerId = inner.PlayerId;
+        SubscribeToNetworkStatus();
         DrainQueue();
     }
 
@@ -66,12 +73,29 @@ public sealed class CachedAnalyticsSystem : IAnalyticsSystem
         }
     }
 
+    void SubscribeToNetworkStatus()
+    {
+        if (_subscribedToNetwork)
+            return;
+        _subscribedToNetwork = true;
+        NetworkStatus.IsOnlineChanged += OnNetworkStatusChanged;
+    }
+
+    void OnNetworkStatusChanged(bool isOnline)
+    {
+        if (isOnline)
+            DrainQueue();
+    }
+
     void DrainQueue()
     {
         if (_inner == null || _sdk == null || !NetworkStatus.IsOnline)
             return;
 
-        // Batch dequeue so we persist once per batch instead of O(n²) per event.
+        // Refresh playerId from inner at batch start in case it changed after re-auth.
+        if (_inner != null)
+            _playerId = _inner.PlayerId;
+
         const int batchSize = 64;
         while (true)
         {

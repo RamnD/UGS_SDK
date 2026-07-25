@@ -8,7 +8,8 @@ using UnityEngine;
 /// <see cref="IInventoryService{TCurrency}"/> implementation via Unity Gaming Services Economy SDK.
 /// Offline and recoverable network failures use optimistic <see cref="BalanceCache{TCurrency}"/>
 /// plus a durable <see cref="PendingTransactionQueue{TCurrency}"/> flushed on
-/// <see cref="RefreshBalancesAsync"/>.
+/// <see cref="RefreshBalancesAsync"/>. Timed-out writes are treated as indeterminate and
+/// reconciled against absolute server balances (no blind double-apply).
 /// </summary>
 /// <typeparam name="TCurrency">Project currency enum.</typeparam>
 public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
@@ -24,7 +25,7 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
     {
         _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         _cache = new BalanceCache<TCurrency>();
-        _cache.Load(); // PlayerPrefs — so offline / queued ops start from last known balances
+        _cache.Load();
         _pendingQueue = new PendingTransactionQueue<TCurrency>(mapper);
     }
 
@@ -82,8 +83,9 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
             await _pendingQueue.FlushAsync(_cache, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Do not overwrite optimistic local cache while pending deltas remain.
-            if (_pendingQueue.HasPending)
+            // Flushable pending still blocked — keep local until next refresh.
+            // Unconfirmed rows must not block GetBalances (needed to resolve them).
+            if (_pendingQueue.HasFlushablePending)
             {
                 Debug.LogWarning(
                     "[Economy] Pending queue not fully flushed — keeping local cache until next refresh.");
@@ -91,9 +93,15 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
                 return;
             }
 
-            var result = await EconomyService.Instance.PlayerBalances.GetBalancesAsync();
+            var result = await NetworkRequest.WithTimeout(
+                EconomyService.Instance.PlayerBalances.GetBalancesAsync(),
+                cancellationToken);
             _cache.UpdateFromServer(result.Balances, _mapper);
+            _pendingQueue.ResolveUnconfirmed(_cache);
+            _pendingQueue.ApplyPendingOnTop(_cache);
+            _cache.Save();
             _cache.LogAll();
+            NetworkStatus.ReportSuccess();
         }
         catch (OperationCanceledException)
         {
@@ -103,9 +111,11 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
         {
             throw;
         }
-        catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e))
+        catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e)
+                                  || EconomyErrorClassifier.IsIndeterminate(e))
         {
-            Debug.LogWarning($"[Economy] Refresh failed (recoverable) — using cached balances: {e.Message}");
+            NetworkStatus.ReportFailure();
+            Debug.LogWarning($"[Economy] Refresh failed (transport) — using cached balances: {e.Message}");
             _cache.Load();
         }
         catch (Exception e)
@@ -130,14 +140,18 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
             return;
         }
 
+        long before = _cache.Get(type);
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var result = await EconomyService.Instance.PlayerBalances
-                .IncrementBalanceAsync(_mapper.ToServiceId(type), amount);
+            var result = await NetworkRequest.WithTimeout(
+                EconomyService.Instance.PlayerBalances
+                    .IncrementBalanceAsync(_mapper.ToServiceId(type), amount),
+                cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             _cache.Set(type, result.Balance);
             _cache.Save();
+            NetworkStatus.ReportSuccess();
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             Debug.Log($"[Economy] Applied online +{amount} {type} → {result.Balance}");
 #endif
@@ -146,9 +160,17 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
         {
             throw;
         }
+        catch (Exception e) when (EconomyErrorClassifier.IsIndeterminate(e))
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogWarning(
+                $"[Economy] Add {type} indeterminate — reconciling before queue: {e.Message}");
+            await ReconcileIndeterminateAddAsync(type, amount, before, cancellationToken);
+        }
         catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e)
                                   && _mapper.IsOfflineAllowed(type, InventoryOperation.Add))
         {
+            NetworkStatus.ReportFailure();
             Debug.LogWarning(
                 $"[Economy] Add {type} failed (recoverable) — queued locally: {e.Message}");
             ApplyLocalDelta(type, amount);
@@ -184,14 +206,18 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
         if (_cache.Get(type) < amount)
             return false;
 
+        long before = _cache.Get(type);
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var result = await EconomyService.Instance.PlayerBalances
-                .DecrementBalanceAsync(_mapper.ToServiceId(type), amount);
+            var result = await NetworkRequest.WithTimeout(
+                EconomyService.Instance.PlayerBalances
+                    .DecrementBalanceAsync(_mapper.ToServiceId(type), amount),
+                cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             _cache.Set(type, result.Balance);
             _cache.Save();
+            NetworkStatus.ReportSuccess();
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             Debug.Log($"[Economy] Applied online -{amount} {type} → {result.Balance}");
 #endif
@@ -207,15 +233,24 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
         {
             throw;
         }
+        catch (Exception e) when (EconomyErrorClassifier.IsIndeterminate(e))
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogWarning(
+                $"[Economy] Spend {type} indeterminate — reconciling: {e.Message}");
+            return await ReconcileIndeterminateSpendAsync(type, amount, before, cancellationToken);
+        }
         catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e)
                                   && _mapper.IsOfflineAllowed(type, InventoryOperation.Spend))
         {
+            NetworkStatus.ReportFailure();
             Debug.LogWarning(
                 $"[Economy] Spend {type} failed (recoverable) — queued locally: {e.Message}");
             return TryApplyLocalSpend(type, amount);
         }
         catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e))
         {
+            NetworkStatus.ReportFailure();
             Debug.LogWarning(
                 $"[Economy] Spend {type} failed (recoverable, offline spend disallowed): {e.Message}");
             return false;
@@ -224,6 +259,81 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
         {
             Debug.LogError($"[Economy] Spend failed {type}: {e.Message}");
             return false;
+        }
+    }
+
+    async Task ReconcileIndeterminateAddAsync(
+        TCurrency type,
+        int amount,
+        long before,
+        CancellationToken cancellationToken)
+    {
+        await TryForceServerSnapshotAsync(cancellationToken);
+
+        if (_cache.Get(type) >= before + amount)
+        {
+            Debug.Log($"[Economy] Indeterminate add {type} +{amount} already on server.");
+            return;
+        }
+
+        if (_mapper.IsOfflineAllowed(type, InventoryOperation.Add))
+        {
+            Debug.LogWarning(
+                $"[Economy] Indeterminate add {type} +{amount} missing on server — queuing locally.");
+            ApplyLocalDelta(type, amount);
+        }
+    }
+
+    async Task<bool> ReconcileIndeterminateSpendAsync(
+        TCurrency type,
+        int amount,
+        long before,
+        CancellationToken cancellationToken)
+    {
+        await TryForceServerSnapshotAsync(cancellationToken);
+
+        if (_cache.Get(type) <= before - amount)
+        {
+            Debug.Log($"[Economy] Indeterminate spend {type} -{amount} already on server.");
+            return true;
+        }
+
+        if (_mapper.IsOfflineAllowed(type, InventoryOperation.Spend))
+        {
+            Debug.LogWarning(
+                $"[Economy] Indeterminate spend {type} -{amount} missing on server — queuing locally.");
+            return TryApplyLocalSpend(type, amount);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Best-effort GetBalances even during soft-offline, so timeout reconcile is not blind.
+    /// </summary>
+    async Task TryForceServerSnapshotAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var result = await NetworkRequest.WithTimeout(
+                EconomyService.Instance.PlayerBalances.GetBalancesAsync(),
+                cancellationToken);
+            _cache.UpdateFromServer(result.Balances, _mapper);
+            _pendingQueue.ResolveUnconfirmed(_cache);
+            _pendingQueue.ApplyPendingOnTop(_cache);
+            _cache.Save();
+            NetworkStatus.ReportSuccess();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception refreshEx)
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogWarning($"[Economy] Force snapshot after indeterminate write failed: {refreshEx.Message}");
+            _cache.Load();
         }
     }
 

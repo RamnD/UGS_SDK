@@ -114,6 +114,13 @@ public sealed class LevelPlayAdsManager : IAdsManager
     /// <inheritdoc/>
     public void ShowRewardedAd(string placementId, Action onSuccess, Action onFailed = null)
     {
+        if (!NetworkStatus.IsOnline)
+        {
+            Debug.LogWarning("[LevelPlay] ShowRewardedAd skipped — offline / soft-offline.");
+            onFailed?.Invoke();
+            return;
+        }
+
         if (_initState == InitState.NotStarted)
             Initialize();
 

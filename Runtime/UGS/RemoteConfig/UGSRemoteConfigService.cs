@@ -14,6 +14,9 @@ public sealed class UGSRemoteConfigService : IRemoteConfigService
     readonly RemoteConfigCache _cache = new RemoteConfigCache();
     bool _hasLiveConfig;
 
+    readonly object _fetchGate = new object();
+    Task _fetchTask;
+
     /// <inheritdoc/>
     public bool IsReady { get; private set; }
 
@@ -22,6 +25,35 @@ public sealed class UGSRemoteConfigService : IRemoteConfigService
 
     /// <inheritdoc/>
     public async Task FetchAsync(CancellationToken cancellationToken = default)
+    {
+        Task fetch;
+        lock (_fetchGate)
+        {
+            if (_fetchTask != null && !_fetchTask.IsCompleted)
+                fetch = _fetchTask;
+            else
+            {
+                fetch = FetchCoreAsync(cancellationToken);
+                _fetchTask = fetch;
+            }
+        }
+
+        try
+        {
+            await fetch;
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        finally
+        {
+            lock (_fetchGate)
+            {
+                if (ReferenceEquals(_fetchTask, fetch) && fetch.IsCompleted)
+                    _fetchTask = null;
+            }
+        }
+    }
+
+    async Task FetchCoreAsync(CancellationToken cancellationToken)
     {
         UsedCacheOnly = false;
         _hasLiveConfig = false;
@@ -36,15 +68,18 @@ public sealed class UGSRemoteConfigService : IRemoteConfigService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            await RemoteConfigService.Instance.FetchConfigsAsync(
-                new RemoteConfigUserAttributes(),
-                new RemoteConfigAppAttributes());
+            await NetworkRequest.WithTimeout(
+                RemoteConfigService.Instance.FetchConfigsAsync(
+                    new RemoteConfigUserAttributes(),
+                    new RemoteConfigAppAttributes()),
+                cancellationToken);
 
             cancellationToken.ThrowIfCancellationRequested();
 
             RefreshCacheFromAppConfig();
             _hasLiveConfig = true;
             IsReady = true;
+            NetworkStatus.ReportSuccess();
             Debug.Log("[RemoteConfig] Fetch completed.");
         }
         catch (OperationCanceledException)
@@ -53,6 +88,9 @@ public sealed class UGSRemoteConfigService : IRemoteConfigService
         }
         catch (Exception ex)
         {
+            if (IsRecoverableTransport(ex))
+                NetworkStatus.ReportFailure();
+
             Debug.LogWarning($"[RemoteConfig] Fetch failed, using cache if available: {ex.Message}");
             LoadCacheOnly();
 
@@ -180,6 +218,21 @@ public sealed class UGSRemoteConfigService : IRemoteConfigService
     {
         appConfig = _hasLiveConfig ? RemoteConfigService.Instance.appConfig : null;
         return appConfig != null;
+    }
+
+    static bool IsRecoverableTransport(Exception exception)
+    {
+        for (Exception walk = exception; walk != null; walk = walk.InnerException)
+        {
+            if (walk is TimeoutException)
+                return true;
+            if (walk is System.Net.Sockets.SocketException)
+                return true;
+            if (walk is System.Net.Http.HttpRequestException)
+                return true;
+        }
+
+        return false;
     }
 
     struct RemoteConfigUserAttributes { }

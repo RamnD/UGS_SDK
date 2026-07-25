@@ -34,6 +34,8 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
     private bool                       _localLoaded;
     private Task<SaveConflict?>        _loadTask;
     private Task<SaveConflict?>        _pushTask;
+    private long                       _localRevision;
+    private DateTime?                  _unconfirmedPushTs;
 
     /// <inheritdoc/>
     public DateTime? LocalTimestamp { get; private set; }
@@ -96,6 +98,7 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
         }
 
         _local[cloudKey] = JsonConvert.SerializeObject(value);
+        _localRevision++;
         LocalTimestamp = DateTime.UtcNow;
         PersistLocalToPrefs();
     }
@@ -156,8 +159,11 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var items = await CloudSaveService.Instance.Data.Player.LoadAllAsync();
+            var items = await NetworkRequest.WithTimeout(
+                CloudSaveService.Instance.Data.Player.LoadAllAsync(),
+                cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+            NetworkStatus.ReportSuccess();
 
             if (items.Count == 0)
                 return null; // cloud empty — keep local data
@@ -189,6 +195,17 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
 
             var cloudTs = _cloudSnapshotTimestamp ?? DateTime.MinValue;
 
+            // Detect unconfirmed push that actually landed on the server.
+            if (_unconfirmedPushTs.HasValue && TimestampsMatch(cloudTs, _unconfirmedPushTs))
+            {
+                BaseTimestamp = cloudTs;
+                _unconfirmedPushTs = null;
+                ClearCloudSnapshot();
+                PersistTimestampsToPrefs();
+                Debug.Log("[CloudSave] Cloud ts matches unconfirmed push — treating as own write.");
+                return null;
+            }
+
             // Local has no unsynced edits — take cloud if it moved ahead
             if (!IsDirty)
             {
@@ -217,6 +234,12 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (Exception e) when (IsRecoverableTransport(e))
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogWarning($"[CloudSave] Load failed (recoverable) — keeping local: {e.Message}");
+            return null;
         }
         catch (Exception e)
         {
@@ -277,7 +300,9 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
             }
 
             // Cloud moved — load full snapshot for ApplyCloud / KeepLocal
-            var items = await CloudSaveService.Instance.Data.Player.LoadAllAsync();
+            var items = await NetworkRequest.WithTimeout(
+                CloudSaveService.Instance.Data.Player.LoadAllAsync(),
+                cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             ParseCloudItemsIntoSnapshot(items);
 
@@ -301,6 +326,12 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (Exception e) when (IsRecoverableTransport(e))
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogWarning($"[CloudSave] Push failed (recoverable) — keeping dirty local: {e.Message}");
+            return null;
         }
         catch (Exception e)
         {
@@ -365,10 +396,29 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
         }
     }
 
+    static bool IsRecoverableTransport(Exception exception)
+    {
+        for (Exception walk = exception; walk != null; walk = walk.InnerException)
+        {
+            if (walk is OperationCanceledException)
+                return false;
+            if (walk is TimeoutException)
+                return true;
+            if (walk is System.Net.Sockets.SocketException)
+                return true;
+            if (walk is System.Net.Http.HttpRequestException)
+                return true;
+        }
+
+        return false;
+    }
+
     async Task<DateTime?> LoadCloudTimestampAsync(CancellationToken cancellationToken)
     {
         var keys = new HashSet<string> { TimestampCloudKey };
-        var items = await CloudSaveService.Instance.Data.Player.LoadAsync(keys);
+        var items = await NetworkRequest.WithTimeout(
+            CloudSaveService.Instance.Data.Player.LoadAsync(keys),
+            cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (items == null || items.Count == 0)
@@ -386,30 +436,48 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
 
     async Task UploadLocalAsync(CancellationToken cancellationToken)
     {
+        long rev = _localRevision;
         var ts = DateTime.UtcNow;
+        var snapshotLocal = new Dictionary<string, string>(_local);
         var cloudData = new Dictionary<string, object>();
 
-        foreach (var kvp in _local)
+        foreach (var kvp in snapshotLocal)
             cloudData[kvp.Key] = kvp.Value;
 
         cloudData[TimestampCloudKey] = ts.ToString("O");
 
-        Debug.Log($"[CloudSave] Pushing to cloud: {_local.Count} keys + __ts");
+        Debug.Log($"[CloudSave] Pushing to cloud: {snapshotLocal.Count} keys + __ts");
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-        foreach (var kvp in _local)
+        foreach (var kvp in snapshotLocal)
             Debug.Log($"  [CloudSave] key={kvp.Key} bytes={kvp.Value?.Length ?? 0}");
 #else
-        Debug.Log($"[CloudSave] Push key names: {string.Join(", ", _local.Keys)}");
+        Debug.Log($"[CloudSave] Push key names: {string.Join(", ", snapshotLocal.Keys)}");
 #endif
 
-        await CloudSaveService.Instance.Data.Player.SaveAsync(cloudData);
-        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            await NetworkRequest.WithTimeout(
+                CloudSaveService.Instance.Data.Player.SaveAsync(cloudData),
+                cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            NetworkStatus.ReportSuccess();
 
-        LocalTimestamp = ts;
-        BaseTimestamp  = ts;
-        ClearCloudSnapshot();
-        PersistLocalToPrefs();
-        Debug.Log($"[CloudSave] Saved to cloud. Timestamp: {ts:O}");
+            BaseTimestamp = ts;
+            if (_localRevision == rev)
+                LocalTimestamp = ts;
+            // If revision moved, leave LocalTimestamp newer (stay dirty).
+
+            _unconfirmedPushTs = null;
+            ClearCloudSnapshot();
+            PersistLocalToPrefs();
+            Debug.Log($"[CloudSave] Saved to cloud. Timestamp: {ts:O}");
+        }
+        catch (Exception e) when (IsRecoverableTransport(e))
+        {
+            _unconfirmedPushTs = ts;
+            NetworkStatus.ReportFailure();
+            Debug.LogWarning($"[CloudSave] Push timed out / transport failure — marking unconfirmed ts={ts:O}: {e.Message}");
+        }
     }
 
     void ClearCloudSnapshot()

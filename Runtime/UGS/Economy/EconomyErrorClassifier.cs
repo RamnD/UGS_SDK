@@ -3,51 +3,79 @@ using Unity.Services.Economy;
 
 /// <summary>
 /// Classifies economy / transport failures so the SDK can decide between
-/// durable queue fallback and hard failure.
+/// durable queue fallback, hard failure, and indeterminate (timeout / abandoned) writes.
 /// Prefers typed <see cref="EconomyExceptionReason"/> over message substring matching.
 /// </summary>
 internal static class EconomyErrorClassifier
 {
-    /// <summary>
-    /// True when the failure is likely transient (timeout, connectivity, selected 5xx)
-    /// and the operation may safely fall back to local cache + pending queue.
-    /// </summary>
-    public static bool IsRecoverable(Exception exception)
+    public enum FailureKind
+    {
+        /// <summary>Do not optimistic-queue; surface to caller.</summary>
+        Fatal,
+
+        /// <summary>
+        /// Safe to fall back to local cache + pending queue
+        /// (known-failed before commit, or read-only refresh).
+        /// </summary>
+        Recoverable,
+
+        /// <summary>
+        /// Request may still complete on the server (client timeout / abandoned Task).
+        /// Do not blind-queue or refund — reconcile against absolute server state first.
+        /// </summary>
+        Indeterminate,
+    }
+
+    public static FailureKind Classify(Exception exception)
     {
         for (Exception walk = exception; walk != null; walk = walk.InnerException)
         {
             if (walk is OperationCanceledException)
-                return false;
+                return FailureKind.Fatal;
 
+            // Client abandoned the await — UGS call may still commit.
             if (walk is TimeoutException)
-                return true;
+                return FailureKind.Indeterminate;
 
             if (walk is System.Net.Sockets.SocketException)
-                return true;
+                return FailureKind.Recoverable;
 
             if (walk is System.Net.Http.HttpRequestException)
-                return true;
+                return FailureKind.Recoverable;
 
             if (walk is EconomyException economyException)
-                return IsRecoverableReason(economyException.Reason);
+                return ClassifyReason(economyException.Reason);
         }
 
-        return false;
+        return FailureKind.Fatal;
     }
 
-    static bool IsRecoverableReason(EconomyExceptionReason reason)
+    /// <summary>
+    /// True when the failure is likely transient and the operation may safely fall back
+    /// to local cache + pending queue (not for abandoned/timeout writes).
+    /// </summary>
+    public static bool IsRecoverable(Exception exception) =>
+        Classify(exception) == FailureKind.Recoverable;
+
+    public static bool IsIndeterminate(Exception exception) =>
+        Classify(exception) == FailureKind.Indeterminate;
+
+    static FailureKind ClassifyReason(EconomyExceptionReason reason)
     {
         switch (reason)
         {
             case EconomyExceptionReason.NetworkError:
             case EconomyExceptionReason.RequestTimeOut:
+                // UGS may have applied the write before the client saw the timeout.
+                return FailureKind.Indeterminate;
+
             case EconomyExceptionReason.RateLimited:
             case EconomyExceptionReason.BadGateway:
             case EconomyExceptionReason.ServiceUnavailable:
             case EconomyExceptionReason.GatewayTimeout:
-                return true;
+            case EconomyExceptionReason.InternalServerError:
+                return FailureKind.Recoverable;
 
-            // Client / auth / validation / conflict — do not optimistic-queue.
             case EconomyExceptionReason.UnprocessableTransaction:
             case EconomyExceptionReason.InvalidArgument:
             case EconomyExceptionReason.Unauthorized:
@@ -57,15 +85,11 @@ internal static class EconomyErrorClassifier
             case EconomyExceptionReason.ConfigAssignmentHashInvalid:
             case EconomyExceptionReason.ConfigNotSynced:
             case EconomyExceptionReason.NotImplemented:
-                return false;
-
-            // 500: often transient, but not "all http 5xx" via substring — typed only.
-            case EconomyExceptionReason.InternalServerError:
-                return true;
+                return FailureKind.Fatal;
 
             case EconomyExceptionReason.Unknown:
             default:
-                return false;
+                return FailureKind.Fatal;
         }
     }
 }

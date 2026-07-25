@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using Unity.Services.Economy;
@@ -313,6 +315,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         Product product,
         RealMoneyProductDefinition definition)
     {
+        const int RedeemTimeoutMs = 15000;
         string economyPurchaseId = definition.ProductId;
         string storeId = definition.ResolvedStoreProductId;
 
@@ -371,7 +374,9 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                     googleReceipt.signature,
                     localCost,
                     localCurrency);
-                await EconomyService.Instance.Purchases.RedeemGooglePlayPurchaseAsync(args);
+                await NetworkRequest.WithTimeout(
+                    EconomyService.Instance.Purchases.RedeemGooglePlayPurchaseAsync(args),
+                    timeoutMs: RedeemTimeoutMs);
             }
             else
             {
@@ -380,14 +385,30 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                     payload,
                     localCost,
                     localCurrency);
-                await EconomyService.Instance.Purchases.RedeemAppleAppStorePurchaseAsync(args);
+                await NetworkRequest.WithTimeout(
+                    EconomyService.Instance.Purchases.RedeemAppleAppStorePurchaseAsync(args),
+                    timeoutMs: RedeemTimeoutMs);
             }
+
+            NetworkStatus.ReportSuccess();
 
             if (_economy != null)
                 await _economy.RefreshBalancesAsync();
 
             Debug.Log($"[SDK][IAP] Economy redeem succeeded for '{economyPurchaseId}'.");
             return true;
+        }
+        catch (TimeoutException ex)
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogError($"[SDK][IAP] Economy redeem timed out for '{economyPurchaseId}': {ex.Message}");
+            return false;
+        }
+        catch (Exception ex) when (IsRedeemTransportFailure(ex))
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogError($"[SDK][IAP] Economy redeem transport failure for '{economyPurchaseId}': {ex.Message}");
+            return false;
         }
         catch (EconomyException ex)
         {
@@ -628,6 +649,19 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         if (minor < int.MinValue)
             return int.MinValue;
         return (int)minor;
+    }
+
+    static bool IsRedeemTransportFailure(Exception exception)
+    {
+        for (Exception walk = exception; walk != null; walk = walk.InnerException)
+        {
+            if (walk is SocketException)
+                return true;
+            if (walk is HttpRequestException)
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>ISO 4217 minor-unit exponent (0 / 2 / 3). Unknown codes default to 2.</summary>

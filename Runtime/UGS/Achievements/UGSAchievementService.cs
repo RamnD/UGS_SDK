@@ -14,13 +14,18 @@ using UnityEngine;
 public sealed class UGSAchievementService : IAchievementService
 {
     private const string CloudSaveKey = "__ramnd_achievements_v1";
+    private const string LocalCachePrefsKey = "achievements_local_cache_v1";
 
     private readonly Dictionary<string, AchievementStateData> _states = new(StringComparer.Ordinal);
     private bool _isLoaded;
     /// <summary>True after a successful online LoadAll (including "no payload"). Flush must not overwrite cloud without this.</summary>
     private bool _hasCloudBaseline;
     private bool _isDirty;
+
+    private readonly object _loadGate = new object();
+    private readonly object _flushGate = new object();
     private Task _loadTask;
+    private Task _flushTask;
 
     public async Task WarmupAsync(CancellationToken cancellationToken = default)
     {
@@ -34,7 +39,10 @@ public sealed class UGSAchievementService : IAchievementService
         _isLoaded = false;
         _hasCloudBaseline = false;
         _isDirty = false;
-        _loadTask = null;
+        lock (_loadGate) _loadTask = null;
+        lock (_flushGate) _flushTask = null;
+        PlayerPrefs.DeleteKey(LocalCachePrefsKey);
+        PlayerPrefs.Save();
         Debug.Log("[Achievements] ClearLocalCache — in-memory state wiped.");
     }
 
@@ -85,6 +93,7 @@ public sealed class UGSAchievementService : IAchievementService
 
         _states[achievementId] = next;
         _isDirty = true;
+        PersistLocalCacheToPrefs();
 
         Debug.Log($"[Achievements] SetProgress '{achievementId}': {currentProgress}/{targetProgress}, unlocked={next.isUnlocked}");
         await FlushAsync(cancellationToken);
@@ -117,6 +126,7 @@ public sealed class UGSAchievementService : IAchievementService
 
         _states[achievementId] = next;
         _isDirty = true;
+        PersistLocalCacheToPrefs();
 
         Debug.Log($"[Achievements] IncrementProgress '{achievementId}': +{deltaProgress}, total={next.currentProgress}/{targetProgress}, unlocked={next.isUnlocked}");
         await FlushAsync(cancellationToken);
@@ -141,12 +151,42 @@ public sealed class UGSAchievementService : IAchievementService
 
         _states[achievementId] = next;
         _isDirty = true;
+        PersistLocalCacheToPrefs();
 
         Debug.Log($"[Achievements] Unlock '{achievementId}'.");
         await FlushAsync(cancellationToken);
     }
 
     public async Task FlushAsync(CancellationToken cancellationToken = default)
+    {
+        Task flush;
+        lock (_flushGate)
+        {
+            if (_flushTask != null && !_flushTask.IsCompleted)
+                flush = _flushTask;
+            else
+            {
+                flush = FlushCoreAsync(cancellationToken);
+                _flushTask = flush;
+            }
+        }
+
+        try
+        {
+            await flush;
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        finally
+        {
+            lock (_flushGate)
+            {
+                if (ReferenceEquals(_flushTask, flush) && flush.IsCompleted)
+                    _flushTask = null;
+            }
+        }
+    }
+
+    async Task FlushCoreAsync(CancellationToken cancellationToken)
     {
         await EnsureLoadedAsync(cancellationToken);
         if (!_isDirty)
@@ -158,7 +198,6 @@ public sealed class UGSAchievementService : IAchievementService
             return;
         }
 
-        // Never overwrite cloud from an empty/partial cache that never loaded successfully.
         if (!_hasCloudBaseline)
         {
             await EnsureCloudBaselineAsync(cancellationToken);
@@ -172,7 +211,6 @@ public sealed class UGSAchievementService : IAchievementService
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            // Deep snapshot so concurrent mutation of AchievementStateData cannot race serialize.
             var snapshot = new Dictionary<string, AchievementStateData>(StringComparer.Ordinal);
             foreach (var kvp in _states)
             {
@@ -189,18 +227,26 @@ public sealed class UGSAchievementService : IAchievementService
 
             var payload = new AchievementStateCollection { items = snapshot };
             string json = JsonConvert.SerializeObject(payload);
-            await CloudSaveService.Instance.Data.Player.SaveAsync(new Dictionary<string, object>
-            {
-                [CloudSaveKey] = json
-            });
+            await NetworkRequest.WithTimeout(
+                CloudSaveService.Instance.Data.Player.SaveAsync(new Dictionary<string, object>
+                {
+                    [CloudSaveKey] = json
+                }),
+                cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
+            NetworkStatus.ReportSuccess();
             _isDirty = false;
             Debug.Log($"[Achievements] Flushed {snapshot.Count} achievements to Cloud Save.");
         }
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (Exception ex) when (IsRecoverableTransport(ex))
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogWarning($"[Achievements] Flush failed (recoverable transport): {ex.Message} — keeping dirty local state.");
         }
         catch (Exception ex)
         {
@@ -214,28 +260,39 @@ public sealed class UGSAchievementService : IAchievementService
         if (_isLoaded)
             return;
 
-        if (_loadTask != null)
+        Task load;
+        lock (_loadGate)
         {
-            await _loadTask;
-            return;
+            if (_loadTask != null && !_loadTask.IsCompleted)
+                load = _loadTask;
+            else
+            {
+                load = LoadCoreAsync(cancellationToken);
+                _loadTask = load;
+            }
         }
 
-        _loadTask = LoadCoreAsync(cancellationToken);
         try
         {
-            await _loadTask;
+            await load;
+            cancellationToken.ThrowIfCancellationRequested();
         }
         finally
         {
-            _loadTask = null;
+            lock (_loadGate)
+            {
+                if (ReferenceEquals(_loadTask, load) && load.IsCompleted)
+                    _loadTask = null;
+            }
         }
     }
 
     private async Task LoadCoreAsync(CancellationToken cancellationToken)
     {
+        LoadLocalCacheFromPrefs();
+
         if (!NetworkStatus.IsOnline)
         {
-            // Local-only: allow in-memory progress, but do not claim a cloud baseline (blocks wipe-on-flush).
             _isLoaded = true;
             _hasCloudBaseline = false;
             Debug.LogWarning("[Achievements] Offline during warmup — local cache only; flush deferred until cloud baseline loads.");
@@ -252,6 +309,13 @@ public sealed class UGSAchievementService : IAchievementService
             _isLoaded = false;
             _hasCloudBaseline = false;
             throw;
+        }
+        catch (Exception ex) when (IsRecoverableTransport(ex))
+        {
+            NetworkStatus.ReportFailure();
+            _isLoaded = true;
+            _hasCloudBaseline = false;
+            Debug.LogWarning($"[Achievements] Warmup cloud load failed (recoverable): {ex.Message} — using local cache.");
         }
         catch (Exception ex)
         {
@@ -292,8 +356,11 @@ public sealed class UGSAchievementService : IAchievementService
         cancellationToken.ThrowIfCancellationRequested();
         var localOverlay = new Dictionary<string, AchievementStateData>(_states, StringComparer.Ordinal);
 
-        var items = await CloudSaveService.Instance.Data.Player.LoadAllAsync();
+        var items = await NetworkRequest.WithTimeout(
+            CloudSaveService.Instance.Data.Player.LoadAllAsync(),
+            cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
+        NetworkStatus.ReportSuccess();
 
         _states.Clear();
         if (items.TryGetValue(CloudSaveKey, out var item))
@@ -318,7 +385,76 @@ public sealed class UGSAchievementService : IAchievementService
             _states[kvp.Key] = kvp.Value;
 
         _hasCloudBaseline = true;
+        PersistLocalCacheToPrefs();
         Debug.Log($"[Achievements] Loaded cloud baseline ({_states.Count} achievements, local overlay keys={localOverlay.Count}).");
+    }
+
+    // ── Local PlayerPrefs cache ──────────────────────────────────────────────
+
+    void PersistLocalCacheToPrefs()
+    {
+        try
+        {
+            var payload = new AchievementStateCollection { items = new Dictionary<string, AchievementStateData>(_states, StringComparer.Ordinal) };
+            string json = JsonConvert.SerializeObject(payload);
+            PlayerPrefs.SetString(LocalCachePrefsKey, json);
+            PlayerPrefs.Save();
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[Achievements] Failed to persist local cache: {ex.Message}");
+        }
+    }
+
+    void LoadLocalCacheFromPrefs()
+    {
+        if (_states.Count > 0)
+            return;
+
+        string json = PlayerPrefs.GetString(LocalCachePrefsKey, "");
+        if (string.IsNullOrWhiteSpace(json))
+            return;
+
+        try
+        {
+            var payload = JsonConvert.DeserializeObject<AchievementStateCollection>(json);
+            if (payload?.items != null)
+            {
+                foreach (var kvp in payload.items)
+                {
+                    if (!string.IsNullOrWhiteSpace(kvp.Key) && kvp.Value != null)
+                        _states[kvp.Key] = kvp.Value;
+                }
+
+                if (_states.Count > 0)
+                    _isDirty = true;
+
+                Debug.Log($"[Achievements] Restored {_states.Count} achievements from local cache.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[Achievements] Failed to parse local cache: {ex.Message}");
+        }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    static bool IsRecoverableTransport(Exception exception)
+    {
+        for (Exception walk = exception; walk != null; walk = walk.InnerException)
+        {
+            if (walk is OperationCanceledException)
+                return false;
+            if (walk is TimeoutException)
+                return true;
+            if (walk is System.Net.Sockets.SocketException)
+                return true;
+            if (walk is System.Net.Http.HttpRequestException)
+                return true;
+        }
+
+        return false;
     }
 
     static void ValidateAchievementId(string achievementId)

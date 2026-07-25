@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.9.6] - 2026-07-25
+
+### Added
+- **Network:** `NetworkRequest.WithTimeout` (default 10s, Auth 30s) so UGS awaits cannot hang on poor mobile / DPI links; abandoned tasks are observed to avoid unobserved exceptions.
+- **Network:** soft circuit breaker on `NetworkStatus` — failures inside a 60s window; after 3 trips soft-offline with escalating cooldown (20→40→80s); `ReportSuccess` clears; `ForceOffline` setter publishes changes; `NotifyApplicationResumed` clears cooldown.
+- **Network:** `NetworkStatusDriver` (RuntimeInitializeOnLoad) ticks `IsOnlineChanged` and clears soft-offline on app resume.
+- **Economy:** pending queue `unconfirmed` status for timed-out / crash-abandoned in-flight writes; `ResolveUnconfirmed` after GetBalances; `ApplyPendingOnTop` after server sync.
+- **Achievements:** PlayerPrefs local cache (`achievements_local_cache_v1`) so offline progress survives app kill; single-flight load/flush.
+
+### Fixed
+- **Economy / Items / Consumables:** timeout on **writes** is *indeterminate* — reconcile against absolute server balances before queue/refund (no blind double-apply / free-item refund).
+- **Items:** grant failure uses confirm-ownership-before-refund; `ReportFailure` runs after compensation.
+- **CloudSave:** upload from snapshot; revision-aware `LocalTimestamp`; timed-out push recorded as `_unconfirmedPushTs` so next load does not treat own write as conflict.
+- **Auth:** SignIn / Link / UpdatePlayerName / empty-check bounded by timeout; transport failures feed the breaker.
+- **IAP:** Economy redeem bounded (15s); timeout does not confirm the store purchase.
+- **Leaderboards:** offline short-circuit + timeouts + breaker reporting.
+- **Ads (LevelPlay):** rewarded show fails fast when offline / soft-offline.
+- **Remote Config:** single-flight fetch; transport detection walks `InnerException`.
+- **Analytics:** drains queue on `IsOnlineChanged(true)`; refreshes player id when draining.
+
+### Changed
+- `EconomyErrorClassifier` distinguishes `Recoverable` vs `Indeterminate` (`TimeoutException` / UGS `RequestTimeOut` / `NetworkError`).
+
+## [1.9.5] - 2026-07-25
+
+### Fixed
+- **IAP (Apple):** harden App Store receipt resolve for Economy redeem.
+
 ## [1.9.4] - 2026-07-24
 
 ### Fixed
