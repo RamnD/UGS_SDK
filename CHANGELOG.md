@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.9.7] - 2026-07-26
+
+### Added
+- **Sync hub:** `GameServicesSync` + `GameServiceId` — register per-service refresh handlers; `RefreshAsync(service: null)` refreshes all (or one). Auto-refresh on `NetworkStatus.IsOnlineChanged(true)` (reconnect).
+- Facade builder registers RemoteConfig / Achievements / Analytics refresh handlers.
+
+### Fixed
+- **Economy pending flush:** impossible offline **spend** rejected with `UnprocessableTransaction` / 422 is dropped from the queue (continue flush + GetBalances) instead of throwing `PendingTransactionsFlushFailed` and bricking every boot.
+
 ## [1.9.6] - 2026-07-25
 
 ### Added

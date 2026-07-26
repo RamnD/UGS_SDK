@@ -255,7 +255,55 @@ public sealed class UGSServicesBuilder
 
         var services = new UGSGameServices(auth, analytics, ads, leaderboards, remoteConfig, achievements);
         GameServicesLocator.Set(services);
+        RegisterFacadeSyncHandlers(analytics, ads, leaderboards, remoteConfig, achievements);
         return services;
+    }
+
+    static void RegisterFacadeSyncHandlers(
+        IAnalyticsSystem analytics,
+        IAdsManager ads,
+        ILeaderboardService leaderboards,
+        IRemoteConfigService remoteConfig,
+        IAchievementService achievements)
+    {
+        if (remoteConfig != null)
+        {
+            GameServicesSync.Register(GameServiceId.RemoteConfig, async ct =>
+            {
+                await remoteConfig.FetchAsync(ct);
+            });
+        }
+        else
+            GameServicesSync.Unregister(GameServiceId.RemoteConfig);
+
+        if (achievements != null)
+        {
+            GameServicesSync.Register(GameServiceId.Achievements, async ct =>
+            {
+                await achievements.FlushAsync(ct);
+            });
+        }
+        else
+            GameServicesSync.Unregister(GameServiceId.Achievements);
+
+        if (analytics != null)
+        {
+            GameServicesSync.Register(GameServiceId.Analytics, _ =>
+            {
+                analytics.Flush();
+                return Task.CompletedTask;
+            });
+        }
+        else
+            GameServicesSync.Unregister(GameServiceId.Analytics);
+
+        // Ads preload is game-specific (e.g. PreloadingLevelPlayAdsManager) — register from the game.
+        GameServicesSync.Unregister(GameServiceId.Ads);
+        _ = ads;
+
+        // Leaderboards have no durable local cache to refresh on reconnect.
+        GameServicesSync.Unregister(GameServiceId.Leaderboards);
+        _ = leaderboards;
     }
 
     private NameValidatorConfig ResolveNameValidator() =>

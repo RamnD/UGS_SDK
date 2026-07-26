@@ -315,6 +315,18 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
                 cache.Save();
                 throw;
             }
+            catch (EconomyException e) when (
+                amount < 0
+                && e.Reason == EconomyExceptionReason.UnprocessableTransaction)
+            {
+                // Impossible offline spend (server balance too low) — drop the dead row and continue.
+                // Credits that 422 are NOT dropped here (would lose a legitimate grant).
+                Debug.LogWarning(
+                    $"[Economy] Dropping impossible pending spend ({snapshot.currency} {amount}): {e.Message}. " +
+                    "Will reconcile from GetBalances.");
+                RemoveById(snapshot.id);
+                continue;
+            }
             catch (Exception e) when (EconomyErrorClassifier.IsIndeterminate(e))
             {
                 NetworkStatus.ReportFailure();

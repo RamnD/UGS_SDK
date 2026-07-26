@@ -114,7 +114,7 @@ Critical ads/economy races are fixed in **1.8.x** hotfixes; this epic is API pol
 
 - Multi-device achievement merge (per-id, not full-blob LWW)
 - WriteLock-based Economy OCC helpers (still not idempotency)
-- Stronger NetworkStatus than `internetReachability` — **partial in 1.9.6** (timeouts + soft circuit breaker); latency probe / offline-first facade still open
+- Stronger NetworkStatus than `internetReachability` — **partial in 1.9.6+** (timeouts + soft circuit breaker + `GameServicesSync` reconnect hub in 1.9.7); latency probe / offline-first facade still open
 - GDPR wipe completeness checklist automation
 
 ---
