@@ -315,36 +315,90 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         Product product,
         RealMoneyProductDefinition definition)
     {
+        string economyPurchaseId = definition.ProductId;
+        string storeId = definition.ResolvedStoreProductId;
+
+        if (!TryDetectStore(order, product, out string storeName))
+        {
+            Debug.LogWarning(
+                $"[SDK][IAP] Cannot detect store for '{economyPurchaseId}' (store id '{storeId}'); " +
+                "refusing to redeem.");
+            return false;
+        }
+
+        if (string.Equals(storeName, GooglePlay.Name, StringComparison.Ordinal))
+            return await RedeemGooglePlayPurchaseAsync(order, product, definition);
+
+        if (string.Equals(storeName, AppleAppStore.Name, StringComparison.Ordinal))
+            return await RedeemAppleAppStorePurchaseAsync(order, product, definition);
+
+        Debug.LogWarning(
+            $"[SDK][IAP] Unsupported store '{storeName}' for '{economyPurchaseId}'; refusing to redeem.");
+        return false;
+    }
+
+    async Task<bool> RedeemGooglePlayPurchaseAsync(
+        PendingOrder order,
+        Product product,
+        RealMoneyProductDefinition definition)
+    {
         const int RedeemTimeoutMs = 15000;
         string economyPurchaseId = definition.ProductId;
         string storeId = definition.ResolvedStoreProductId;
 
-        if (!TryResolveRedeemReceipt(order, product, out string storeName, out string payload) ||
+        if (!TryResolveGoogleReceipt(order, product, out GoogleReceiptPayload googleReceipt))
+        {
+            Debug.LogWarning(
+                $"[SDK][IAP] Google Play receipt missing/invalid for '{economyPurchaseId}' " +
+                $"(store id '{storeId}'). " +
+                $"product.receipt empty={string.IsNullOrWhiteSpace(product?.receipt)}; " +
+                $"order.tx={order?.Info?.TransactionID}.");
+            return false;
+        }
+
+        int localCost = ToMinorUnits(product);
+        string localCurrency = product.metadata?.isoCurrencyCode ?? string.Empty;
+
+        try
+        {
+            var args = new RedeemGooglePlayStorePurchaseArgs(
+                economyPurchaseId,
+                googleReceipt.json,
+                googleReceipt.signature,
+                localCost,
+                localCurrency);
+            await NetworkRequest.WithTimeout(
+                EconomyService.Instance.Purchases.RedeemGooglePlayPurchaseAsync(args),
+                timeoutMs: RedeemTimeoutMs);
+
+            return await FinishSuccessfulRedeemAsync(economyPurchaseId);
+        }
+        catch (Exception ex)
+        {
+            return HandleRedeemFailure(economyPurchaseId, ex);
+        }
+    }
+
+    async Task<bool> RedeemAppleAppStorePurchaseAsync(
+        PendingOrder order,
+        Product product,
+        RealMoneyProductDefinition definition)
+    {
+        const int RedeemTimeoutMs = 15000;
+        string economyPurchaseId = definition.ProductId;
+        string storeId = definition.ResolvedStoreProductId;
+
+        if (!TryResolveAppleReceipt(order, product, out string payload) ||
             string.IsNullOrWhiteSpace(payload))
         {
-            string recovered = await ResolveReceiptPayloadWithRetryAsync(
-                order, product, economyPurchaseId, storeId);
-            if (!string.IsNullOrWhiteSpace(recovered))
-                payload = recovered;
-
-            // Prefer structured resolve after refresh/poll so Google vs Apple store name is correct.
-            if (TryResolveRedeemReceipt(order, product, out string resolvedStore, out string resolvedPayload) &&
-                !string.IsNullOrWhiteSpace(resolvedPayload))
-            {
-                storeName = resolvedStore;
-                payload = resolvedPayload;
-            }
-            else if (string.IsNullOrWhiteSpace(storeName) && !string.IsNullOrWhiteSpace(payload))
-            {
-                storeName = AppleAppStore.Name;
-            }
+            payload = await ResolveAppleReceiptWithRetryAsync(order, product, economyPurchaseId, storeId);
         }
 
         if (string.IsNullOrWhiteSpace(payload))
         {
             string jws = order?.Info?.Apple?.jwsRepresentation;
             Debug.LogWarning(
-                $"[SDK][IAP] Product '{economyPurchaseId}' (store id '{storeId}') has no legacy App Receipt. " +
+                $"[SDK][IAP] Apple App Receipt missing for '{economyPurchaseId}' (store id '{storeId}'). " +
                 $"product.receipt empty={string.IsNullOrWhiteSpace(product?.receipt)}; " +
                 $"order.tx={order?.Info?.TransactionID}; " +
                 $"jwsPresent={!string.IsNullOrWhiteSpace(jws)}. " +
@@ -357,77 +411,203 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
 
         try
         {
-            if (string.Equals(storeName, GooglePlay.Name, StringComparison.Ordinal))
-            {
-                GoogleReceiptPayload googleReceipt = JsonUtility.FromJson<GoogleReceiptPayload>(payload);
-                if (googleReceipt == null ||
-                    string.IsNullOrWhiteSpace(googleReceipt.json) ||
-                    string.IsNullOrWhiteSpace(googleReceipt.signature))
-                {
-                    Debug.LogWarning($"[SDK][IAP] Invalid Google receipt payload for '{economyPurchaseId}'.");
-                    return false;
-                }
+            var args = new RedeemAppleAppStorePurchaseArgs(
+                economyPurchaseId,
+                payload,
+                localCost,
+                localCurrency);
+            await NetworkRequest.WithTimeout(
+                EconomyService.Instance.Purchases.RedeemAppleAppStorePurchaseAsync(args),
+                timeoutMs: RedeemTimeoutMs);
 
-                var args = new RedeemGooglePlayStorePurchaseArgs(
-                    economyPurchaseId,
-                    googleReceipt.json,
-                    googleReceipt.signature,
-                    localCost,
-                    localCurrency);
-                await NetworkRequest.WithTimeout(
-                    EconomyService.Instance.Purchases.RedeemGooglePlayPurchaseAsync(args),
-                    timeoutMs: RedeemTimeoutMs);
-            }
-            else
-            {
-                var args = new RedeemAppleAppStorePurchaseArgs(
-                    economyPurchaseId,
-                    payload,
-                    localCost,
-                    localCurrency);
-                await NetworkRequest.WithTimeout(
-                    EconomyService.Instance.Purchases.RedeemAppleAppStorePurchaseAsync(args),
-                    timeoutMs: RedeemTimeoutMs);
-            }
-
-            NetworkStatus.ReportSuccess();
-
-            if (_economy != null)
-                await _economy.RefreshBalancesAsync();
-
-            Debug.Log($"[SDK][IAP] Economy redeem succeeded for '{economyPurchaseId}'.");
-            return true;
+            return await FinishSuccessfulRedeemAsync(economyPurchaseId);
         }
-        catch (TimeoutException ex)
+        catch (Exception ex)
+        {
+            return HandleRedeemFailure(economyPurchaseId, ex);
+        }
+    }
+
+    async Task<bool> FinishSuccessfulRedeemAsync(string economyPurchaseId)
+    {
+        NetworkStatus.ReportSuccess();
+
+        if (_economy != null)
+            await _economy.RefreshBalancesAsync();
+
+        Debug.Log($"[SDK][IAP] Economy redeem succeeded for '{economyPurchaseId}'.");
+        return true;
+    }
+
+    bool HandleRedeemFailure(string economyPurchaseId, Exception ex)
+    {
+        if (ex is TimeoutException)
         {
             NetworkStatus.ReportFailure();
             Debug.LogError($"[SDK][IAP] Economy redeem timed out for '{economyPurchaseId}': {ex.Message}");
             return false;
         }
-        catch (Exception ex) when (IsRedeemTransportFailure(ex))
+
+        if (IsRedeemTransportFailure(ex))
         {
             NetworkStatus.ReportFailure();
             Debug.LogError($"[SDK][IAP] Economy redeem transport failure for '{economyPurchaseId}': {ex.Message}");
             return false;
         }
-        catch (EconomyException ex)
+
+        if (ex is EconomyException)
         {
             Debug.LogError($"[SDK][IAP] Economy redeem failed for '{economyPurchaseId}': {ex}");
             return false;
         }
-        catch (Exception ex)
-        {
-            Debug.LogError($"[SDK][IAP] Unexpected redeem failure for '{economyPurchaseId}': {ex}");
-            return false;
-        }
+
+        Debug.LogError($"[SDK][IAP] Unexpected redeem failure for '{economyPurchaseId}': {ex}");
+        return false;
     }
 
     /// <summary>
-    /// IAP 5 + StoreKit 2: <see cref="Product.receipt"/> is null when Product.transactionID is unset,
-    /// and Apple App Receipt often lags until Unity's post-purchase refresh finishes.
-    /// Prefer <see cref="IOrderInfo"/>, then poll / RefreshAppReceipt for Economy-compatible payload.
+    /// Detect store from order info / unified receipt / runtime platform.
+    /// Never defaults one store to the other.
     /// </summary>
-    async Task<string> ResolveReceiptPayloadWithRetryAsync(
+    static bool TryDetectStore(PendingOrder order, Product product, out string storeName)
+    {
+        storeName = null;
+
+        if (order?.Info?.Google != null)
+        {
+            storeName = GooglePlay.Name;
+            return true;
+        }
+
+        if (order?.Info?.Apple != null)
+        {
+            storeName = AppleAppStore.Name;
+            return true;
+        }
+
+        if (TryExtractUnifiedPayload(order?.Info?.Receipt, out string fromOrder, out _) &&
+            !string.IsNullOrWhiteSpace(fromOrder))
+        {
+            storeName = fromOrder;
+            return true;
+        }
+
+        if (TryExtractUnifiedPayload(product?.receipt, out string fromProduct, out _) &&
+            !string.IsNullOrWhiteSpace(fromProduct))
+        {
+            storeName = fromProduct;
+            return true;
+        }
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+        storeName = GooglePlay.Name;
+        return true;
+#elif UNITY_IOS && !UNITY_EDITOR
+        storeName = AppleAppStore.Name;
+        return true;
+#else
+        return false;
+#endif
+    }
+
+    /// <summary>
+    /// Google Play only: unified receipt Payload → { json, signature }.
+    /// No Apple App Receipt / RefreshAppReceipt / jws paths.
+    /// </summary>
+    static bool TryResolveGoogleReceipt(
+        PendingOrder order,
+        Product product,
+        out GoogleReceiptPayload googleReceipt)
+    {
+        googleReceipt = null;
+
+        if (TryExtractUnifiedPayload(order?.Info?.Receipt, out string storeName, out string payload) &&
+            IsGoogleStore(storeName) &&
+            TryParseGoogleReceiptPayload(payload, out googleReceipt))
+        {
+            return true;
+        }
+
+        if (TryExtractUnifiedPayload(product?.receipt, out storeName, out payload) &&
+            IsGoogleStore(storeName) &&
+            TryParseGoogleReceiptPayload(payload, out googleReceipt))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    static bool TryParseGoogleReceiptPayload(string payload, out GoogleReceiptPayload googleReceipt)
+    {
+        googleReceipt = null;
+        if (string.IsNullOrWhiteSpace(payload))
+            return false;
+
+        GoogleReceiptPayload parsed = JsonUtility.FromJson<GoogleReceiptPayload>(payload);
+        if (parsed == null ||
+            string.IsNullOrWhiteSpace(parsed.json) ||
+            string.IsNullOrWhiteSpace(parsed.signature))
+        {
+            return false;
+        }
+
+        googleReceipt = parsed;
+        return true;
+    }
+
+    static bool IsGoogleStore(string storeName) =>
+        string.Equals(storeName, GooglePlay.Name, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Apple only: App Receipt from order / Apple extended service / unified Payload.
+    /// </summary>
+    bool TryResolveAppleReceipt(PendingOrder order, Product product, out string payload)
+    {
+        payload = null;
+
+        // Prefer order info: Product.receipt on Apple returns null when transactionID is unset.
+        string appReceipt = order?.Info?.Apple?.AppReceipt;
+        if (!string.IsNullOrWhiteSpace(appReceipt))
+        {
+            payload = appReceipt;
+            return true;
+        }
+
+        if (TryExtractUnifiedPayload(order?.Info?.Receipt, out string storeName, out string unifiedPayload) &&
+            IsAppleStore(storeName) &&
+            !string.IsNullOrWhiteSpace(unifiedPayload))
+        {
+            payload = unifiedPayload;
+            return true;
+        }
+
+        string serviceReceipt = _storeController?.AppleStoreExtendedPurchaseService?.appReceipt;
+        if (!string.IsNullOrWhiteSpace(serviceReceipt))
+        {
+            payload = serviceReceipt;
+            return true;
+        }
+
+        if (TryExtractUnifiedPayload(product?.receipt, out storeName, out unifiedPayload) &&
+            IsAppleStore(storeName) &&
+            !string.IsNullOrWhiteSpace(unifiedPayload))
+        {
+            payload = unifiedPayload;
+            return true;
+        }
+
+        return false;
+    }
+
+    static bool IsAppleStore(string storeName) =>
+        string.Equals(storeName, AppleAppStore.Name, StringComparison.Ordinal);
+
+    /// <summary>
+    /// IAP 5 + StoreKit 2: App Receipt often lags until Unity's post-purchase refresh finishes.
+    /// Poll + RefreshAppReceipt — Apple path only.
+    /// </summary>
+    async Task<string> ResolveAppleReceiptWithRetryAsync(
         PendingOrder order,
         Product product,
         string economyPurchaseId,
@@ -439,11 +619,11 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         for (int i = 0; i < pollAttempts; i++)
         {
             await Task.Delay(pollDelayMs);
-            if (TryResolveRedeemReceipt(order, product, out _, out string payload) &&
+            if (TryResolveAppleReceipt(order, product, out string payload) &&
                 !string.IsNullOrWhiteSpace(payload))
             {
                 Debug.Log(
-                    $"[SDK][IAP] Legacy receipt became available after poll #{i + 1} for '{economyPurchaseId}'.");
+                    $"[SDK][IAP] Apple App Receipt became available after poll #{i + 1} for '{economyPurchaseId}'.");
                 return payload;
             }
         }
@@ -459,7 +639,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             if (!string.IsNullOrWhiteSpace(refreshed))
                 return refreshed;
 
-            if (TryResolveRedeemReceipt(order, product, out _, out string afterRefresh) &&
+            if (TryResolveAppleReceipt(order, product, out string afterRefresh) &&
                 !string.IsNullOrWhiteSpace(afterRefresh))
                 return afterRefresh;
         }
@@ -469,40 +649,6 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         }
 
         return null;
-    }
-
-    bool TryResolveRedeemReceipt(
-        PendingOrder order,
-        Product product,
-        out string storeName,
-        out string payload)
-    {
-        storeName = null;
-        payload = null;
-
-        // Prefer order info: Product.receipt on Apple returns null when transactionID is unset.
-        string appReceipt = order?.Info?.Apple?.AppReceipt;
-        if (!string.IsNullOrWhiteSpace(appReceipt))
-        {
-            storeName = order.Info.Apple.StoreName;
-            if (string.IsNullOrWhiteSpace(storeName))
-                storeName = AppleAppStore.Name;
-            payload = appReceipt;
-            return true;
-        }
-
-        if (TryExtractUnifiedPayload(order?.Info?.Receipt, out storeName, out payload))
-            return true;
-
-        string serviceReceipt = _storeController?.AppleStoreExtendedPurchaseService?.appReceipt;
-        if (!string.IsNullOrWhiteSpace(serviceReceipt))
-        {
-            storeName = AppleAppStore.Name;
-            payload = serviceReceipt;
-            return true;
-        }
-
-        return TryExtractUnifiedPayload(product?.receipt, out storeName, out payload);
     }
 
     static bool TryExtractUnifiedPayload(string unifiedReceiptJson, out string storeName, out string payload)

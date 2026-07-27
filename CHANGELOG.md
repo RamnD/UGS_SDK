@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.9.8] - 2026-07-27
+
+### Fixed
+- **IAP:** isolate Google Play and Apple App Store redeem flows. Google no longer runs Apple receipt poll / `RefreshAppReceipt`, never falls back to Apple store name, and uses Google-only receipt (`json` + `signature`). Apple keeps its App Receipt poll + refresh path.
+
 ## [1.9.7] - 2026-07-26
 
 ### Added

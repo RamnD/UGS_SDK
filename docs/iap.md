@@ -277,6 +277,26 @@ if (_iap.TryGetProductInfo(productId, out RealMoneyProductInfo info) && info.Has
 
 ---
 
+## Store-specific redeem (Apple vs Google)
+
+`RedeemEconomyPurchaseAsync` detects the store from the pending order / unified receipt / platform, then dispatches:
+
+| Store | Receipt source | Economy API |
+|------|----------------|-------------|
+| **Google Play** | Unified payload `{ json, signature }` from `order.Info.Receipt` / `product.receipt` only | `RedeemGooglePlayPurchaseAsync` |
+| **Apple App Store** | App Receipt (order / Apple extended service / unified). Poll + `RefreshAppReceipt` if lagging (StoreKit 2) | `RedeemAppleAppStorePurchaseAsync` |
+
+There is **no** cross-store fallback: Google never calls Apple refresh APIs, and a missing store name never defaults to Apple.
+
+### Google dashboard checklist
+
+- Play Console product ids = `StoreProductId`
+- Economy Real Money Purchase ids = `ProductId`; Store connection → Google = same Play SKUs
+- Unity Dashboard → Project Settings → **Google License Key** (required for server validation)
+- Optional for prod: Unity IAP Receipt Obfuscator → `GooglePlayTangle.cs`
+
+---
+
 ## Important constraints
 
 - `ProductId` must match the Economy `Real Money Purchase` id (uppercase).
