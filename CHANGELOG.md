@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.10.1] - 2026-07-28
+
+### Fixed
+- **Unity packaging:** add missing `.meta` files for `IVirtualPurchaseService` and `UGSVirtualPurchaseService<TCurrency>` so the new SDK scripts keep stable GUIDs in Unity projects.
+
 ## [1.10.0] - 2026-07-28
 
 ### Added
