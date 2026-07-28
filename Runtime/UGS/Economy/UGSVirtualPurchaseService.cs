@@ -1,0 +1,190 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Unity.Services.Economy;
+using UnityEngine;
+
+/// <summary>
+/// <see cref="IVirtualPurchaseService"/> implementation via UGS Economy Virtual Purchases.
+/// Keeps purchase logic store-independent and suitable for free bundles / soft-currency bundles.
+/// </summary>
+public sealed class UGSVirtualPurchaseService<TCurrency> : IVirtualPurchaseService
+    where TCurrency : struct, Enum
+{
+    const int PurchaseTimeoutMs = 15000;
+
+    readonly object _purchaseGate = new();
+    readonly object _configSyncGate = new();
+    readonly IInventoryService<TCurrency> _economy;
+
+    Task _configSyncTask;
+    bool _configSynced;
+    bool _purchaseInFlight;
+
+    public event Action<string> PurchaseSucceeded;
+
+    public UGSVirtualPurchaseService(IInventoryService<TCurrency> economy = null)
+    {
+        _economy = economy;
+    }
+
+    public async Task<bool> PurchaseAsync(string purchaseId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(purchaseId))
+            throw new ArgumentException("Virtual purchase id must be non-empty.", nameof(purchaseId));
+
+        lock (_purchaseGate)
+        {
+            if (_purchaseInFlight)
+            {
+                Debug.LogWarning(
+                    $"[SDK][VirtualPurchase] Purchase rejected for '{purchaseId}' — another purchase is already in flight.");
+                return false;
+            }
+
+            _purchaseInFlight = true;
+        }
+
+        try
+        {
+            return await PurchaseCoreAsync(purchaseId, cancellationToken);
+        }
+        finally
+        {
+            lock (_purchaseGate)
+                _purchaseInFlight = false;
+        }
+    }
+
+    async Task<bool> PurchaseCoreAsync(string purchaseId, CancellationToken cancellationToken)
+    {
+        if (!NetworkStatus.IsOnline)
+        {
+            Debug.LogWarning($"[SDK][VirtualPurchase] Purchase requires network: '{purchaseId}'.");
+            return false;
+        }
+
+        await EnsureConfigurationSyncedAsync(cancellationToken);
+
+        try
+        {
+            await NetworkRequest.WithTimeout(
+                EconomyService.Instance.Purchases.MakeVirtualPurchaseAsync(purchaseId),
+                cancellationToken,
+                timeoutMs: PurchaseTimeoutMs);
+
+            await RefreshBalancesIfAvailableAsync(cancellationToken);
+            NetworkStatus.ReportSuccess();
+            PurchaseSucceeded?.Invoke(purchaseId);
+            Debug.Log($"[SDK][VirtualPurchase] Purchase succeeded for '{purchaseId}'.");
+            return true;
+        }
+        catch (EconomyException ex) when (ex.Reason == EconomyExceptionReason.ConfigNotSynced)
+        {
+            Debug.LogWarning(
+                $"[SDK][VirtualPurchase] Config not synced for '{purchaseId}' — resyncing once.");
+            _configSynced = false;
+            await EnsureConfigurationSyncedAsync(cancellationToken);
+
+            try
+            {
+                await NetworkRequest.WithTimeout(
+                    EconomyService.Instance.Purchases.MakeVirtualPurchaseAsync(purchaseId),
+                    cancellationToken,
+                    timeoutMs: PurchaseTimeoutMs);
+
+                await RefreshBalancesIfAvailableAsync(cancellationToken);
+                NetworkStatus.ReportSuccess();
+                PurchaseSucceeded?.Invoke(purchaseId);
+                Debug.Log($"[SDK][VirtualPurchase] Purchase succeeded for '{purchaseId}' after config resync.");
+                return true;
+            }
+            catch (Exception retryEx)
+            {
+                return HandlePurchaseFailure(purchaseId, retryEx);
+            }
+        }
+        catch (Exception ex)
+        {
+            return HandlePurchaseFailure(purchaseId, ex);
+        }
+    }
+
+    async Task EnsureConfigurationSyncedAsync(CancellationToken cancellationToken)
+    {
+        if (_configSynced)
+            return;
+
+        Task syncTask;
+        lock (_configSyncGate)
+        {
+            if (_configSynced)
+                return;
+
+            if (_configSyncTask != null && !_configSyncTask.IsCompleted)
+            {
+                syncTask = _configSyncTask;
+            }
+            else
+            {
+                syncTask = SyncConfigurationCoreAsync(cancellationToken);
+                _configSyncTask = syncTask;
+            }
+        }
+
+        try
+        {
+            await syncTask;
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        finally
+        {
+            lock (_configSyncGate)
+            {
+                if (ReferenceEquals(_configSyncTask, syncTask) && syncTask.IsCompleted)
+                    _configSyncTask = null;
+            }
+        }
+    }
+
+    async Task SyncConfigurationCoreAsync(CancellationToken cancellationToken)
+    {
+        await NetworkRequest.WithTimeout(
+            EconomyService.Instance.Configuration.SyncConfigurationAsync(),
+            cancellationToken);
+        _configSynced = true;
+        NetworkStatus.ReportSuccess();
+    }
+
+    async Task RefreshBalancesIfAvailableAsync(CancellationToken cancellationToken)
+    {
+        if (_economy != null)
+            await _economy.RefreshBalancesAsync(cancellationToken);
+    }
+
+    static bool HandlePurchaseFailure(string purchaseId, Exception ex)
+    {
+        if (ex is TimeoutException)
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogError($"[SDK][VirtualPurchase] Purchase timed out for '{purchaseId}': {ex.Message}");
+            return false;
+        }
+
+        if (EconomyErrorClassifier.IsRecoverable(ex) || EconomyErrorClassifier.IsIndeterminate(ex))
+        {
+            NetworkStatus.ReportFailure();
+            Debug.LogError($"[SDK][VirtualPurchase] Transport failure for '{purchaseId}': {ex.Message}");
+            return false;
+        }
+
+        if (ex is EconomyException)
+        {
+            Debug.LogError($"[SDK][VirtualPurchase] Purchase failed for '{purchaseId}': {ex}");
+            return false;
+        }
+
+        Debug.LogError($"[SDK][VirtualPurchase] Unexpected purchase failure for '{purchaseId}': {ex}");
+        return false;
+    }
+}

@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.10.0] - 2026-07-28
+
+### Added
+- **Economy:** `IVirtualPurchaseService` + `UGSVirtualPurchaseService<TCurrency>` for UGS Economy Virtual Purchases (free bundles / soft-currency bundles) with single-flight purchase, lazy config sync, timeout bounds, and optional post-success balance refresh.
+
 ## [1.9.8] - 2026-07-27
 
 ### Fixed
