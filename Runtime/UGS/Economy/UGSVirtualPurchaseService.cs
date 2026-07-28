@@ -6,8 +6,10 @@ using UnityEngine;
 
 /// <summary>
 /// <see cref="IVirtualPurchaseService"/> implementation via UGS Economy Virtual Purchases.
-/// Keeps purchase logic store-independent and suitable for free bundles / soft-currency bundles.
+/// Lazy-syncs Economy configuration, enforces single-flight purchases, and optionally
+/// refreshes <typeparamref name="TCurrency"/> balances after success.
 /// </summary>
+/// <typeparam name="TCurrency">Game currency enum used by the optional inventory refresh.</typeparam>
 public sealed class UGSVirtualPurchaseService<TCurrency> : IVirtualPurchaseService
     where TCurrency : struct, Enum
 {
@@ -21,13 +23,21 @@ public sealed class UGSVirtualPurchaseService<TCurrency> : IVirtualPurchaseServi
     bool _configSynced;
     bool _purchaseInFlight;
 
+    /// <inheritdoc/>
     public event Action<string> PurchaseSucceeded;
 
+    /// <summary>
+    /// Creates a virtual-purchase client.
+    /// </summary>
+    /// <param name="economy">
+    /// Optional inventory service; when set, balances are refreshed after a successful purchase.
+    /// </param>
     public UGSVirtualPurchaseService(IInventoryService<TCurrency> economy = null)
     {
         _economy = economy;
     }
 
+    /// <inheritdoc/>
     public async Task<bool> PurchaseAsync(string purchaseId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(purchaseId))

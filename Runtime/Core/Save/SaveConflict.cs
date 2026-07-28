@@ -24,6 +24,10 @@ public readonly struct SaveConflict
     /// <summary>True if the cloud save is newer than the local one.</summary>
     public bool IsCloudNewer => CloudTimestamp > LocalTimestamp;
 
+    /// <summary>Creates a conflict snapshot for UI resolution.</summary>
+    /// <param name="localTimestamp">Last local write time (UTC).</param>
+    /// <param name="cloudTimestamp">Last cloud write time (UTC).</param>
+    /// <param name="source">Which API detected the conflict.</param>
     public SaveConflict(DateTime localTimestamp, DateTime cloudTimestamp, SaveConflictSource source)
     {
         LocalTimestamp = localTimestamp;

@@ -19,6 +19,11 @@ public sealed class CloudSaveEntitlementStore<TKey> where TKey : struct, Enum
     readonly HashSet<string> _ids = new(StringComparer.Ordinal);
     bool _loaded;
 
+    /// <summary>
+    /// Creates an entitlement store bound to one Cloud Save key.
+    /// </summary>
+    /// <param name="cloudSave">Cloud Save service (must already be loaded / usable).</param>
+    /// <param name="saveKey">Game enum key that maps to the entitlement blob.</param>
     public CloudSaveEntitlementStore(ICloudSaveService<TKey> cloudSave, TKey saveKey)
     {
         _cloudSave = cloudSave ?? throw new ArgumentNullException(nameof(cloudSave));

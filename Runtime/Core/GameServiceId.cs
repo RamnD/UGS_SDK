@@ -1,16 +1,31 @@
 /// <summary>
 /// Identifiers for <see cref="GameServicesSync.RefreshAsync"/>.
-/// Project layers (Economy / Items / CloudSave) are registered by the game;
-/// façade services by the UGS builder.
+/// Façade services (RemoteConfig … Ads) are registered by the UGS builder;
+/// project-typed layers (Economy / Items / CloudSave) must be registered by the game.
 /// </summary>
 public enum GameServiceId
 {
+    /// <summary>UGS Remote Config re-fetch (registered by the builder when enabled).</summary>
     RemoteConfig,
+
+    /// <summary>Achievement Cloud Save / local cache reload.</summary>
     Achievements,
+
+    /// <summary>Analytics offline-queue drain.</summary>
     Analytics,
+
+    /// <summary>Leaderboard soft refresh (no-op or re-query depending on registration).</summary>
     Leaderboards,
+
+    /// <summary>Ads session / mediation readiness refresh.</summary>
     Ads,
+
+    /// <summary>Currency balances + pending economy queue flush (game-registered).</summary>
     Economy,
+
+    /// <summary>Durable / consumable inventory refresh (game-registered).</summary>
     Items,
+
+    /// <summary>Cloud Save pull / conflict check (game-registered).</summary>
     CloudSave,
 }

@@ -138,7 +138,10 @@ public sealed class UGSServicesBuilder
     /// <item>OnAuthenticated callback (Economy, Items, etc.)</item>
     /// <item>Ads (independent of auth)</item>
     /// </list>
+    /// Continuations stay on Unity's synchronization context (no <c>ConfigureAwait(false)</c>).
     /// </summary>
+    /// <param name="cancellationToken">Cancels bootstrap (e.g. MonoBehaviour destroy token).</param>
+    /// <returns>The built façade (also registered in <see cref="GameServicesLocator"/>).</returns>
     public async Task<IGameServices> BuildAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

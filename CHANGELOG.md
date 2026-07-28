@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.10.2] - 2026-07-28
+
+### Changed
+- **Docs / XML:** expand IntelliSense on Core public APIs (locator, sync ids, DTOs, exceptions, Remote Config getters, Virtual Purchases, NetworkRequest); fix stale README install pin, ROADMAP (1.10.0 = Virtual Purchases; Cloud Code → **1.11.0**), and bootstrap (threading, NetworkStatus soft breaker, GameServicesSync, remove non-existent `WithProfanityFilter(ProfanityConfig)`).
+- **Docs:** add [docs/virtual-purchases.md](docs/virtual-purchases.md).
+
 ## [1.10.1] - 2026-07-28
 
 ### Fixed

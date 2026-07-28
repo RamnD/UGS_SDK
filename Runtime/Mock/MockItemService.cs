@@ -12,6 +12,7 @@ public sealed class MockItemService<TItem> : IItemService<TItem>
 {
     private readonly HashSet<TItem> _owned = new();
 
+    /// <summary>Test helper: grants ownership without a purchase.</summary>
     public void GiveItem(TItem id)
     {
         _owned.Add(id);

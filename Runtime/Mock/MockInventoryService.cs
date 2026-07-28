@@ -12,6 +12,7 @@ public sealed class MockInventoryService<TCurrency> : IInventoryService<TCurrenc
 {
     private readonly Dictionary<TCurrency, long> _balances = new();
 
+    /// <summary>Test helper: sets a currency balance without going through Add/Spend.</summary>
     public void SetBalance(TCurrency type, long amount) => _balances[type] = amount;
 
     /// <inheritdoc/>

@@ -4,33 +4,50 @@ Versioned **product epics**. Each epic ships as a **minor** release: `1.N.0`.
 
 | Stream | Where | Versioning |
 |--------|--------|------------|
-| Hotfixes / correctness bugs | [bug-reports/](./bug-reports/README.md) | Patch on current minor (was `1.8.x`; next patches on `1.9.x`) |
+| Hotfixes / correctness bugs | [bug-reports/](./bug-reports/README.md) | Patch on current minor |
 | Planned features / architecture | **this file** | Minor `1.N.0` |
 
-Current package: **1.9.3**. The 2026-07-24 security/correctness review is **closed** on **1.8.7–1.8.11**. Prep **1.9.0**; IAP harden **1.9.1**; post-audit leftovers **1.9.2**; final audit leftovers **1.9.3**. **Server / Cloud Code** starts at **1.10.0**.
+Current package: **1.10.2**. Shipped through **1.9.x** (network soft breaker, sync hub, IAP harden) and **1.10.0** (Economy Virtual Purchases). Next planned server epic is **1.11.0** Cloud Code.
 
 ---
 
 ## [1.9.0] — Prep minor (post–1.8.x) — **shipped**
 
-**Why:** Open the next minor cleanly after the large 1.8.x correctness stream, without bundling Cloud Code yet.
+**Why:** Open the next minor cleanly after the large 1.8.x correctness stream.
 
 ### Scope (this release)
 - Version bump `1.8.11` → `1.9.0`
-- ROADMAP realign: server-authoritative mutations deferred to **1.10.0**
-- Docs cross-links updated (bug-report / economy → new epic versions)
-- Baseline for `1.9.x` patches while Cloud Code is designed/wired in games
+- Docs cross-links updated
+- Baseline for `1.9.x` patches
 
 ### Out of scope for 1.9.0
-- Cloud Code modules and server dedupe store → **1.10.0**
-- Server-verified entitlements → **1.11.0**
-
-### Depends on
-- Closed 1.8.x hotfix stream (client queue `pending → in_flight → done`, ads/IAP/CloudSave hardening)
+- Cloud Code modules → **1.11.0**
+- Server-verified entitlements → **1.12.0**
 
 ---
 
-## [1.10.0] — Cloud Code: server-authoritative mutations
+## [1.9.1–1.9.8] — Patches — **shipped**
+
+Correctness / UX patches on the 1.9 line (IAP single-flight, auth recover, soft circuit breaker, `GameServicesSync`, platform-isolated IAP redeem, …). See [CHANGELOG.md](../CHANGELOG.md).
+
+---
+
+## [1.10.0] — Economy Virtual Purchases — **shipped**
+
+**Why:** Games need store-independent soft-currency / free bundles without going through Unity IAP.
+
+### Scope
+- `IVirtualPurchaseService` + `UGSVirtualPurchaseService<TCurrency>`
+- Single-flight purchase, lazy Economy config sync, timeouts, optional balance refresh
+- Docs: [virtual-purchases.md](./virtual-purchases.md)
+
+### Follow-up patches
+- **1.10.1** — Unity `.meta` GUIDs for the new scripts
+- **1.10.2** — XML IntelliSense + docs sync (virtual purchases guide, ROADMAP/bootstrap)
+
+---
+
+## [1.11.0] — Cloud Code: server-authoritative mutations
 
 **Why:** Client Economy has no server idempotency; true at-most-once grants and safe account merge need a server.
 
@@ -40,17 +57,17 @@ Current package: **1.9.3**. The 2026-07-24 security/correctness review is **clos
 - Durable server-side dedupe store (transaction id → applied)
 - Docs: trust boundary (what stays client-optimistic vs must be server)
 
-### Out of scope for 1.10.0
+### Out of scope for 1.11.0
 - Full anti-cheat / replay protection beyond idempotent writes
-- Admin orphan-cleanup UI (see 1.12.0)
+- Admin orphan-cleanup UI (see 1.13.0)
 
 ### Depends on
 - Unity Cloud Code project wiring in consuming games (Maze)
-- Stable client queue from 1.8.x / prep 1.9.0
+- Stable client queue from 1.8.x / 1.9.x
 
 ---
 
-## [1.11.0] — Server-verified entitlements
+## [1.12.0] — Server-verified entitlements
 
 **Why:** Cloud Save entitlements are client-writable (`RedeemWithEconomy = false` / VIP-style flags).
 
@@ -60,11 +77,11 @@ Current package: **1.9.3**. The 2026-07-24 security/correctness review is **clos
 - Maze: no-ads and similar stay restore-from-store + server confirm
 
 ### Depends on
-- 1.10.0 Cloud Code (or Economy redeem-only policy enforced in docs + game)
+- 1.11.0 Cloud Code (or Economy redeem-only policy enforced in docs + game)
 
 ---
 
-## [1.12.0] — Account link: orphan cleanup & merge helpers
+## [1.13.0] — Account link: orphan cleanup & merge helpers
 
 **Why:** Client cannot `DeleteAccount` on the previous anonymous player after `SignIntoExisting`. Empty-check + SignOut leaves orphans.
 
@@ -75,18 +92,18 @@ Current package: **1.9.3**. The 2026-07-24 security/correctness review is **clos
 - Docs: empty → Delete; non-empty → SignOut + conflict (client policy remains)
 
 ### Depends on
-- 1.10.0
+- 1.11.0
 - Maze SaveConflict + post-link IAP restore (game-side, can land earlier)
 
 ---
 
-## [1.13.0] — Offline-first façade (LocalReady)
+## [1.14.0] — Offline-first façade (LocalReady)
 
 **Why:** Games like Maze should play without blocking forever on UGS bootstrap; ads/IAP hidden offline, pools flush on reconnect.
 
 ### Scope
 - SDK: clearer `LocalReady` / sync signals (or documented game pattern + optional helpers)
-- Single reconnect flush entrypoint (economy pending, cloud push, analytics drain)
+- Single reconnect flush entrypoint (economy pending, cloud push, analytics drain) — builds on `GameServicesSync` (1.9.7)
 - `playerId` guard on durable queues when session changes
 - Sample / docs for degraded mode
 
@@ -95,18 +112,18 @@ Maze may ship UX (preloader timeout, hide IAP offline) on game side before this 
 
 ---
 
-## [1.14.0] — Mutation single-flight API surface
+## [1.15.0] — Mutation single-flight API surface
 
 **Why:** Ads/IAP/CloudSave/Auth need one consistent “busy → reject” contract beyond ad-hoc fixes.
 
 ### Scope
 - Documented single-flight guarantees per service
-- Ads: busy reject + reward/close FSM (if any gaps remain after 1.8.x)
+- Ads: busy reject + reward/close FSM (if any gaps remain after 1.8.x / 1.9.x)
 - Optional shared `InFlightGate` helper in Core
 - Analytics drain locking + optional client event-id dedupe hooks
 
 ### Note
-Critical ads/economy races are fixed in **1.8.x** hotfixes; this epic is API polish and consistency.
+Critical ads/economy races are fixed in **1.8.x** / **1.9.x** hotfixes; this epic is API polish and consistency.
 
 ---
 
@@ -114,7 +131,7 @@ Critical ads/economy races are fixed in **1.8.x** hotfixes; this epic is API pol
 
 - Multi-device achievement merge (per-id, not full-blob LWW)
 - WriteLock-based Economy OCC helpers (still not idempotency)
-- Stronger NetworkStatus than `internetReachability` — **partial in 1.9.6+** (timeouts + soft circuit breaker + `GameServicesSync` reconnect hub in 1.9.7); latency probe / offline-first facade still open
+- Stronger NetworkStatus than `internetReachability` — **partial in 1.9.6+** (timeouts + soft circuit breaker + `GameServicesSync` reconnect hub in 1.9.7); latency probe / offline-first facade still open → 1.14.0
 - GDPR wipe completeness checklist automation
 
 ---
@@ -122,13 +139,17 @@ Critical ads/economy races are fixed in **1.8.x** hotfixes; this epic is API pol
 ## Versioning cheat sheet
 
 ```
-1.8.x  — hotfixes from bug-reports (closed: 1.8.7–1.8.11)
-1.9.0  — prep minor after hotfix stream (this release)
-1.10.0 — Cloud Code idempotent mutations (server)
-1.11.0 — server-verified entitlements
-1.12.0 — orphan cleanup / link merge helpers
-1.13.0 — offline-first LocalReady in SDK
-1.14.0 — unified single-flight surface
+1.8.x   — hotfixes from bug-reports (closed: 1.8.7–1.8.11)
+1.9.0   — prep minor after hotfix stream
+1.9.x   — network / sync / IAP / auth patches
+1.10.0  — Economy Virtual Purchases (shipped)
+1.10.1  — Virtual Purchase .meta GUIDs
+1.10.2  — XML docs + markdown sync
+1.11.0  — Cloud Code idempotent mutations (server) ← next planned
+1.12.0  — server-verified entitlements
+1.13.0  — orphan cleanup / link merge helpers
+1.14.0  — offline-first LocalReady in SDK
+1.15.0  — unified single-flight surface
 ```
 
 When starting an epic, bump `package.json` to `1.N.0`, add CHANGELOG section, and link the epic heading here as **shipped**.

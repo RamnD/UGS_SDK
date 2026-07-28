@@ -13,11 +13,11 @@ public readonly struct LeaderboardEntry
     public readonly int Rank;
 
     /// <summary>
-    /// Score in server format (double). For UI display, convert via
-    /// <c>ScoreConverter.ToDisplayScore(Score)</c>.
+    /// Score in server format (double). Convert for UI display in the game layer.
     /// </summary>
     public readonly double Score;
 
+    /// <summary>Creates a portable leaderboard row.</summary>
     public LeaderboardEntry(string playerId, string playerName, int rank, double score)
     {
         PlayerId   = playerId;

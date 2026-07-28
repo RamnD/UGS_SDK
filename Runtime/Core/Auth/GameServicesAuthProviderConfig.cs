@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 /// </summary>
 public sealed class GameServicesAuthProviderConfig
 {
+    /// <summary>Empty config (no OAuth ids, no credential bridges).</summary>
     public static GameServicesAuthProviderConfig Empty => new GameServicesAuthProviderConfig();
 
     /// <summary>

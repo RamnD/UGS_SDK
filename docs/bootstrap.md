@@ -8,7 +8,7 @@
 
 All services are created once at startup via `UGSServicesBuilder` (production) or `MockGameServices.CreateDefault()` (editor / tests). Both paths register the result in `GameServicesLocator`.
 
-Generic services (`IInventoryService<T>`, `IItemService<T>`, `ICloudSaveService<TKey>`) live **outside** the façade — create them in the `OnAuthenticated` callback and store them in your own game-side bootstrap.
+Generic services (`IInventoryService<T>`, `IItemService<T>`, `ICloudSaveService<TKey>`, `IVirtualPurchaseService`, `IRealMoneyPurchaseService`) live **outside** the façade — create them in the `OnAuthenticated` callback and store them in your own game-side bootstrap.
 
 `Achievements` live **inside** the façade because they are portable and non-generic: use `GameServicesLocator.Services?.Achievements`.
 
@@ -18,7 +18,7 @@ Generic services (`IInventoryService<T>`, `IItemService<T>`, `ICloudSaveService<
 
 ```csharp
 // ServicesBootstrap.cs (MonoBehaviour)
-[SerializeField] private ProfanityConfig _profanityConfig;
+[SerializeField] private ProfanityConfig _profanityConfig; // game-side ScriptableObject
 [SerializeField] private bool _forceAnonymous = true;
 
 private IInventoryService<CurrencyType> _economy;
@@ -56,6 +56,14 @@ private async void Start()
                 // See docs/cloud-save.md — conflicts are return values, not events.
                 _cloudSave.ApplyCloud();
             }
+
+            // Reconnect refresh for typed services (façade ones are registered by the builder):
+            GameServicesSync.Register(GameServiceId.Economy, ct => _economy.RefreshBalancesAsync(ct));
+            GameServicesSync.Register(GameServiceId.CloudSave, async ct =>
+            {
+                var c = await _cloudSave.LoadAsync(ct);
+                // optional: surface conflict UI
+            });
         })
         .BuildAsync(destroyCancellationToken);
 
@@ -69,12 +77,11 @@ private async void Start()
 | Method | Description |
 |--------|-------------|
 | `WithForceAnonymous(bool)` | Skip platform login; always sign in anonymously |
-| `WithAuthProviderCredentials(cfg)` | OAuth IDs for Google Play / Apple |
-| `WithNameValidator(NameValidatorConfig)` | Full validator config (words + regex). Overrides `WithProfanityFilter`. |
+| `WithAuthProviderCredentials(cfg)` | OAuth IDs + optional Apple / Game Center credential bridges |
+| `WithNameValidator(NameValidatorConfig)` | Full validator config (words + regex). Overrides `WithProfanityFilter`. Convert game ScriptableObjects via `ToValidatorConfig()` in the consuming project. |
 | `WithProfanityFilter(string[])` | Banned words list only |
 | `WithProfanityFilter(Regex)` | Banned pattern only |
-| `WithProfanityFilter(ProfanityConfig)` | ScriptableObject (Inspector-editable) |
-| `WithAds(IAdsManager)` | Ads manager (LevelPlay, Unity Ads, TestAds…) |
+| `WithAds(IAdsManager)` | Ads manager (LevelPlay, TestAds, optional Unity Ads) |
 | `WithCachedAnalytics(bool)` | Disk-backed offline analytics queue |
 | `WithRemoteConfig(bool)` | UGS Remote Config fetch after auth + PlayerPrefs cache |
 | `WithAchievements(bool)` | Portable achievement module backed by UGS Cloud Save |
@@ -115,35 +122,63 @@ GameServicesLocator.Services?.Auth.GetPlayerName();
 
 ---
 
-## NetworkStatus (offline testing)
+## Game Services Sync (reconnect)
+
+`GameServicesSync` is the reconnect refresh hub. The UGS builder registers Remote Config / Achievements / Analytics handlers. **Economy, Items, and Cloud Save** are project-typed — register them from your bootstrap (see example above).
+
+```csharp
+// Manual refresh (all registered):
+await GameServicesSync.RefreshAsync();
+
+// One service:
+await GameServicesSync.RefreshAsync(GameServiceId.Economy);
+
+// Auto: when NetworkStatus.IsOnline flips to true, all registered handlers run.
+```
+
+---
+
+## NetworkStatus (offline testing & soft breaker)
 
 ```csharp
 NetworkStatus.ForceOffline = true;   // simulate no network in editor
-bool online = NetworkStatus.IsOnline; // true if Application.internetReachability != NotReachable AND !ForceOffline
+bool online = NetworkStatus.IsOnline; // reachability && !ForceOffline && !soft-offline
+
+// Soft circuit breaker (timeouts / DPI / poor link):
+// after 3 recoverable failures in 60s → soft-offline cooldown 20→40→80s
+NetworkStatus.ReportFailure();
+NetworkStatus.ReportSuccess();       // clears soft-offline
+NetworkStatus.IsSoftOffline;
+NetworkStatus.NotifyApplicationResumed(); // clears cooldown on app resume
+
+// Tick / IsOnlineChanged are driven by NetworkStatusDriver (RuntimeInitializeOnLoad).
 ```
+
+See CHANGELOG **1.9.6** / **1.9.7** for soft breaker + sync hub details.
 
 ---
 
 ## Threading rules
 
-`BuildAsync` uses `ConfigureAwait(false)` so its internal continuations run on the **threadpool**. The `OnAuthenticated` callback is called from that threadpool context.
+`BuildAsync` does **not** use `ConfigureAwait(false)` — continuations stay on Unity’s synchronization context. `OnAuthenticated` is therefore invoked on the main thread in normal Unity play mode.
 
-**Rules inside `OnAuthenticated`:**
-- ✅ `await SomeUgsApiAsync()` — fine
-- ✅ `new UGSCloudSaveService(mapper)` — fine (constructor is safe; PlayerPrefs are loaded lazily)
-- ❌ `PlayerPrefs.GetString(...)` — crashes; only safe on main thread
-- ❌ `GetComponent<T>()` / `Instantiate` / `FindObjectOfType` — crashes
+**Still avoid:**
+- Calling `PlayerPrefs` / Unity APIs from **background threads** you spawn yourself
+- Constructing services that touch `PlayerPrefs` in **static / field initializers**
 
-If you need to touch Unity APIs in `OnAuthenticated`, marshal back with:
+If you fork async work off the main thread inside `OnAuthenticated`, marshal back before Unity APIs:
+
 ```csharp
 .OnAuthenticated(async auth =>
 {
     await UniTask.SwitchToMainThread(); // if using UniTask
     // or
-    await Task.Yield();                 // returns to Unity sync context
-    PlayerPrefs.GetString("key");       // now safe
+    await Task.Yield();                 // returns to Unity sync context when started from main thread
+    PlayerPrefs.GetString("key");
 })
 ```
+
+Also see [README — Threading / PlayerPrefs](../README.md#threading--playerprefs).
 
 ---
 

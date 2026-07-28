@@ -12,6 +12,7 @@ public sealed class MockConsumableItemService<TItem> : IConsumableItemService<TI
 {
     readonly Dictionary<TItem, int> _quantities = new();
 
+    /// <summary>Test helper: sets stack quantity (≤ 0 removes the entry) and raises <see cref="OnQuantityChanged"/>.</summary>
     public void SetQuantity(TItem id, int amount)
     {
         if (amount <= 0)

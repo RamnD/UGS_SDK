@@ -238,3 +238,11 @@ if (purchased)
 | `TryPurchaseAsync` offline | — | — | ❌ returns false |
 
 Spend never throws for gameplay soft-failures. The pending queue flushes on the next successful `RefreshBalancesAsync` path (and is preserved across app restarts via PlayerPrefs).
+
+---
+
+## Related
+
+- Soft-currency / free **Virtual Purchases** (Economy dashboard bundles): [virtual-purchases.md](virtual-purchases.md)
+- Stackable consumables: [consumables.md](consumables.md)
+- Real-money IAP: [iap.md](iap.md)

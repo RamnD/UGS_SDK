@@ -25,6 +25,8 @@ public static class GameServicesSync
     /// Registers or replaces the refresh handler for <paramref name="service"/>.
     /// Pass <c>null</c> to unregister.
     /// </summary>
+    /// <param name="service">Which service the handler refreshes.</param>
+    /// <param name="refresh">Async refresh callback, or null to unregister.</param>
     public static void Register(GameServiceId service, Func<CancellationToken, Task> refresh)
     {
         lock (Gate)
@@ -39,12 +41,15 @@ public static class GameServicesSync
     }
 
     /// <summary>Removes a previously registered handler.</summary>
+    /// <param name="service">Service to unregister.</param>
     public static void Unregister(GameServiceId service) => Register(service, null);
 
     /// <summary>
     /// Refreshes one service, or all registered services when <paramref name="service"/> is null.
     /// Concurrent full refreshes coalesce (callers await the same in-flight task).
     /// </summary>
+    /// <param name="service">Specific service, or null for all registered handlers.</param>
+    /// <param name="cancellationToken">Cancels the refresh await.</param>
     public static Task RefreshAsync(
         GameServiceId? service = null,
         CancellationToken cancellationToken = default)

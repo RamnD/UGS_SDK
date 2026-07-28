@@ -21,6 +21,8 @@ public interface IRealMoneyPurchaseService
     /// Initializes the purchase service and registers all product definitions with the store.
     /// Safe to call multiple times.
     /// </summary>
+    /// <param name="products">Catalog of products to register with Unity IAP / the store.</param>
+    /// <param name="cancellationToken">Cancels initialization.</param>
     Task InitializeAsync(
         RealMoneyProductDefinition[] products,
         CancellationToken cancellationToken = default);
@@ -36,6 +38,9 @@ public interface IRealMoneyPurchaseService
     /// Returns true when the purchase has been processed successfully.
     /// Rejects with false if another purchase is already in flight (single-flight).
     /// </summary>
+    /// <param name="productId"><see cref="RealMoneyProductDefinition.ProductId"/> (Economy / game key).</param>
+    /// <param name="cancellationToken">Cancels waiting for the store callback.</param>
+    /// <returns>True on success; false on cancel, failure, or busy reject.</returns>
     Task<bool> PurchaseAsync(
         string productId,
         CancellationToken cancellationToken = default);
@@ -56,12 +61,15 @@ public interface IRealMoneyPurchaseService
     /// <summary>
     /// Returns true if the entitlement has already been granted and cached locally.
     /// </summary>
+    /// <param name="entitlementId">Entitlement string (e.g. <c>no_ads</c>).</param>
     bool HasEntitlement(string entitlementId);
 
     /// <summary>
     /// Tries to read store-localized metadata for a registered product.
     /// Returns false when the product has not been fetched yet or metadata is missing.
     /// </summary>
+    /// <param name="productId"><see cref="RealMoneyProductDefinition.ProductId"/>.</param>
+    /// <param name="info">Localized metadata when available.</param>
     bool TryGetProductInfo(string productId, out RealMoneyProductInfo info);
 
     /// <summary>

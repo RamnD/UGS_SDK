@@ -22,5 +22,7 @@ public class AnalyticsKeyAttribute : Attribute
     /// <summary>Parameter name in the analytics SDK.</summary>
     public string Key { get; }
 
+    /// <summary>Creates the attribute with the SDK parameter name.</summary>
+    /// <param name="key">Snake_case parameter name sent to Analytics.</param>
     public AnalyticsKeyAttribute(string key) => Key = key;
 }

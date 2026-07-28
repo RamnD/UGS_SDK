@@ -11,6 +11,13 @@ public sealed class InventoryOperationException : Exception
     /// <inheritdoc cref="InventoryFailureReason"/>
     public InventoryFailureReason Reason { get; }
 
+    /// <summary>
+    /// Creates an exception with a stable <see cref="Reason"/> for UI localization.
+    /// Prefer mapping <see cref="Reason"/> over <see cref="Exception.Message"/>.
+    /// </summary>
+    /// <param name="reason">Failure category.</param>
+    /// <param name="message">Optional diagnostic message (defaults to <paramref name="reason"/> name).</param>
+    /// <param name="innerException">Optional underlying provider exception.</param>
     public InventoryOperationException(InventoryFailureReason reason, string message = null, Exception innerException = null)
         : base(message ?? reason.ToString(), innerException)
     {

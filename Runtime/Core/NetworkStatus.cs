@@ -17,6 +17,7 @@ public static class NetworkStatus
     /// <summary>Base soft-offline duration (seconds, realtime). Escalates on repeated trips.</summary>
     public const float CooldownSeconds = 20f;
 
+    /// <summary>Upper bound for escalating soft-offline cooldown (seconds).</summary>
     public const float MaxCooldownSeconds = 80f;
 
     static int _consecutiveFailures;

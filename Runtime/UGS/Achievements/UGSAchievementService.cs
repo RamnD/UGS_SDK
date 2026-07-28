@@ -27,6 +27,11 @@ public sealed class UGSAchievementService : IAchievementService
     private Task _loadTask;
     private Task _flushTask;
 
+    /// <summary>
+    /// Loads achievement state from Cloud Save (or local cache when offline) before first use.
+    /// Called automatically by the builder when achievements are enabled; safe to call again.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the load await.</param>
     public async Task WarmupAsync(CancellationToken cancellationToken = default)
     {
         await EnsureLoadedAsync(cancellationToken);
@@ -46,6 +51,7 @@ public sealed class UGSAchievementService : IAchievementService
         Debug.Log("[Achievements] ClearLocalCache — in-memory state wiped.");
     }
 
+    /// <inheritdoc/>
     public bool TryGetState(string achievementId, out AchievementState state)
     {
         ValidateAchievementId(achievementId);
@@ -60,12 +66,14 @@ public sealed class UGSAchievementService : IAchievementService
         return false;
     }
 
+    /// <inheritdoc/>
     public IReadOnlyCollection<AchievementState> GetAllStates() =>
         _states
             .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
             .Select(kvp => kvp.Value.ToPublicState(kvp.Key))
             .ToArray();
 
+    /// <inheritdoc/>
     public async Task SetProgressAsync(
         string achievementId,
         double currentProgress,
@@ -99,6 +107,7 @@ public sealed class UGSAchievementService : IAchievementService
         await FlushAsync(cancellationToken);
     }
 
+    /// <inheritdoc/>
     public async Task IncrementProgressAsync(
         string achievementId,
         double deltaProgress,
@@ -132,6 +141,7 @@ public sealed class UGSAchievementService : IAchievementService
         await FlushAsync(cancellationToken);
     }
 
+    /// <inheritdoc/>
     public async Task UnlockAsync(string achievementId, CancellationToken cancellationToken = default)
     {
         ValidateAchievementId(achievementId);
@@ -157,6 +167,7 @@ public sealed class UGSAchievementService : IAchievementService
         await FlushAsync(cancellationToken);
     }
 
+    /// <inheritdoc/>
     public async Task FlushAsync(CancellationToken cancellationToken = default)
     {
         Task flush;

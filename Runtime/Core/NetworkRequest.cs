@@ -15,6 +15,18 @@ public static class NetworkRequest
     /// <summary>Longer bound for Auth / native sign-in prompts (milliseconds).</summary>
     public const int AuthTimeoutMs = 30000;
 
+    /// <summary>
+    /// Awaits <paramref name="task"/> or throws <see cref="TimeoutException"/> after
+    /// <paramref name="timeoutMs"/>. The underlying task may keep running after timeout.
+    /// </summary>
+    /// <typeparam name="T">Result type of the awaited task.</typeparam>
+    /// <param name="task">UGS / HTTP task to bound.</param>
+    /// <param name="cancellationToken">Cancels the await (also cancels the delay).</param>
+    /// <param name="timeoutMs">Timeout in milliseconds; ≤ 0 disables the timeout and awaits fully.</param>
+    /// <returns>The task result when it completes first.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="task"/> is null.</exception>
+    /// <exception cref="TimeoutException">Thrown when the delay wins.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public static async Task<T> WithTimeout<T>(
         Task<T> task,
         CancellationToken cancellationToken = default,
@@ -47,6 +59,15 @@ public static class NetworkRequest
         throw new TimeoutException($"UGS request timed out after {timeoutMs}ms.");
     }
 
+    /// <summary>
+    /// Non-generic overload of <see cref="WithTimeout{T}"/> for tasks that return no value.
+    /// </summary>
+    /// <param name="task">UGS / HTTP task to bound.</param>
+    /// <param name="cancellationToken">Cancels the await (also cancels the delay).</param>
+    /// <param name="timeoutMs">Timeout in milliseconds; ≤ 0 disables the timeout and awaits fully.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="task"/> is null.</exception>
+    /// <exception cref="TimeoutException">Thrown when the delay wins.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public static async Task WithTimeout(
         Task task,
         CancellationToken cancellationToken = default,

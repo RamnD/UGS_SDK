@@ -24,6 +24,10 @@ public sealed class MockGameServices : IGameServices
     /// <inheritdoc/>
     public bool IsAuthenticated => Auth.IsSignedIn;
 
+    /// <summary>
+    /// Creates a mock façade. Missing dependencies are filled with default mock implementations.
+    /// Does <b>not</b> register <see cref="GameServicesLocator"/> — use <see cref="CreateDefault"/> for that.
+    /// </summary>
     public MockGameServices(
         IAuthService          auth         = null,
         IAnalyticsSystem      analytics    = null,

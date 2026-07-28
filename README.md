@@ -13,7 +13,7 @@ Add to your project's `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git#v1.8.0"
+    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git#v1.10.2"
   }
 }
 ```
@@ -39,6 +39,7 @@ Optional sample: **Package Manager → RamnD Game Services SDK → Samples → I
 | Initialization & bootstrap | [docs/bootstrap.md](docs/bootstrap.md) |
 | Auth & player name | [docs/auth.md](docs/auth.md) |
 | Economy (currency & items) | [docs/economy.md](docs/economy.md) |
+| Virtual purchases (soft-currency / free bundles) | [docs/virtual-purchases.md](docs/virtual-purchases.md) |
 | Consumables (stackable) | [docs/consumables.md](docs/consumables.md) |
 | Real money purchases (IAP + Economy redeem) | [docs/iap.md](docs/iap.md) |
 | Cloud Save | [docs/cloud-save.md](docs/cloud-save.md) |
@@ -205,7 +206,9 @@ Use:
 - Remote Config: `Services.RemoteConfig` (null if not enabled or not authenticated)
 - Achievements: `Services.Achievements` (null if not enabled or not authenticated)
 
-Generic services (economy, items, cloud save) stay **outside** the façade: inject `IInventoryService<T>`, `IItemService<T>`, `ICloudSaveService<TKey>` from your own bootstrap (see UGS example below).
+Generic services (economy, items, cloud save, virtual / real-money purchases) stay **outside** the façade: inject `IInventoryService<T>`, `IItemService<T>`, `ICloudSaveService<TKey>`, `IVirtualPurchaseService`, `IRealMoneyPurchaseService` from your own bootstrap (see UGS example below).
+
+After creating typed services in `OnAuthenticated`, register reconnect refresh handlers with `GameServicesSync` (see [docs/bootstrap.md](docs/bootstrap.md#games-services-sync-reconnect)).
 
 ---
 
