@@ -7,7 +7,7 @@ Versioned **product epics**. Each epic ships as a **minor** release: `1.N.0`.
 | Hotfixes / correctness bugs | [bug-reports/](./bug-reports/README.md) | Patch on current minor |
 | Planned features / architecture | **this file** | Minor `1.N.0` |
 
-Current package: **1.11.0**. Shipped **1.10.x** (deferred economy, IAP pending drain) and **1.11.0** (Economy Purchase Catalog). Next planned server epic is **1.12.0** Cloud Code.
+Current package: **1.11.2**. Shipped **1.11.0** (Economy Purchase Catalog) + **1.11.1–1.11.2** hardening. Next planned server epic is **1.12.0** Cloud Code.
 
 ---
 
@@ -61,6 +61,10 @@ Correctness / UX patches on the 1.9 line (IAP single-flight, auth recover, soft 
 ### Out of scope for 1.11.0
 - Localized RMP prices (still Unity IAP)
 - Purchase execution (unchanged VP / IAP services)
+
+### Follow-up patches
+- **1.11.1** — missing `.meta` for purchase-catalog doc + Bootstrap sample
+- **1.11.2** — failed-sync cache safety, CustomData, shared config sync, `GameServiceId.PurchaseCatalog`
 
 ---
 

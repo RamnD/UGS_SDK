@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.11.2] - 2026-07-29
+
+### Added
+- **Economy:** `PurchaseCatalogEntry.CustomDataJson` + `PurchaseCatalogQuery.CustomDataContains` for dashboard Custom Data tags.
+- **Economy:** `GameServiceId.PurchaseCatalog` for reconnect refresh registration.
+- **Economy:** shared `UGSEconomyConfigurationSync` used by purchase catalog and virtual purchases (single-flight config sync).
+
+### Fixed
+- **Purchase catalog:** do not rebuild the cache when a forced sync fails after a prior success (keeps last good snapshot).
+- **Purchase catalog:** `GetAll` returns an immutable copy; unsynced `Query`/`GetAll`/`GetVirtual`/`GetRealMoney` return empty instead of throwing.
+
+### Changed
+- **Docs:** [purchase-catalog.md](docs/purchase-catalog.md) responsibility split (SDK vs game) and online-shop-gate guidance.
+
 ## [1.11.1] - 2026-07-29
 
 ### Fixed

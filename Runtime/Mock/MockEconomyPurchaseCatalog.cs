@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -44,30 +43,30 @@ public sealed class MockEconomyPurchaseCatalog : IEconomyPurchaseCatalog
     /// <inheritdoc/>
     public IReadOnlyList<PurchaseCatalogEntry> Query(PurchaseCatalogQuery query = default)
     {
-        EnsureReadable();
+        if (!IsSynced)
+            return Array.Empty<PurchaseCatalogEntry>();
+
         return PurchaseCatalogFiltering.Apply(_entries, query);
     }
 
     /// <inheritdoc/>
     public IReadOnlyList<PurchaseCatalogEntry> GetAll()
     {
-        EnsureReadable();
-        return _entries;
+        if (!IsSynced)
+            return Array.Empty<PurchaseCatalogEntry>();
+
+        return _entries.Count == 0
+            ? Array.Empty<PurchaseCatalogEntry>()
+            : new List<PurchaseCatalogEntry>(_entries);
     }
 
     /// <inheritdoc/>
-    public IReadOnlyList<PurchaseCatalogEntry> GetVirtual()
-    {
-        EnsureReadable();
-        return _entries.Where(e => e.Kind == PurchaseCatalogKind.Virtual).ToList();
-    }
+    public IReadOnlyList<PurchaseCatalogEntry> GetVirtual() =>
+        Query(new PurchaseCatalogQuery { Kind = PurchaseCatalogKind.Virtual });
 
     /// <inheritdoc/>
-    public IReadOnlyList<PurchaseCatalogEntry> GetRealMoney()
-    {
-        EnsureReadable();
-        return _entries.Where(e => e.Kind == PurchaseCatalogKind.RealMoney).ToList();
-    }
+    public IReadOnlyList<PurchaseCatalogEntry> GetRealMoney() =>
+        Query(new PurchaseCatalogQuery { Kind = PurchaseCatalogKind.RealMoney });
 
     /// <inheritdoc/>
     public bool TryGet(string purchaseId, out PurchaseCatalogEntry entry)
@@ -77,12 +76,5 @@ public sealed class MockEconomyPurchaseCatalog : IEconomyPurchaseCatalog
             return false;
 
         return _byId.TryGetValue(purchaseId, out entry);
-    }
-
-    void EnsureReadable()
-    {
-        if (!IsSynced)
-            throw new InvalidOperationException(
-                "Mock purchase catalog is not synced. Call RefreshAsync() or SetEntries() then RefreshAsync().");
     }
 }

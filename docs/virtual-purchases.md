@@ -60,7 +60,7 @@ if (!ok)
 
 ## Behaviour notes
 
-- Lazy **Economy configuration sync** before the first purchase (and one retry on `ConfigNotSynced`).
+- Lazy **Economy configuration sync** before the first purchase (and one retry on `ConfigNotSynced`), shared with [`IEconomyPurchaseCatalog`](purchase-catalog.md).
 - Bounded by `NetworkRequest` timeout (15s for the purchase call).
 - Transport failures feed `NetworkStatus.ReportFailure` (soft circuit breaker).
 - No offline queue for virtual purchases — unlike `IInventoryService` Add/Spend for mapper-allowed currencies.

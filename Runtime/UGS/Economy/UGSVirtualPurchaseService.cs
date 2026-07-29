@@ -6,8 +6,8 @@ using UnityEngine;
 
 /// <summary>
 /// <see cref="IVirtualPurchaseService"/> implementation via UGS Economy Virtual Purchases.
-/// Lazy-syncs Economy configuration, enforces single-flight purchases, and optionally
-/// refreshes <typeparamref name="TCurrency"/> balances after success.
+/// Lazy-syncs Economy configuration (shared with the purchase catalog), enforces single-flight
+/// purchases, and optionally refreshes <typeparamref name="TCurrency"/> balances after success.
 /// </summary>
 /// <typeparam name="TCurrency">Game currency enum used by the optional inventory refresh.</typeparam>
 public sealed class UGSVirtualPurchaseService<TCurrency> : IVirtualPurchaseService
@@ -16,11 +16,8 @@ public sealed class UGSVirtualPurchaseService<TCurrency> : IVirtualPurchaseServi
     const int PurchaseTimeoutMs = 15000;
 
     readonly object _purchaseGate = new();
-    readonly object _configSyncGate = new();
     readonly IInventoryService<TCurrency> _economy;
 
-    Task _configSyncTask;
-    bool _configSynced;
     bool _purchaseInFlight;
 
     /// <inheritdoc/>
@@ -74,7 +71,7 @@ public sealed class UGSVirtualPurchaseService<TCurrency> : IVirtualPurchaseServi
             return false;
         }
 
-        await EnsureConfigurationSyncedAsync(cancellationToken);
+        await UGSEconomyConfigurationSync.SyncAsync(cancellationToken);
 
         try
         {
@@ -93,8 +90,8 @@ public sealed class UGSVirtualPurchaseService<TCurrency> : IVirtualPurchaseServi
         {
             Debug.LogWarning(
                 $"[SDK][VirtualPurchase] Config not synced for '{purchaseId}' — resyncing once.");
-            _configSynced = false;
-            await EnsureConfigurationSyncedAsync(cancellationToken);
+            UGSEconomyConfigurationSync.Invalidate();
+            await UGSEconomyConfigurationSync.SyncAsync(cancellationToken, force: true);
 
             try
             {
@@ -118,52 +115,6 @@ public sealed class UGSVirtualPurchaseService<TCurrency> : IVirtualPurchaseServi
         {
             return HandlePurchaseFailure(purchaseId, ex);
         }
-    }
-
-    async Task EnsureConfigurationSyncedAsync(CancellationToken cancellationToken)
-    {
-        if (_configSynced)
-            return;
-
-        Task syncTask;
-        lock (_configSyncGate)
-        {
-            if (_configSynced)
-                return;
-
-            if (_configSyncTask != null && !_configSyncTask.IsCompleted)
-            {
-                syncTask = _configSyncTask;
-            }
-            else
-            {
-                syncTask = SyncConfigurationCoreAsync(cancellationToken);
-                _configSyncTask = syncTask;
-            }
-        }
-
-        try
-        {
-            await syncTask;
-            cancellationToken.ThrowIfCancellationRequested();
-        }
-        finally
-        {
-            lock (_configSyncGate)
-            {
-                if (ReferenceEquals(_configSyncTask, syncTask) && syncTask.IsCompleted)
-                    _configSyncTask = null;
-            }
-        }
-    }
-
-    async Task SyncConfigurationCoreAsync(CancellationToken cancellationToken)
-    {
-        await NetworkRequest.WithTimeout(
-            EconomyService.Instance.Configuration.SyncConfigurationAsync(),
-            cancellationToken);
-        _configSynced = true;
-        NetworkStatus.ReportSuccess();
     }
 
     async Task RefreshBalancesIfAvailableAsync(CancellationToken cancellationToken)

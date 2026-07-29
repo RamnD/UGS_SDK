@@ -28,4 +28,10 @@ public enum GameServiceId
 
     /// <summary>Cloud Save pull / conflict check (game-registered).</summary>
     CloudSave,
+
+    /// <summary>
+    /// Economy purchase catalog refresh (<see cref="IEconomyPurchaseCatalog.RefreshAsync"/>).
+    /// Game-registered when the project uses a dynamic shop catalog.
+    /// </summary>
+    PurchaseCatalog,
 }

@@ -27,6 +27,12 @@ public sealed class PurchaseCatalogEntry
     /// <summary>Google Play product id (real-money purchases only).</summary>
     public string GoogleStoreId { get; }
 
+    /// <summary>
+    /// Raw Custom Data JSON from the Economy dashboard (empty when unset).
+    /// Games parse this for section tags, sort keys, badges, etc.
+    /// </summary>
+    public string CustomDataJson { get; }
+
     /// <summary>Creates a catalog entry snapshot.</summary>
     public PurchaseCatalogEntry(
         string id,
@@ -35,7 +41,8 @@ public sealed class PurchaseCatalogEntry
         IReadOnlyList<PurchaseCatalogLine> costs,
         IReadOnlyList<PurchaseCatalogLine> rewards,
         string appleStoreId = null,
-        string googleStoreId = null)
+        string googleStoreId = null,
+        string customDataJson = null)
     {
         Id = id ?? throw new ArgumentNullException(nameof(id));
         Name = name ?? string.Empty;
@@ -44,5 +51,6 @@ public sealed class PurchaseCatalogEntry
         Rewards = rewards ?? Array.Empty<PurchaseCatalogLine>();
         AppleStoreId = appleStoreId ?? string.Empty;
         GoogleStoreId = googleStoreId ?? string.Empty;
+        CustomDataJson = customDataJson ?? string.Empty;
     }
 }

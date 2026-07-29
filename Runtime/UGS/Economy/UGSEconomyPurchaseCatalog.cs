@@ -12,13 +12,8 @@ using UnityEngine;
 /// </summary>
 public sealed class UGSEconomyPurchaseCatalog : IEconomyPurchaseCatalog
 {
-    const int SyncTimeoutMs = 15000;
-
-    readonly object _syncGate = new();
-
     List<PurchaseCatalogEntry> _entries = new();
     Dictionary<string, PurchaseCatalogEntry> _byId = new(StringComparer.Ordinal);
-    Task _syncTask;
     bool _isSynced;
 
     /// <inheritdoc/>
@@ -39,22 +34,45 @@ public sealed class UGSEconomyPurchaseCatalog : IEconomyPurchaseCatalog
             return;
         }
 
-        await EnsureConfigurationSyncedAsync(cancellationToken);
+        try
+        {
+            await UGSEconomyConfigurationSync.SyncAsync(cancellationToken, force: true);
+        }
+        catch (Exception ex)
+        {
+            if (_isSynced)
+            {
+                Debug.LogWarning(
+                    $"[SDK][PurchaseCatalog] Config sync failed — keeping last cached catalog: {ex.Message}");
+                return;
+            }
+
+            NetworkStatus.ReportFailure();
+            Debug.LogError($"[SDK][PurchaseCatalog] Config sync failed: {ex}");
+            throw;
+        }
+
         RebuildCacheFromConfiguration();
     }
 
     /// <inheritdoc/>
     public IReadOnlyList<PurchaseCatalogEntry> Query(PurchaseCatalogQuery query = default)
     {
-        EnsureReadable();
+        if (!_isSynced)
+            return Array.Empty<PurchaseCatalogEntry>();
+
         return PurchaseCatalogFiltering.Apply(_entries, query);
     }
 
     /// <inheritdoc/>
     public IReadOnlyList<PurchaseCatalogEntry> GetAll()
     {
-        EnsureReadable();
-        return _entries;
+        if (!_isSynced)
+            return Array.Empty<PurchaseCatalogEntry>();
+
+        return _entries.Count == 0
+            ? Array.Empty<PurchaseCatalogEntry>()
+            : new List<PurchaseCatalogEntry>(_entries);
     }
 
     /// <inheritdoc/>
@@ -73,69 +91,6 @@ public sealed class UGSEconomyPurchaseCatalog : IEconomyPurchaseCatalog
             return false;
 
         return _byId.TryGetValue(purchaseId, out entry);
-    }
-
-    void EnsureReadable()
-    {
-        if (!_isSynced)
-            throw new InvalidOperationException(
-                "Purchase catalog is not synced. Call RefreshAsync() after authentication and before Query().");
-    }
-
-    async Task EnsureConfigurationSyncedAsync(CancellationToken cancellationToken)
-    {
-        Task syncTask;
-        lock (_syncGate)
-        {
-            if (_syncTask != null && !_syncTask.IsCompleted)
-            {
-                syncTask = _syncTask;
-            }
-            else
-            {
-                syncTask = SyncConfigurationCoreAsync(cancellationToken);
-                _syncTask = syncTask;
-            }
-        }
-
-        try
-        {
-            await syncTask;
-            cancellationToken.ThrowIfCancellationRequested();
-        }
-        finally
-        {
-            lock (_syncGate)
-            {
-                if (ReferenceEquals(_syncTask, syncTask) && syncTask.IsCompleted)
-                    _syncTask = null;
-            }
-        }
-    }
-
-    async Task SyncConfigurationCoreAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            await NetworkRequest.WithTimeout(
-                EconomyService.Instance.Configuration.SyncConfigurationAsync(),
-                cancellationToken,
-                timeoutMs: SyncTimeoutMs);
-            NetworkStatus.ReportSuccess();
-        }
-        catch (Exception ex)
-        {
-            if (_isSynced)
-            {
-                Debug.LogWarning(
-                    $"[SDK][PurchaseCatalog] Config sync failed — keeping last cached catalog: {ex.Message}");
-                return;
-            }
-
-            NetworkStatus.ReportFailure();
-            Debug.LogError($"[SDK][PurchaseCatalog] Config sync failed: {ex}");
-            throw;
-        }
     }
 
     void RebuildCacheFromConfiguration()
@@ -171,7 +126,8 @@ public sealed class UGSEconomyPurchaseCatalog : IEconomyPurchaseCatalog
             definition.Name,
             PurchaseCatalogKind.Virtual,
             MapLines(definition.Costs),
-            MapLines(definition.Rewards));
+            MapLines(definition.Rewards),
+            customDataJson: ReadCustomDataJson(definition));
     }
 
     static PurchaseCatalogEntry MapRealMoneyPurchase(RealMoneyPurchaseDefinition definition)
@@ -184,7 +140,8 @@ public sealed class UGSEconomyPurchaseCatalog : IEconomyPurchaseCatalog
             Array.Empty<PurchaseCatalogLine>(),
             MapLines(definition.Rewards),
             storeIds?.AppleAppStore,
-            storeIds?.GooglePlayStore);
+            storeIds?.GooglePlayStore,
+            ReadCustomDataJson(definition));
     }
 
     static IReadOnlyList<PurchaseCatalogLine> MapLines(IReadOnlyList<PurchaseItemQuantity> lines)
@@ -218,4 +175,16 @@ public sealed class UGSEconomyPurchaseCatalog : IEconomyPurchaseCatalog
         return new PurchaseCatalogLine(referenced.Id, quantity.Amount, kind);
     }
 
+    static string ReadCustomDataJson(ConfigurationItemDefinition definition)
+    {
+        try
+        {
+            return definition?.CustomDataDeserializable?.GetAsString() ?? string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[SDK][PurchaseCatalog] Failed to read CustomData for '{definition?.Id}': {ex.Message}");
+            return string.Empty;
+        }
+    }
 }

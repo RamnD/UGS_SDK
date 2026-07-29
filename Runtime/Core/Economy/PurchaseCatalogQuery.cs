@@ -13,6 +13,12 @@ public struct PurchaseCatalogQuery
     public string IdContains;
 
     /// <summary>
+    /// When set, <see cref="PurchaseCatalogEntry.CustomDataJson"/> must contain this substring
+    /// (case-insensitive). Use for dashboard tags such as <c>"section":"lobby"</c>.
+    /// </summary>
+    public string CustomDataContains;
+
+    /// <summary>
     /// When set, filters on <see cref="PurchaseCatalogEntry.Rewards"/> resource ids.
     /// </summary>
     public IReadOnlyList<string> RewardResourceIds;

@@ -28,6 +28,11 @@ public static class PurchaseCatalogFiltering
             entry.Id.IndexOf(query.IdContains, StringComparison.OrdinalIgnoreCase) < 0)
             return false;
 
+        if (!string.IsNullOrEmpty(query.CustomDataContains) &&
+            (entry.CustomDataJson == null ||
+             entry.CustomDataJson.IndexOf(query.CustomDataContains, StringComparison.OrdinalIgnoreCase) < 0))
+            return false;
+
         if (query.RewardResourceIds != null && query.RewardResourceIds.Count > 0 &&
             !MatchesResourceIds(entry.Rewards, query.RewardResourceIds, query.RewardMatch))
             return false;

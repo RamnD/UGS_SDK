@@ -7,6 +7,11 @@ using System.Threading.Tasks;
 /// Does not execute purchases — use <see cref="IVirtualPurchaseService"/> and
 /// <see cref="IRealMoneyPurchaseService"/> for that.
 /// </summary>
+/// <remarks>
+/// SDK responsibility: Economy definition sync + queryable snapshot.
+/// Game responsibility: online shop gate, presentation, localized IAP prices, purchase execution,
+/// post-buy sync, and soft-currency shops that are not Economy Virtual Purchases.
+/// </remarks>
 public interface IEconomyPurchaseCatalog
 {
     /// <summary>
@@ -16,20 +21,17 @@ public interface IEconomyPurchaseCatalog
 
     /// <summary>
     /// Syncs Economy configuration from UGS and rebuilds the local catalog cache.
-    /// When offline, keeps serving the last successful cache if one exists.
+    /// When offline, or when sync fails after a prior success, keeps the last good cache.
     /// </summary>
     Task RefreshAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns cached entries matching the query. Requires <see cref="IsSynced"/> unless the cache
-    /// was populated by a prior successful refresh in this session.
+    /// Returns cached entries matching the query.
+    /// When not yet synced, returns an empty list (check <see cref="IsSynced"/>).
     /// </summary>
-    /// <exception cref="System.InvalidOperationException">
-    /// Thrown when the catalog was never refreshed and the cache is empty.
-    /// </exception>
     IReadOnlyList<PurchaseCatalogEntry> Query(PurchaseCatalogQuery query = default);
 
-    /// <summary>All cached entries (same as <c>Query(PurchaseCatalogQuery.All)</c>).</summary>
+    /// <summary>Snapshot of all cached entries (empty when not synced).</summary>
     IReadOnlyList<PurchaseCatalogEntry> GetAll();
 
     /// <summary>Cached virtual purchases only.</summary>
