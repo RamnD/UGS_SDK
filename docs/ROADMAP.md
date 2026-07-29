@@ -7,7 +7,7 @@ Versioned **product epics**. Each epic ships as a **minor** release: `1.N.0`.
 | Hotfixes / correctness bugs | [bug-reports/](./bug-reports/README.md) | Patch on current minor |
 | Planned features / architecture | **this file** | Minor `1.N.0` |
 
-Current package: **1.10.2**. Shipped through **1.9.x** (network soft breaker, sync hub, IAP harden) and **1.10.0** (Economy Virtual Purchases). Next planned server epic is **1.11.0** Cloud Code.
+Current package: **1.11.0**. Shipped **1.10.x** (deferred economy, IAP pending drain) and **1.11.0** (Economy Purchase Catalog). Next planned server epic is **1.12.0** Cloud Code.
 
 ---
 
@@ -21,8 +21,8 @@ Current package: **1.10.2**. Shipped through **1.9.x** (network soft breaker, sy
 - Baseline for `1.9.x` patches
 
 ### Out of scope for 1.9.0
-- Cloud Code modules → **1.11.0**
-- Server-verified entitlements → **1.12.0**
+- Cloud Code modules → **1.12.0**
+- Server-verified entitlements → **1.13.0**
 
 ---
 
@@ -44,10 +44,27 @@ Correctness / UX patches on the 1.9 line (IAP single-flight, auth recover, soft 
 ### Follow-up patches
 - **1.10.1** — Unity `.meta` GUIDs for the new scripts
 - **1.10.2** — XML IntelliSense + docs sync (virtual purchases guide, ROADMAP/bootstrap)
+- **1.10.3** — deferred economy sync (`FlushPendingAsync`, optimistic online writes)
+- **1.10.4** — IAP pending-order drain + indeterminate purchase outcome
 
 ---
 
-## [1.11.0] — Cloud Code: server-authoritative mutations
+## [1.11.0] — Economy Purchase Catalog — **shipped**
+
+**Why:** Dynamic shop UI needs UGS-backed purchase definitions (costs, rewards, store ids) without client updates.
+
+### Scope
+- `IEconomyPurchaseCatalog` + `UGSEconomyPurchaseCatalog` + `MockEconomyPurchaseCatalog`
+- `RefreshAsync`, `Query(PurchaseCatalogQuery)`, `TryGet`, `GetVirtual` / `GetRealMoney`
+- Docs: [purchase-catalog.md](./purchase-catalog.md)
+
+### Out of scope for 1.11.0
+- Localized RMP prices (still Unity IAP)
+- Purchase execution (unchanged VP / IAP services)
+
+---
+
+## [1.12.0] — Cloud Code: server-authoritative mutations
 
 **Why:** Client Economy has no server idempotency; true at-most-once grants and safe account merge need a server.
 
@@ -57,9 +74,9 @@ Correctness / UX patches on the 1.9 line (IAP single-flight, auth recover, soft 
 - Durable server-side dedupe store (transaction id → applied)
 - Docs: trust boundary (what stays client-optimistic vs must be server)
 
-### Out of scope for 1.11.0
+### Out of scope for 1.12.0
 - Full anti-cheat / replay protection beyond idempotent writes
-- Admin orphan-cleanup UI (see 1.13.0)
+- Admin orphan-cleanup UI (see 1.14.0)
 
 ### Depends on
 - Unity Cloud Code project wiring in consuming games (Maze)
@@ -67,7 +84,7 @@ Correctness / UX patches on the 1.9 line (IAP single-flight, auth recover, soft 
 
 ---
 
-## [1.12.0] — Server-verified entitlements
+## [1.13.0] — Server-verified entitlements
 
 **Why:** Cloud Save entitlements are client-writable (`RedeemWithEconomy = false` / VIP-style flags).
 
@@ -77,11 +94,11 @@ Correctness / UX patches on the 1.9 line (IAP single-flight, auth recover, soft 
 - Maze: no-ads and similar stay restore-from-store + server confirm
 
 ### Depends on
-- 1.11.0 Cloud Code (or Economy redeem-only policy enforced in docs + game)
+- 1.12.0 Cloud Code (or Economy redeem-only policy enforced in docs + game)
 
 ---
 
-## [1.13.0] — Account link: orphan cleanup & merge helpers
+## [1.14.0] — Account link: orphan cleanup & merge helpers
 
 **Why:** Client cannot `DeleteAccount` on the previous anonymous player after `SignIntoExisting`. Empty-check + SignOut leaves orphans.
 
@@ -92,12 +109,12 @@ Correctness / UX patches on the 1.9 line (IAP single-flight, auth recover, soft 
 - Docs: empty → Delete; non-empty → SignOut + conflict (client policy remains)
 
 ### Depends on
-- 1.11.0
+- 1.12.0
 - Maze SaveConflict + post-link IAP restore (game-side, can land earlier)
 
 ---
 
-## [1.14.0] — Offline-first façade (LocalReady)
+## [1.15.0] — Offline-first façade (LocalReady)
 
 **Why:** Games like Maze should play without blocking forever on UGS bootstrap; ads/IAP hidden offline, pools flush on reconnect.
 
@@ -112,7 +129,7 @@ Maze may ship UX (preloader timeout, hide IAP offline) on game side before this 
 
 ---
 
-## [1.15.0] — Mutation single-flight API surface
+## [1.16.0] — Mutation single-flight API surface
 
 **Why:** Ads/IAP/CloudSave/Auth need one consistent “busy → reject” contract beyond ad-hoc fixes.
 
@@ -131,7 +148,7 @@ Critical ads/economy races are fixed in **1.8.x** / **1.9.x** hotfixes; this epi
 
 - Multi-device achievement merge (per-id, not full-blob LWW)
 - WriteLock-based Economy OCC helpers (still not idempotency)
-- Stronger NetworkStatus than `internetReachability` — **partial in 1.9.6+** (timeouts + soft circuit breaker + `GameServicesSync` reconnect hub in 1.9.7); latency probe / offline-first facade still open → 1.14.0
+- Stronger NetworkStatus than `internetReachability` — **partial in 1.9.6+** (timeouts + soft circuit breaker + `GameServicesSync` reconnect hub in 1.9.7); latency probe / offline-first facade still open → 1.15.0
 - GDPR wipe completeness checklist automation
 
 ---
@@ -145,11 +162,14 @@ Critical ads/economy races are fixed in **1.8.x** / **1.9.x** hotfixes; this epi
 1.10.0  — Economy Virtual Purchases (shipped)
 1.10.1  — Virtual Purchase .meta GUIDs
 1.10.2  — XML docs + markdown sync
-1.11.0  — Cloud Code idempotent mutations (server) ← next planned
-1.12.0  — server-verified entitlements
-1.13.0  — orphan cleanup / link merge helpers
-1.14.0  — offline-first LocalReady in SDK
-1.15.0  — unified single-flight surface
+1.10.3  — deferred economy sync
+1.10.4  — IAP pending drain + indeterminate outcome
+1.11.0  — Economy Purchase Catalog (shipped)
+1.12.0  — Cloud Code idempotent mutations (server) ← next planned
+1.13.0  — server-verified entitlements
+1.14.0  — orphan cleanup / link merge helpers
+1.15.0  — offline-first LocalReady in SDK
+1.16.0  — unified single-flight surface
 ```
 
 When starting an epic, bump `package.json` to `1.N.0`, add CHANGELOG section, and link the epic heading here as **shipped**.

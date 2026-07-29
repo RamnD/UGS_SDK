@@ -64,3 +64,4 @@ if (!ok)
 - Bounded by `NetworkRequest` timeout (15s for the purchase call).
 - Transport failures feed `NetworkStatus.ReportFailure` (soft circuit breaker).
 - No offline queue for virtual purchases — unlike `IInventoryService` Add/Spend for mapper-allowed currencies.
+- To list purchase definitions for shop UI, use [`IEconomyPurchaseCatalog`](purchase-catalog.md) (read-only; does not execute purchases).

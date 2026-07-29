@@ -260,5 +260,6 @@ Spend never throws for gameplay soft-failures. The pending queue flushes on the 
 ## Related
 
 - Soft-currency / free **Virtual Purchases** (Economy dashboard bundles): [virtual-purchases.md](virtual-purchases.md)
+- **Purchase catalog** (dynamic shop definitions from Economy): [purchase-catalog.md](purchase-catalog.md)
 - Stackable consumables: [consumables.md](consumables.md)
 - Real-money IAP: [iap.md](iap.md)

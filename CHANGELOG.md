@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.11.0] - 2026-07-29
+
+### Added
+- **Economy:** `IEconomyPurchaseCatalog` + `UGSEconomyPurchaseCatalog` — read-only UGS purchase definitions for dynamic shop UI (`RefreshAsync`, `Query`, `GetAll`, `GetVirtual`, `GetRealMoney`, `TryGet`).
+- **Economy:** `PurchaseCatalogEntry`, `PurchaseCatalogLine`, `PurchaseCatalogQuery`, and `PurchaseCatalogFiltering` helpers.
+- **Mock:** `MockEconomyPurchaseCatalog` for offline / test flows.
+- **Docs:** [docs/purchase-catalog.md](docs/purchase-catalog.md).
+
 ## [1.10.4] - 2026-07-29
 
 ### Added

@@ -13,7 +13,7 @@ Add to your project's `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git#v1.10.4"
+    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git#v1.11.0"
   }
 }
 ```
@@ -39,6 +39,7 @@ Optional sample: **Package Manager → RamnD Game Services SDK → Samples → I
 | Initialization & bootstrap | [docs/bootstrap.md](docs/bootstrap.md) |
 | Auth & player name | [docs/auth.md](docs/auth.md) |
 | Economy (currency & items) | [docs/economy.md](docs/economy.md) |
+| Purchase catalog (dynamic shop definitions) | [docs/purchase-catalog.md](docs/purchase-catalog.md) |
 | Virtual purchases (soft-currency / free bundles) | [docs/virtual-purchases.md](docs/virtual-purchases.md) |
 | Consumables (stackable) | [docs/consumables.md](docs/consumables.md) |
 | Real money purchases (IAP + Economy redeem) | [docs/iap.md](docs/iap.md) |
