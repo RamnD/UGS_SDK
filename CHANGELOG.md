@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.10.4] - 2026-07-29
+
+### Added
+- **IAP:** `ProcessPendingPurchasesAsync` — fetch + redeem/confirm stuck pending store orders (Apple/Google). Runs automatically at end of `InitializeAsync` and again before each `PurchaseAsync`.
+- **IAP:** `RealMoneyPurchaseOutcome` + `LastPurchaseOutcome` / `LastPurchaseGrantedRewards` so games can distinguish cancel / hard fail / indeterminate (timeout, missing receipt, transport) and avoid “no charges” UX after a grant already landed.
+- **IAP:** transaction-id dedupe so the same pending order is not redeemed twice when both `OnPurchasesFetched` and `OnPurchasePending` fire.
+
+### Changed
+- **IAP:** missing receipt / redeem timeout / transport failures mark the attempt as `Indeterminate` (not a hard “no charges” failure).
+
 ## [1.10.3] - 2026-07-29
 
 ### Changed

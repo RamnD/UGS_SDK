@@ -19,6 +19,7 @@ public interface IRealMoneyPurchaseService
 
     /// <summary>
     /// Initializes the purchase service and registers all product definitions with the store.
+    /// Drains any pending (unconfirmed) store transactions after connect.
     /// Safe to call multiple times.
     /// </summary>
     /// <param name="products">Catalog of products to register with Unity IAP / the store.</param>
@@ -34,24 +35,45 @@ public interface IRealMoneyPurchaseService
     void EnsureProductsFetched();
 
     /// <summary>
+    /// Fetches existing store purchases and redeems / confirms any pending orders.
+    /// Call on resume or after auth if init already ran. Safe to call concurrently
+    /// (callers await the same in-flight drain).
+    /// </summary>
+    Task ProcessPendingPurchasesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Starts a purchase flow for a configured product.
+    /// Drains pending store transactions first so stuck receipts do not mix with the new buy.
     /// Returns true when the purchase has been processed successfully.
     /// Rejects with false if another purchase is already in flight (single-flight).
     /// </summary>
     /// <param name="productId"><see cref="RealMoneyProductDefinition.ProductId"/> (Economy / game key).</param>
     /// <param name="cancellationToken">Cancels waiting for the store callback.</param>
-    /// <returns>True on success; false on cancel, failure, or busy reject.</returns>
+    /// <returns>True on success; false on cancel, failure, indeterminate, or busy reject.</returns>
     Task<bool> PurchaseAsync(
         string productId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Outcome of the most recent <see cref="PurchaseAsync"/>.
+    /// Valid immediately after that call returns.
+    /// </summary>
+    RealMoneyPurchaseOutcome LastPurchaseOutcome { get; }
+
+    /// <summary>
     /// True when the most recent <see cref="PurchaseAsync"/> returned false because the
-    /// player cancelled the store sheet. False after success, a real failure, busy reject,
-    /// or when the platform does not distinguish cancel.
-    /// Valid to read immediately after <see cref="PurchaseAsync"/> returns false.
+    /// player cancelled the store sheet. Equivalent to
+    /// <see cref="LastPurchaseOutcome"/> == <see cref="RealMoneyPurchaseOutcome.Cancelled"/>.
     /// </summary>
     bool LastPurchaseWasUserCancelled { get; }
+
+    /// <summary>
+    /// True when rewards were granted (Economy redeem and/or entitlements) during the most
+    /// recent <see cref="PurchaseAsync"/> attempt — including recovery of a stuck pending
+    /// transaction that completed while waiting. Use this to avoid showing a hard failure
+    /// after the player already received items.
+    /// </summary>
+    bool LastPurchaseGrantedRewards { get; }
 
     /// <summary>
     /// Triggers store restoration / purchases fetch for non-consumables and subscriptions.
@@ -73,7 +95,7 @@ public interface IRealMoneyPurchaseService
     bool TryGetProductInfo(string productId, out RealMoneyProductInfo info);
 
     /// <summary>
-    /// Fired after a purchase has been processed successfully.
+    /// Fired after a purchase has been processed successfully (including pending recovery).
     /// Argument = product id.
     /// </summary>
     event Action<string> PurchaseSucceeded;

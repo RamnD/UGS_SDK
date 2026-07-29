@@ -31,18 +31,31 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     readonly Dictionary<string, TaskCompletionSource<bool>> _purchaseRequests = new(StringComparer.Ordinal);
     readonly Dictionary<string, RealMoneyProductDefinition> _productsById = new(StringComparer.Ordinal);
     readonly Dictionary<string, RealMoneyProductDefinition> _productsByStoreId = new(StringComparer.Ordinal);
+    readonly HashSet<string> _txInFlightOrDone = new(StringComparer.Ordinal);
+    readonly object _pendingGate = new object();
 
     StoreController _storeController;
     bool _isInitialized;
     bool _fetchRequested;
     bool _areProductsReady;
     bool _lastPurchaseWasUserCancelled;
+    bool _lastPurchaseGrantedRewards;
+    bool _lastRedeemIndeterminate;
+    RealMoneyPurchaseOutcome _lastPurchaseOutcome;
+    string _activePurchaseProductId;
+    Task _pendingDrainTask;
+    TaskCompletionSource<bool> _purchasesFetchTcs;
+    int _pendingHandlersInFlight;
 
     public bool IsInitialized => _isInitialized;
 
     public bool AreProductsReady => _areProductsReady;
 
+    public RealMoneyPurchaseOutcome LastPurchaseOutcome => _lastPurchaseOutcome;
+
     public bool LastPurchaseWasUserCancelled => _lastPurchaseWasUserCancelled;
+
+    public bool LastPurchaseGrantedRewards => _lastPurchaseGrantedRewards;
 
     public event Action<string> PurchaseSucceeded;
 
@@ -105,9 +118,10 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         _storeController.AppleStoreExtendedPurchaseService?.SetRefreshAppReceipt(true);
 
         FetchProducts();
-        _storeController.FetchPurchases();
         _isInitialized = true;
-        Debug.Log("[SDK][IAP] Store connected.");
+        Debug.Log("[SDK][IAP] Store connected — draining pending purchases...");
+        await ProcessPendingPurchasesAsync(cancellationToken);
+        Debug.Log("[SDK][IAP] Pending purchase drain finished.");
     }
 
     public void EnsureProductsFetched()
@@ -120,11 +134,96 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         FetchProducts();
     }
 
+    public async Task ProcessPendingPurchasesAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_isInitialized || _storeController == null)
+            return;
+
+        Task drain;
+        lock (_pendingGate)
+        {
+            if (_pendingDrainTask != null && !_pendingDrainTask.IsCompleted)
+                drain = _pendingDrainTask;
+            else
+            {
+                drain = DrainPendingPurchasesCoreAsync(cancellationToken);
+                _pendingDrainTask = drain;
+            }
+        }
+
+        try
+        {
+            await drain;
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        finally
+        {
+            lock (_pendingGate)
+            {
+                if (ReferenceEquals(_pendingDrainTask, drain) && drain.IsCompleted)
+                    _pendingDrainTask = null;
+            }
+        }
+    }
+
+    async Task DrainPendingPurchasesCoreAsync(CancellationToken cancellationToken)
+    {
+        var fetchTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_pendingGate)
+            _purchasesFetchTcs = fetchTcs;
+
+        try
+        {
+            _storeController.FetchPurchases();
+
+            Task completed = await Task.WhenAny(fetchTcs.Task, Task.Delay(20000, cancellationToken));
+            if (completed != fetchTcs.Task)
+            {
+                Debug.LogWarning("[SDK][IAP] FetchPurchases timed out while draining pending orders.");
+                fetchTcs.TrySetResult(false);
+            }
+            else
+            {
+                await fetchTcs.Task;
+            }
+
+            // Wait for any OnPurchasePending handlers kicked by the fetch / store.
+            await WaitForPendingHandlersIdleAsync(cancellationToken);
+        }
+        finally
+        {
+            lock (_pendingGate)
+            {
+                if (ReferenceEquals(_purchasesFetchTcs, fetchTcs))
+                    _purchasesFetchTcs = null;
+            }
+        }
+    }
+
+    async Task WaitForPendingHandlersIdleAsync(CancellationToken cancellationToken)
+    {
+        const int maxWaitMs = 60000;
+        int waited = 0;
+        while (Volatile.Read(ref _pendingHandlersInFlight) > 0 && waited < maxWaitMs)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.Delay(100, cancellationToken);
+            waited += 100;
+        }
+
+        if (Volatile.Read(ref _pendingHandlersInFlight) > 0)
+            Debug.LogWarning("[SDK][IAP] Pending purchase handlers still running after drain wait.");
+    }
+
     public async Task<bool> PurchaseAsync(
         string productId,
         CancellationToken cancellationToken = default)
     {
         _lastPurchaseWasUserCancelled = false;
+        _lastPurchaseGrantedRewards = false;
+        _lastRedeemIndeterminate = false;
+        _lastPurchaseOutcome = RealMoneyPurchaseOutcome.None;
+        _activePurchaseProductId = null;
 
         if (!_isInitialized || _storeController == null)
             throw new InvalidOperationException("InitializeAsync must complete before PurchaseAsync.");
@@ -138,7 +237,22 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         {
             Debug.LogWarning(
                 $"[SDK][IAP] Purchase rejected for '{productId}' — another purchase is already in flight.");
+            _lastPurchaseOutcome = RealMoneyPurchaseOutcome.Failed;
             return false;
+        }
+
+        // Clear stuck store transactions before opening a new sheet.
+        try
+        {
+            await ProcessPendingPurchasesAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[SDK][IAP] Pre-purchase pending drain failed: {ex.Message}");
         }
 
         string storeId = definition.ResolvedStoreProductId;
@@ -148,11 +262,13 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             EnsureProductsFetched();
             Debug.LogWarning(
                 $"[SDK][IAP] Product '{productId}' (store id '{storeId}') not fetched from the store — refetch kicked.");
+            _lastPurchaseOutcome = RealMoneyPurchaseOutcome.Failed;
             return false;
         }
 
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _purchaseRequests[productId] = tcs;
+        _activePurchaseProductId = productId;
         _storeController.PurchaseProduct(product);
 
         using CancellationTokenRegistration ctr = cancellationToken.Register(() =>
@@ -161,7 +277,53 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                 tcs.TrySetCanceled(cancellationToken);
         });
 
-        return await tcs.Task;
+        try
+        {
+            bool ok = await tcs.Task;
+            FinalizePurchaseOutcome(ok);
+            // Rewards may have landed from stuck-pending recovery even if the awaiter saw false.
+            return ok || _lastPurchaseGrantedRewards;
+        }
+        catch (OperationCanceledException)
+        {
+            _lastPurchaseOutcome = RealMoneyPurchaseOutcome.Cancelled;
+            throw;
+        }
+        finally
+        {
+            if (string.Equals(_activePurchaseProductId, productId, StringComparison.Ordinal))
+                _activePurchaseProductId = null;
+        }
+    }
+
+    void FinalizePurchaseOutcome(bool success)
+    {
+        if (success)
+        {
+            _lastPurchaseOutcome = RealMoneyPurchaseOutcome.Success;
+            return;
+        }
+
+        if (_lastPurchaseWasUserCancelled)
+        {
+            _lastPurchaseOutcome = RealMoneyPurchaseOutcome.Cancelled;
+            return;
+        }
+
+        // Grant already applied (e.g. stuck pending redeemed while waiting) — treat as soft success.
+        if (_lastPurchaseGrantedRewards)
+        {
+            _lastPurchaseOutcome = RealMoneyPurchaseOutcome.Success;
+            return;
+        }
+
+        if (_lastRedeemIndeterminate)
+        {
+            _lastPurchaseOutcome = RealMoneyPurchaseOutcome.Indeterminate;
+            return;
+        }
+
+        _lastPurchaseOutcome = RealMoneyPurchaseOutcome.Failed;
     }
 
     public void RestorePurchases()
@@ -246,6 +408,19 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
 
     async Task HandlePurchasePendingAsync(PendingOrder order)
     {
+        Interlocked.Increment(ref _pendingHandlersInFlight);
+        try
+        {
+            await HandlePurchasePendingCoreAsync(order);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _pendingHandlersInFlight);
+        }
+    }
+
+    async Task HandlePurchasePendingCoreAsync(PendingOrder order)
+    {
         Product product = order?.CartOrdered?.Items().FirstOrDefault()?.Product;
         string storeId = product?.definition?.id;
         if (product == null || string.IsNullOrWhiteSpace(storeId))
@@ -260,8 +435,19 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             return;
         }
 
+        string txKey = BuildTransactionDedupeKey(order, storeId);
+        lock (_pendingGate)
+        {
+            if (!_txInFlightOrDone.Add(txKey))
+            {
+                Debug.Log($"[SDK][IAP] Skipping duplicate pending tx '{txKey}' for '{definition.ProductId}'.");
+                return;
+            }
+        }
+
         string productId = definition.ProductId;
         bool granted = false;
+        bool keepDedupe = false;
         try
         {
             if (definition.RedeemWithEconomy)
@@ -278,6 +464,8 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
 
             _entitlements.GrantRange(definition.GrantedEntitlementIds);
             granted = true;
+            keepDedupe = true;
+            MarkRewardsGranted(productId);
 
             // Complete success before store confirm so a sync OnPurchaseFailed from Confirm
             // cannot flip the awaiter to false after Economy/entitlements already applied.
@@ -300,6 +488,8 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             Debug.LogError($"[SDK][IAP] Failed to process purchase '{productId}': {ex}");
             if (granted)
             {
+                keepDedupe = true;
+                MarkRewardsGranted(productId);
                 CompletePurchaseRequest(productId, true);
                 PurchaseSucceeded?.Invoke(productId);
             }
@@ -308,6 +498,40 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                 CompletePurchaseRequest(productId, false);
             }
         }
+        finally
+        {
+            if (!keepDedupe)
+            {
+                lock (_pendingGate)
+                    _txInFlightOrDone.Remove(txKey);
+            }
+        }
+    }
+
+    void MarkRewardsGranted(string productId)
+    {
+        if (string.IsNullOrWhiteSpace(productId))
+            return;
+
+        if (string.Equals(_activePurchaseProductId, productId, StringComparison.Ordinal)
+            || _purchaseRequests.ContainsKey(productId))
+        {
+            _lastPurchaseGrantedRewards = true;
+        }
+    }
+
+    static string BuildTransactionDedupeKey(PendingOrder order, string storeId)
+    {
+        string tx = order?.Info?.TransactionID;
+        if (!string.IsNullOrWhiteSpace(tx))
+            return tx;
+
+        // Fallback when store omits TransactionID — better than processing forever.
+        string receipt = order?.Info?.Receipt;
+        if (!string.IsNullOrWhiteSpace(receipt))
+            return $"receipt:{storeId}:{receipt.GetHashCode():X8}";
+
+        return $"pending:{storeId}:{Guid.NewGuid():N}";
     }
 
     async Task<bool> RedeemEconomyPurchaseAsync(
@@ -353,6 +577,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                 $"(store id '{storeId}'). " +
                 $"product.receipt empty={string.IsNullOrWhiteSpace(product?.receipt)}; " +
                 $"order.tx={order?.Info?.TransactionID}.");
+            _lastRedeemIndeterminate = true;
             return false;
         }
 
@@ -403,6 +628,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                 $"order.tx={order?.Info?.TransactionID}; " +
                 $"jwsPresent={!string.IsNullOrWhiteSpace(jws)}. " +
                 "Economy RedeemAppleAppStorePurchaseAsync requires StoreKit 1 App Receipt, not jwsRepresentation.");
+            _lastRedeemIndeterminate = true;
             return false;
         }
 
@@ -444,6 +670,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         if (ex is TimeoutException)
         {
             NetworkStatus.ReportFailure();
+            _lastRedeemIndeterminate = true;
             Debug.LogError($"[SDK][IAP] Economy redeem timed out for '{economyPurchaseId}': {ex.Message}");
             return false;
         }
@@ -451,16 +678,19 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         if (IsRedeemTransportFailure(ex))
         {
             NetworkStatus.ReportFailure();
+            _lastRedeemIndeterminate = true;
             Debug.LogError($"[SDK][IAP] Economy redeem transport failure for '{economyPurchaseId}': {ex.Message}");
             return false;
         }
 
         if (ex is EconomyException)
         {
+            // Hard reject from Economy — typically not charged / not granted.
             Debug.LogError($"[SDK][IAP] Economy redeem failed for '{economyPurchaseId}': {ex}");
             return false;
         }
 
+        _lastRedeemIndeterminate = true;
         Debug.LogError($"[SDK][IAP] Unexpected redeem failure for '{economyPurchaseId}': {ex}");
         return false;
     }
@@ -722,35 +952,65 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                 $"[SDK][IAP] Purchase failed: {productId}; storeId={storeId}; " +
                 $"reason={order?.FailureReason}; details={order?.Details}");
 
+        // If rewards already landed from a parallel pending redeem, keep success path.
+        if (_lastPurchaseGrantedRewards
+            && string.Equals(productId, _activePurchaseProductId, StringComparison.Ordinal))
+        {
+            CompletePurchaseRequest(productId, true);
+            return;
+        }
+
         CompletePurchaseRequest(productId, false);
     }
 
     void OnPurchasesFetched(Orders orders)
     {
-        if (orders == null)
-            return;
-
-        foreach (RealMoneyProductDefinition definition in _productsById.Values)
+        try
         {
-            if (!definition.RestoreEntitlementsFromExistingPurchases)
-                continue;
+            if (orders == null)
+                return;
 
-            string storeId = definition.ResolvedStoreProductId;
-            bool foundExistingPurchase =
-                orders.ConfirmedOrders.Any(order => ContainsProduct(order, storeId));
+            int pendingCount = orders.PendingOrders?.Count ?? 0;
+            if (pendingCount > 0)
+            {
+                Debug.Log($"[SDK][IAP] FetchPurchases returned {pendingCount} pending order(s) — redeeming.");
+                foreach (PendingOrder pending in orders.PendingOrders)
+                    _ = HandlePurchasePendingAsync(pending);
+            }
 
-            if (!foundExistingPurchase)
-                continue;
+            foreach (RealMoneyProductDefinition definition in _productsById.Values)
+            {
+                if (!definition.RestoreEntitlementsFromExistingPurchases)
+                    continue;
 
-            _entitlements.GrantRange(definition.GrantedEntitlementIds);
-            if (definition.GrantedEntitlementIds != null && definition.GrantedEntitlementIds.Length > 0)
-                Debug.Log($"[SDK][IAP] Restored entitlements for '{definition.ProductId}'.");
+                string storeId = definition.ResolvedStoreProductId;
+                bool foundExistingPurchase =
+                    orders.ConfirmedOrders.Any(order => ContainsProduct(order, storeId));
+
+                if (!foundExistingPurchase)
+                    continue;
+
+                _entitlements.GrantRange(definition.GrantedEntitlementIds);
+                if (definition.GrantedEntitlementIds != null && definition.GrantedEntitlementIds.Length > 0)
+                    Debug.Log($"[SDK][IAP] Restored entitlements for '{definition.ProductId}'.");
+            }
+        }
+        finally
+        {
+            TaskCompletionSource<bool> tcs;
+            lock (_pendingGate)
+                tcs = _purchasesFetchTcs;
+            tcs?.TrySetResult(true);
         }
     }
 
     void OnPurchasesFetchFailed(PurchasesFetchFailureDescription failure)
     {
         Debug.LogWarning($"[SDK][IAP] Existing purchases fetch failed: {failure?.Message}");
+        TaskCompletionSource<bool> tcs;
+        lock (_pendingGate)
+            tcs = _purchasesFetchTcs;
+        tcs?.TrySetResult(false);
     }
 
     Product FindStoreProduct(string storeId) =>

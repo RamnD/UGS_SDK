@@ -222,29 +222,39 @@ Use `PurchaseSucceeded` if your UI wants to react to a completed purchase withou
 
 Use `ProductsUpdated` / `TryGetProductInfo` to fill buy-button price labels from App Store / Google Play. Keep a prefab placeholder price as fallback until `AreProductsReady` is true or when `TryGetProductInfo` returns false.
 
-### User cancel vs real failure
+### User cancel vs real failure vs indeterminate
 
-`PurchaseAsync` returns `false` for both store cancel and real failures. After it returns, check:
+`PurchaseAsync` returns `false` for cancel, hard failure, and indeterminate (unless rewards were already granted — then it returns `true`). After it returns, read:
 
 ```csharp
 bool ok = await _iap.PurchaseAsync(productId);
-if (ok)
-    return;
-
-if (_iap.LastPurchaseWasUserCancelled)
+if (ok || _iap.LastPurchaseGrantedRewards)
 {
-    // Store sheet dismissed — skip error UI / ServiceFault.
+    // Success UI / sync balances
     return;
 }
 
-// Real failure — show error.
+switch (_iap.LastPurchaseOutcome)
+{
+    case RealMoneyPurchaseOutcome.Cancelled:
+        // Store sheet dismissed — skip error UI.
+        return;
+    case RealMoneyPurchaseOutcome.Indeterminate:
+        // Payment may have gone through — soft copy, refresh balances, do NOT say "no charges".
+        return;
+    default:
+        // Hard failure — show error.
+        break;
+}
 ```
 
+Pending recovery: `InitializeAsync` and every `PurchaseAsync` call `ProcessPendingPurchasesAsync` first so stuck Apple/Google orders redeem before a new store sheet opens. Games may also call `ProcessPendingPurchasesAsync` on app resume.
+
 Notes:
-- Flag is reset at the start of each `PurchaseAsync`.
-- Only set when the failure still belongs to that in-flight request (`PurchaseFailureReason.UserCancelled`).
+- Flag / outcome reset at the start of each `PurchaseAsync`.
+- Only set cancel when the failure still belongs to that in-flight request (`PurchaseFailureReason.UserCancelled`).
 - Platforms that do not distinguish cancel leave the flag `false` (treat as failure).
-- Purchases are **single-flight**: a second `PurchaseAsync` while one is open returns `false` immediately (flag stays `false`).
+- Purchases are **single-flight**: a second `PurchaseAsync` while one is open returns `false` immediately.
 
 ---
 
