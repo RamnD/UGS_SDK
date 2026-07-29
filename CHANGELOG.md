@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.10.3] - 2026-07-29
+
+### Changed
+- **Economy:** default Add/Spend path is deferred when the currency mapper allows the operation offline — optimistic local cache + durable pending queue even while online. Pass `syncImmediately: true` to force an online UGS write for a specific transaction.
+- **Economy:** add `HasPendingTransactions` and `FlushPendingAsync` on `IInventoryService<TCurrency>` so games can sync at explicit anchors (leave shop, level load, inventory exit) without blocking shop UI.
+
 ## [1.10.2] - 2026-07-28
 
 ### Changed

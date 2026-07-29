@@ -20,6 +20,9 @@ public sealed class MockInventoryService<TCurrency> : IInventoryService<TCurrenc
         _balances.TryGetValue(type, out var value) ? value : 0;
 
     /// <inheritdoc/>
+    public bool HasPendingTransactions => false;
+
+    /// <inheritdoc/>
     public void ClearLocalCache() => _balances.Clear();
 
     /// <inheritdoc/>
@@ -31,19 +34,35 @@ public sealed class MockInventoryService<TCurrency> : IInventoryService<TCurrenc
     }
 
     /// <inheritdoc/>
-    public Task AddCurrencyAsync(TCurrency type, int amount,
-        CancellationToken cancellationToken = default)
+    public Task FlushPendingAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (amount <= 0) return Task.CompletedTask;
-        _balances[type] = GetCachedBalance(type) + amount;
-        Debug.Log($"[Mock Economy] Add {amount} {type} → {_balances[type]}");
+        Debug.Log("[Mock Economy] FlushPending (mock).");
         return Task.CompletedTask;
     }
 
     /// <inheritdoc/>
-    public Task<bool> TrySpendCurrencyAsync(TCurrency type, int amount,
-        CancellationToken cancellationToken = default)
+    public Task AddCurrencyAsync(
+        TCurrency type,
+        int amount,
+        CancellationToken cancellationToken = default,
+        bool syncImmediately = false)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (amount <= 0) return Task.CompletedTask;
+        _balances[type] = GetCachedBalance(type) + amount;
+        Debug.Log(
+            $"[Mock Economy] Add {amount} {type} → {_balances[type]}" +
+            (syncImmediately ? " (immediate)" : " (deferred)"));
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> TrySpendCurrencyAsync(
+        TCurrency type,
+        int amount,
+        CancellationToken cancellationToken = default,
+        bool syncImmediately = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var current = GetCachedBalance(type);
@@ -54,7 +73,9 @@ public sealed class MockInventoryService<TCurrency> : IInventoryService<TCurrenc
         }
 
         _balances[type] = current - amount;
-        Debug.Log($"[Mock Economy] Spend {amount} {type} → {_balances[type]}");
+        Debug.Log(
+            $"[Mock Economy] Spend {amount} {type} → {_balances[type]}" +
+            (syncImmediately ? " (immediate)" : " (deferred)"));
         return Task.FromResult(true);
     }
 }

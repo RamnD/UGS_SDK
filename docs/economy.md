@@ -134,24 +134,40 @@ Full at-most-once server dedupe requires Cloud Code — see [ROADMAP 1.10.0](./R
 
 ### When deltas are queued
 
-1. Device is offline (`NetworkStatus.IsOnline == false`) and the mapper allows the operation.
-2. Device looks online, but the UGS call fails with a **recoverable** typed error (`EconomyExceptionReason` network / timeout / 502–504 / rate limit / 500, or `TimeoutException` / socket / `HttpRequestException`) and the mapper allows the operation.
+1. **Default (deferred):** device is online *or* offline, and the mapper allows the operation — UI updates immediately; the delta goes into the pending queue.
+2. Device looks online, `syncImmediately: true` was requested, but the UGS call fails with a **recoverable** typed error and the mapper allows the operation — fall back to the queue.
+3. Currencies with `IsOfflineAllowed == false` never queue; they always require an online write.
+
+```csharp
+// Default — local + queue (shop / spend / grant). No await of UGS.
+await economy.AddCurrencyAsync(CurrencyType.Gold, 100);
+await economy.TrySpendCurrencyAsync(CurrencyType.Gold, 50);
+
+// Escape hatch — write to UGS right now when online.
+await economy.AddCurrencyAsync(CurrencyType.Gold, 100, syncImmediately: true);
+```
 
 Queued **pending** amounts for the same currency are **coalesced** into one net delta (`+5` then `-2` → `+3`). In-flight rows are not coalesced into; a new pending row is added beside them.
 
 ### When the queue flushes
 
-Call `RefreshBalancesAsync()`:
+Call `FlushPendingAsync()` (upload only) or `RefreshBalancesAsync()` (flush + pull):
 
 - at sign-in / `OnAuthenticated`
 - after reconnect
 - on app resume (recommended)
+- **game anchors:** leave shop, maze load between levels, victory/defeat, exit inventory tab
+- **before** Virtual Purchase / real-money IAP (so the server sees the latest soft balances)
 
-Flow:
+Flow (`RefreshBalancesAsync`):
 
 1. Flush pending deltas to UGS (stop on first recoverable failure; keep the remaining tail).
 2. If anything is still pending — **keep local cache**, do not overwrite from server.
 3. Otherwise `GetBalancesAsync` and replace the cache from the server.
+
+`HasPendingTransactions` is true while durable pending / in-flight / unconfirmed rows remain.
+
+Virtual Purchases and real-money IAP stay server-authoritative — they do not use this deferred path.
 
 ---
 

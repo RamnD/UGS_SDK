@@ -6,10 +6,11 @@ using UnityEngine;
 
 /// <summary>
 /// <see cref="IInventoryService{TCurrency}"/> implementation via Unity Gaming Services Economy SDK.
-/// Offline and recoverable network failures use optimistic <see cref="BalanceCache{TCurrency}"/>
-/// plus a durable <see cref="PendingTransactionQueue{TCurrency}"/> flushed on
-/// <see cref="RefreshBalancesAsync"/>. Timed-out writes are treated as indeterminate and
-/// reconciled against absolute server balances (no blind double-apply).
+/// Default writes are deferred (optimistic <see cref="BalanceCache{TCurrency}"/> + durable
+/// <see cref="PendingTransactionQueue{TCurrency}"/>) when the mapper allows the operation.
+/// Flush via <see cref="FlushPendingAsync"/> / <see cref="RefreshBalancesAsync"/>.
+/// Pass <c>syncImmediately: true</c> to force an online write. Timed-out immediate writes are
+/// treated as indeterminate and reconciled against absolute server balances.
 /// </summary>
 /// <typeparam name="TCurrency">Project currency enum.</typeparam>
 public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
@@ -33,10 +34,22 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
     public long GetCachedBalance(TCurrency type) => _cache.Get(type);
 
     /// <inheritdoc/>
+    public bool HasPendingTransactions => _pendingQueue.HasPending;
+
+    /// <inheritdoc/>
     public void ClearLocalCache()
     {
         _cache.Clear();
         _pendingQueue.Clear();
+    }
+
+    /// <inheritdoc/>
+    public async Task FlushPendingAsync(CancellationToken cancellationToken = default)
+    {
+        if (!NetworkStatus.IsOnline || !_pendingQueue.HasFlushablePending)
+            return;
+
+        await _pendingQueue.FlushAsync(_cache, cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -128,11 +141,23 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
     }
 
     /// <inheritdoc/>
-    public async Task AddCurrencyAsync(TCurrency type, int amount,
-        CancellationToken cancellationToken = default)
+    public async Task AddCurrencyAsync(
+        TCurrency type,
+        int amount,
+        CancellationToken cancellationToken = default,
+        bool syncImmediately = false)
     {
         if (amount <= 0)
             return;
+
+        if (ShouldDefer(type, InventoryOperation.Add, syncImmediately))
+        {
+            ApplyLocalDeltaOrThrow(type, amount, InventoryOperation.Add);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            Debug.Log($"[Economy] Deferred +{amount} {type} → {_cache.Get(type)} (queued)");
+#endif
+            return;
+        }
 
         if (!NetworkStatus.IsOnline)
         {
@@ -186,11 +211,30 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
     }
 
     /// <inheritdoc/>
-    public async Task<bool> TrySpendCurrencyAsync(TCurrency type, int amount,
-        CancellationToken cancellationToken = default)
+    public async Task<bool> TrySpendCurrencyAsync(
+        TCurrency type,
+        int amount,
+        CancellationToken cancellationToken = default,
+        bool syncImmediately = false)
     {
         if (amount <= 0)
             return false;
+
+        if (ShouldDefer(type, InventoryOperation.Spend, syncImmediately))
+        {
+            if (!_mapper.IsOfflineAllowed(type, InventoryOperation.Spend))
+            {
+                Debug.LogWarning($"[Economy] Spend {type} offline not allowed — returning false.");
+                return false;
+            }
+
+            bool deferred = TryApplyLocalSpend(type, amount);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (deferred)
+                Debug.Log($"[Economy] Deferred -{amount} {type} → {_cache.Get(type)} (queued)");
+#endif
+            return deferred;
+        }
 
         if (!NetworkStatus.IsOnline)
         {
@@ -260,6 +304,18 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
             Debug.LogError($"[Economy] Spend failed {type}: {e.Message}");
             return false;
         }
+    }
+
+    bool ShouldDefer(TCurrency type, InventoryOperation operation, bool syncImmediately)
+    {
+        if (!_mapper.IsOfflineAllowed(type, operation))
+            return false;
+
+        // Escape hatch: force online write when the device is online.
+        if (syncImmediately && NetworkStatus.IsOnline)
+            return false;
+
+        return true;
     }
 
     async Task ReconcileIndeterminateAddAsync(
