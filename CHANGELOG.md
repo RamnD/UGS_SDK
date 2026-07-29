@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.11.1] - 2026-07-29
+
+### Fixed
+- **Unity packaging:** add missing `.meta` for `docs/purchase-catalog.md` and Bootstrap sample scripts so UPM GUIDs stay stable.
+
 ## [1.11.0] - 2026-07-29
 
 ### Added
