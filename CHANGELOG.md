@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.11.3] - 2026-07-30
+
+### Fixed
+- **IAP:** Economy `INVALID_ALREADY_REDEEMED` (422 “already been redeemed”) is treated as idempotent success — refresh balances, grant entitlements, and `ConfirmPurchase` so Apple/Google stop redelivering the stuck pending order (common after anonymous first-buy / interrupted redeem).
+- **IAP:** Economy `INVALID_ANOTHER_PLAYER` confirms the store order without claiming rewards on the current account (e.g. receipt redeemed before anonymous account delete).
+
 ## [1.11.2] - 2026-07-29
 
 ### Added

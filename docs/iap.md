@@ -250,6 +250,10 @@ switch (_iap.LastPurchaseOutcome)
 
 Pending recovery: `InitializeAsync` and every `PurchaseAsync` call `ProcessPendingPurchasesAsync` first so stuck Apple/Google orders redeem before a new store sheet opens. Games may also call `ProcessPendingPurchasesAsync` on app resume.
 
+Economy idempotency:
+- `INVALID_ALREADY_REDEEMED` → treated as success (refresh + entitlements + `ConfirmPurchase`) so a stuck pending after an interrupted redeem does not surface as `IAP_FAILED`.
+- `INVALID_ANOTHER_PLAYER` → `ConfirmPurchase` only (clear store); no grant on the current account (typical after anonymous delete while the receipt stayed on device).
+
 Notes:
 - Flag / outcome reset at the start of each `PurchaseAsync`.
 - Only set cancel when the failure still belongs to that in-flight request (`PurchaseFailureReason.UserCancelled`).

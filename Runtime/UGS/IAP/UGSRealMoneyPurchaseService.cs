@@ -6,6 +6,7 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using Unity.Services.Economy;
+using Unity.Services.Economy.Model;
 using UnityEngine;
 using UnityEngine.Purchasing;
 
@@ -452,13 +453,27 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         {
             if (definition.RedeemWithEconomy)
             {
-                bool redeemed = await RedeemEconomyPurchaseAsync(order, product, definition);
-                if (!redeemed)
+                EconomyRedeemOutcome redeemOutcome =
+                    await RedeemEconomyPurchaseAsync(order, product, definition);
+
+                if (redeemOutcome == EconomyRedeemOutcome.Failed
+                    || redeemOutcome == EconomyRedeemOutcome.Indeterminate)
                 {
                     CompletePurchaseRequest(productId, false);
                     return;
                 }
 
+                if (redeemOutcome == EconomyRedeemOutcome.RedeemedByOtherPlayer)
+                {
+                    // Receipt already owned by another UGS player (e.g. after anonymous delete).
+                    // Confirm the store order so Apple/Google stop redelivering it; do not claim grant.
+                    keepDedupe = true;
+                    TryConfirmPurchase(order, productId, afterGrant: false);
+                    CompletePurchaseRequest(productId, false);
+                    return;
+                }
+
+                // Success or AlreadyRedeemed (idempotent) — continue grant/confirm path.
                 granted = true;
             }
 
@@ -472,16 +487,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             CompletePurchaseRequest(productId, true);
             PurchaseSucceeded?.Invoke(productId);
 
-            try
-            {
-                _storeController.ConfirmPurchase(order);
-            }
-            catch (Exception confirmEx)
-            {
-                Debug.LogWarning(
-                    $"[SDK][IAP] Store confirm failed after grant for '{productId}': {confirmEx.Message}. " +
-                    "Purchase already reported as success; store may retry confirm later.");
-            }
+            TryConfirmPurchase(order, productId, afterGrant: true);
         }
         catch (Exception ex)
         {
@@ -506,6 +512,39 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                     _txInFlightOrDone.Remove(txKey);
             }
         }
+    }
+
+    void TryConfirmPurchase(PendingOrder order, string productId, bool afterGrant)
+    {
+        try
+        {
+            _storeController.ConfirmPurchase(order);
+        }
+        catch (Exception confirmEx)
+        {
+            if (afterGrant)
+            {
+                Debug.LogWarning(
+                    $"[SDK][IAP] Store confirm failed after grant for '{productId}': {confirmEx.Message}. " +
+                    "Purchase already reported as success; store may retry confirm later.");
+            }
+            else
+            {
+                Debug.LogWarning(
+                    $"[SDK][IAP] Store confirm failed for '{productId}' (no grant claimed): {confirmEx.Message}");
+            }
+        }
+    }
+
+    enum EconomyRedeemOutcome
+    {
+        Success,
+        /// <summary>Economy already applied this receipt for the current player — treat as success + confirm.</summary>
+        AlreadyRedeemed,
+        /// <summary>Receipt was redeemed by a different UGS player — confirm store only.</summary>
+        RedeemedByOtherPlayer,
+        Failed,
+        Indeterminate,
     }
 
     void MarkRewardsGranted(string productId)
@@ -534,7 +573,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         return $"pending:{storeId}:{Guid.NewGuid():N}";
     }
 
-    async Task<bool> RedeemEconomyPurchaseAsync(
+    async Task<EconomyRedeemOutcome> RedeemEconomyPurchaseAsync(
         PendingOrder order,
         Product product,
         RealMoneyProductDefinition definition)
@@ -547,7 +586,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             Debug.LogWarning(
                 $"[SDK][IAP] Cannot detect store for '{economyPurchaseId}' (store id '{storeId}'); " +
                 "refusing to redeem.");
-            return false;
+            return EconomyRedeemOutcome.Failed;
         }
 
         if (string.Equals(storeName, GooglePlay.Name, StringComparison.Ordinal))
@@ -558,10 +597,10 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
 
         Debug.LogWarning(
             $"[SDK][IAP] Unsupported store '{storeName}' for '{economyPurchaseId}'; refusing to redeem.");
-        return false;
+        return EconomyRedeemOutcome.Failed;
     }
 
-    async Task<bool> RedeemGooglePlayPurchaseAsync(
+    async Task<EconomyRedeemOutcome> RedeemGooglePlayPurchaseAsync(
         PendingOrder order,
         Product product,
         RealMoneyProductDefinition definition)
@@ -578,7 +617,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                 $"product.receipt empty={string.IsNullOrWhiteSpace(product?.receipt)}; " +
                 $"order.tx={order?.Info?.TransactionID}.");
             _lastRedeemIndeterminate = true;
-            return false;
+            return EconomyRedeemOutcome.Indeterminate;
         }
 
         int localCost = ToMinorUnits(product);
@@ -600,11 +639,11 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         }
         catch (Exception ex)
         {
-            return HandleRedeemFailure(economyPurchaseId, ex);
+            return await HandleRedeemFailureAsync(economyPurchaseId, ex);
         }
     }
 
-    async Task<bool> RedeemAppleAppStorePurchaseAsync(
+    async Task<EconomyRedeemOutcome> RedeemAppleAppStorePurchaseAsync(
         PendingOrder order,
         Product product,
         RealMoneyProductDefinition definition)
@@ -629,7 +668,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                 $"jwsPresent={!string.IsNullOrWhiteSpace(jws)}. " +
                 "Economy RedeemAppleAppStorePurchaseAsync requires StoreKit 1 App Receipt, not jwsRepresentation.");
             _lastRedeemIndeterminate = true;
-            return false;
+            return EconomyRedeemOutcome.Indeterminate;
         }
 
         int localCost = ToMinorUnits(product);
@@ -650,11 +689,11 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         }
         catch (Exception ex)
         {
-            return HandleRedeemFailure(economyPurchaseId, ex);
+            return await HandleRedeemFailureAsync(economyPurchaseId, ex);
         }
     }
 
-    async Task<bool> FinishSuccessfulRedeemAsync(string economyPurchaseId)
+    async Task<EconomyRedeemOutcome> FinishSuccessfulRedeemAsync(string economyPurchaseId)
     {
         NetworkStatus.ReportSuccess();
 
@@ -662,17 +701,46 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             await _economy.RefreshBalancesAsync();
 
         Debug.Log($"[SDK][IAP] Economy redeem succeeded for '{economyPurchaseId}'.");
-        return true;
+        return EconomyRedeemOutcome.Success;
     }
 
-    bool HandleRedeemFailure(string economyPurchaseId, Exception ex)
+    async Task<EconomyRedeemOutcome> HandleRedeemFailureAsync(string economyPurchaseId, Exception ex)
     {
+        if (TryClassifyAlreadyRedeemed(ex, out bool otherPlayer))
+        {
+            if (otherPlayer)
+            {
+                Debug.LogWarning(
+                    $"[SDK][IAP] Economy redeem for '{economyPurchaseId}' belongs to another player — " +
+                    "confirming store order without granting on this account.");
+                return EconomyRedeemOutcome.RedeemedByOtherPlayer;
+            }
+
+            Debug.LogWarning(
+                $"[SDK][IAP] Economy redeem for '{economyPurchaseId}' already applied — " +
+                "treating as success and confirming store order.");
+            if (_economy != null)
+            {
+                try
+                {
+                    await _economy.RefreshBalancesAsync();
+                }
+                catch (Exception refreshEx)
+                {
+                    Debug.LogWarning(
+                        $"[SDK][IAP] Balance refresh after already-redeemed failed: {refreshEx.Message}");
+                }
+            }
+
+            return EconomyRedeemOutcome.AlreadyRedeemed;
+        }
+
         if (ex is TimeoutException)
         {
             NetworkStatus.ReportFailure();
             _lastRedeemIndeterminate = true;
             Debug.LogError($"[SDK][IAP] Economy redeem timed out for '{economyPurchaseId}': {ex.Message}");
-            return false;
+            return EconomyRedeemOutcome.Indeterminate;
         }
 
         if (IsRedeemTransportFailure(ex))
@@ -680,18 +748,59 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             NetworkStatus.ReportFailure();
             _lastRedeemIndeterminate = true;
             Debug.LogError($"[SDK][IAP] Economy redeem transport failure for '{economyPurchaseId}': {ex.Message}");
-            return false;
+            return EconomyRedeemOutcome.Indeterminate;
         }
 
         if (ex is EconomyException)
         {
             // Hard reject from Economy — typically not charged / not granted.
             Debug.LogError($"[SDK][IAP] Economy redeem failed for '{economyPurchaseId}': {ex}");
-            return false;
+            return EconomyRedeemOutcome.Failed;
         }
 
         _lastRedeemIndeterminate = true;
         Debug.LogError($"[SDK][IAP] Unexpected redeem failure for '{economyPurchaseId}': {ex}");
+        return EconomyRedeemOutcome.Indeterminate;
+    }
+
+    static bool TryClassifyAlreadyRedeemed(Exception ex, out bool otherPlayer)
+    {
+        otherPlayer = false;
+
+        if (ex is EconomyAppleAppStorePurchaseFailedException apple)
+        {
+            AppleVerification.StatusOptions? status = apple.Data?.Verification?.Status;
+            if (status == AppleVerification.StatusOptions.INVALIDALREADYREDEEMED)
+                return true;
+            if (status == AppleVerification.StatusOptions.INVALIDANOTHERPLAYER)
+            {
+                otherPlayer = true;
+                return true;
+            }
+        }
+
+        if (ex is EconomyGooglePlayStorePurchaseFailedException google)
+        {
+            GoogleVerification.StatusOptions? status = google.Data?.Verification?.Status;
+            if (status == GoogleVerification.StatusOptions.INVALIDALREADYREDEEMED)
+                return true;
+            if (status == GoogleVerification.StatusOptions.INVALIDANOTHERPLAYER)
+            {
+                otherPlayer = true;
+                return true;
+            }
+        }
+
+        // Fallback when status payload is missing but Economy detail is clear.
+        string message = ex?.Message ?? string.Empty;
+        if (message.IndexOf("already been redeemed", StringComparison.OrdinalIgnoreCase) >= 0)
+            return true;
+        if (message.IndexOf("another player", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            otherPlayer = true;
+            return true;
+        }
+
         return false;
     }
 
