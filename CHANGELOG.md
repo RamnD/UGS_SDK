@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.11.4] - 2026-07-31
+
+### Fixed
+- **Auth recover:** empty-orphan check now treats local `economy_cached_balances` / `economy_pending_tx` progress as non-empty, so deferred gold is not wiped by `DeleteAccount` before `SignedIntoExisting` (prefer SignOut).
+
 ## [1.11.3] - 2026-07-30
 
 ### Fixed

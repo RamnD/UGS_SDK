@@ -496,13 +496,22 @@ public class UGSAuthService : IAuthService
 
     /// <summary>
     /// True when online Cloud Save has no player keys (or only ignorable internals)
-    /// <b>and</b> Economy balances/inventory are empty. Offline / load failure → false (do not Delete).
+    /// <b>and</b> Economy balances/inventory are empty <b>and</b> local Economy PlayerPrefs
+    /// have no cached balances / pending txs. Offline / load failure → false (do not Delete).
     /// </summary>
     private static async Task<bool> IsCurrentPlayerEffectivelyEmptyAsync(CancellationToken cancellationToken)
     {
         if (!NetworkStatus.IsOnline)
         {
             Debug.LogWarning("[Auth] Cannot verify empty orphan offline — SignOut instead of Delete.");
+            return false;
+        }
+
+        // Local deferred / cached economy must block Delete even when server still shows 0.
+        if (HasLocalEconomyProgressInPrefs())
+        {
+            Debug.Log(
+                "[Auth] Empty-check: local economy cache/pending has progress — SignOut instead of Delete.");
             return false;
         }
 
@@ -561,6 +570,80 @@ public class UGSAuthService : IAuthService
             Debug.LogWarning($"[Auth] Empty-check failed ({ex.Message}) — SignOut instead of Delete.");
             return false;
         }
+    }
+
+    /// <summary>
+    /// Best-effort read of SDK Economy PlayerPrefs without going through typed caches
+    /// (recover path may run before game rebinds services).
+    /// </summary>
+    private static bool HasLocalEconomyProgressInPrefs()
+    {
+        try
+        {
+            string cacheJson = PlayerPrefs.GetString("economy_cached_balances", string.Empty);
+            if (!string.IsNullOrEmpty(cacheJson) && cacheJson.IndexOf("\"balance\":", StringComparison.Ordinal) >= 0)
+            {
+                // Any positive balance field — avoid full JSON schema dependency.
+                int idx = 0;
+                while (idx >= 0 && idx < cacheJson.Length)
+                {
+                    idx = cacheJson.IndexOf("\"balance\":", idx, StringComparison.Ordinal);
+                    if (idx < 0)
+                        break;
+
+                    idx += "\"balance\":".Length;
+                    while (idx < cacheJson.Length && (cacheJson[idx] == ' ' || cacheJson[idx] == '\t'))
+                        idx++;
+
+                    int start = idx;
+                    while (idx < cacheJson.Length
+                           && (char.IsDigit(cacheJson[idx]) || cacheJson[idx] == '-'))
+                        idx++;
+
+                    if (start < idx
+                        && long.TryParse(cacheJson.Substring(start, idx - start), out long balance)
+                        && balance > 0)
+                        return true;
+                }
+            }
+
+            string pendingJson = PlayerPrefs.GetString("economy_pending_tx", string.Empty);
+            if (string.IsNullOrEmpty(pendingJson))
+                pendingJson = PlayerPrefs.GetString("economy_pending_adds", string.Empty);
+
+            if (!string.IsNullOrEmpty(pendingJson)
+                && pendingJson.IndexOf("\"amount\":", StringComparison.Ordinal) >= 0)
+            {
+                int idx = 0;
+                while (idx >= 0 && idx < pendingJson.Length)
+                {
+                    idx = pendingJson.IndexOf("\"amount\":", idx, StringComparison.Ordinal);
+                    if (idx < 0)
+                        break;
+
+                    idx += "\"amount\":".Length;
+                    while (idx < pendingJson.Length && (pendingJson[idx] == ' ' || pendingJson[idx] == '\t'))
+                        idx++;
+
+                    int start = idx;
+                    while (idx < pendingJson.Length
+                           && (char.IsDigit(pendingJson[idx]) || pendingJson[idx] == '-'))
+                        idx++;
+
+                    if (start < idx
+                        && long.TryParse(pendingJson.Substring(start, idx - start), out long amount)
+                        && amount != 0)
+                        return true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[Auth] Local economy prefs probe failed ({ex.Message}) — treat as non-empty.");
+            return true;
+        }
+
+        return false;
     }
 
     /// <inheritdoc/>
