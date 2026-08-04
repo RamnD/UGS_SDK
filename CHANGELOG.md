@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.11.6] - 2026-08-04
+
+### Fixed
+- **IAP:** `RestorePurchasesResult` uses mutable setters instead of `init` so Unity / older compiler targets compile without `System.Runtime.CompilerServices.IsExternalInit`.
+
 ## [1.11.5] - 2026-08-04
 
 ### Added
