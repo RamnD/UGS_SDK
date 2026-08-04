@@ -46,6 +46,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     string _activePurchaseProductId;
     Task _pendingDrainTask;
     TaskCompletionSource<bool> _purchasesFetchTcs;
+    TaskCompletionSource<RestorePurchasesResult> _restorePurchasesTcs;
     int _pendingHandlersInFlight;
 
     public bool IsInitialized => _isInitialized;
@@ -327,18 +328,124 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         _lastPurchaseOutcome = RealMoneyPurchaseOutcome.Failed;
     }
 
-    public void RestorePurchases()
+    public void RestorePurchases() =>
+        _ = RestorePurchasesAsync(CancellationToken.None);
+
+    public async Task<RestorePurchasesResult> RestorePurchasesAsync(
+        CancellationToken cancellationToken = default)
     {
         if (_storeController == null)
-            throw new InvalidOperationException("InitializeAsync must complete before RestorePurchases.");
+            throw new InvalidOperationException("InitializeAsync must complete before RestorePurchasesAsync.");
 
-        _storeController.RestoreTransactions((success, error) =>
+        TaskCompletionSource<RestorePurchasesResult> restoreTcs;
+        bool startRestore = false;
+        lock (_pendingGate)
         {
-            if (!string.IsNullOrWhiteSpace(error))
-                Debug.LogWarning($"[SDK][IAP] Restore transactions result: success={success}, error={error}");
+            if (_restorePurchasesTcs != null && !_restorePurchasesTcs.Task.IsCompleted)
+                restoreTcs = _restorePurchasesTcs;
             else
-                Debug.Log($"[SDK][IAP] Restore transactions result: success={success}");
-        });
+            {
+                restoreTcs = new TaskCompletionSource<RestorePurchasesResult>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                _restorePurchasesTcs = restoreTcs;
+                startRestore = true;
+            }
+        }
+
+        if (startRestore)
+        {
+            try
+            {
+                _storeController.RestoreTransactions((success, error) =>
+                {
+                    if (!string.IsNullOrWhiteSpace(error))
+                        Debug.LogWarning($"[SDK][IAP] Restore transactions result: success={success}, error={error}");
+                    else
+                        Debug.Log($"[SDK][IAP] Restore transactions result: success={success}");
+
+                    if (!success)
+                    {
+                        CompleteRestorePurchases(
+                            restoreTcs,
+                            new RestorePurchasesResult
+                            {
+                                Success = false,
+                                ErrorMessage = string.IsNullOrWhiteSpace(error)
+                                    ? "Store restore did not complete successfully."
+                                    : error
+                            });
+                        return;
+                    }
+
+                    try
+                    {
+                        _storeController.FetchPurchases();
+                    }
+                    catch (Exception ex)
+                    {
+                        CompleteRestorePurchases(
+                            restoreTcs,
+                            new RestorePurchasesResult
+                            {
+                                Success = false,
+                                ErrorMessage = $"FetchPurchases after restore failed: {ex.Message}"
+                            });
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                CompleteRestorePurchases(
+                    restoreTcs,
+                    new RestorePurchasesResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"RestorePurchasesAsync failed to start: {ex.Message}"
+                    });
+            }
+        }
+
+        Task timeoutTask = Task.Delay(30000);
+        Task cancelTask = null;
+        CancellationTokenRegistration cancellationRegistration = default;
+        if (cancellationToken.CanBeCanceled)
+        {
+            var cancelTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            cancellationRegistration = cancellationToken.Register(() => cancelTcs.TrySetResult(true));
+            cancelTask = cancelTcs.Task;
+        }
+
+        try
+        {
+            Task completed = cancelTask != null
+                ? await Task.WhenAny(restoreTcs.Task, timeoutTask, cancelTask)
+                : await Task.WhenAny(restoreTcs.Task, timeoutTask);
+
+            if (completed == cancelTask)
+                cancellationToken.ThrowIfCancellationRequested();
+
+            if (completed == timeoutTask)
+            {
+                CompleteRestorePurchases(
+                    restoreTcs,
+                    new RestorePurchasesResult
+                    {
+                        Success = false,
+                        ErrorMessage = "Restore purchases timed out."
+                    });
+            }
+
+            return await restoreTcs.Task;
+        }
+        finally
+        {
+            cancellationRegistration.Dispose();
+            lock (_pendingGate)
+            {
+                if (ReferenceEquals(_restorePurchasesTcs, restoreTcs) && restoreTcs.Task.IsCompleted)
+                    _restorePurchasesTcs = null;
+            }
+        }
     }
 
     public bool HasEntitlement(string entitlementId) =>
@@ -1074,6 +1181,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
 
     void OnPurchasesFetched(Orders orders)
     {
+        var restoredProductIds = new HashSet<string>(StringComparer.Ordinal);
         try
         {
             if (orders == null)
@@ -1099,6 +1207,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                 if (!foundExistingPurchase)
                     continue;
 
+                restoredProductIds.Add(definition.ProductId);
                 _entitlements.GrantRange(definition.GrantedEntitlementIds);
                 if (definition.GrantedEntitlementIds != null && definition.GrantedEntitlementIds.Length > 0)
                     Debug.Log($"[SDK][IAP] Restored entitlements for '{definition.ProductId}'.");
@@ -1107,9 +1216,24 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         finally
         {
             TaskCompletionSource<bool> tcs;
+            TaskCompletionSource<RestorePurchasesResult> restoreTcs;
             lock (_pendingGate)
+            {
                 tcs = _purchasesFetchTcs;
+                restoreTcs = _restorePurchasesTcs;
+            }
             tcs?.TrySetResult(true);
+            if (restoreTcs != null && !restoreTcs.Task.IsCompleted)
+            {
+                CompleteRestorePurchases(
+                    restoreTcs,
+                    new RestorePurchasesResult
+                    {
+                        Success = true,
+                        RestoredAnyEntitlements = restoredProductIds.Count > 0,
+                        RestoredProductIds = restoredProductIds.ToArray()
+                    });
+            }
         }
     }
 
@@ -1117,9 +1241,36 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     {
         Debug.LogWarning($"[SDK][IAP] Existing purchases fetch failed: {failure?.Message}");
         TaskCompletionSource<bool> tcs;
+        TaskCompletionSource<RestorePurchasesResult> restoreTcs;
         lock (_pendingGate)
+        {
             tcs = _purchasesFetchTcs;
+            restoreTcs = _restorePurchasesTcs;
+        }
         tcs?.TrySetResult(false);
+        if (restoreTcs != null && !restoreTcs.Task.IsCompleted)
+        {
+            CompleteRestorePurchases(
+                restoreTcs,
+                new RestorePurchasesResult
+                {
+                    Success = false,
+                    ErrorMessage = string.IsNullOrWhiteSpace(failure?.Message)
+                        ? "Existing purchases fetch failed."
+                        : failure.Message
+                });
+        }
+    }
+
+    void CompleteRestorePurchases(
+        TaskCompletionSource<RestorePurchasesResult> restoreTcs,
+        RestorePurchasesResult result)
+    {
+        restoreTcs?.TrySetResult(result ?? new RestorePurchasesResult
+        {
+            Success = false,
+            ErrorMessage = "Restore purchases completed without a result."
+        });
     }
 
     Product FindStoreProduct(string storeId) =>

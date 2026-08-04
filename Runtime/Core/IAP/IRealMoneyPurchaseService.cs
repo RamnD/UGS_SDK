@@ -77,8 +77,17 @@ public interface IRealMoneyPurchaseService
 
     /// <summary>
     /// Triggers store restoration / purchases fetch for non-consumables and subscriptions.
+    /// Fire-and-forget legacy convenience wrapper.
     /// </summary>
     void RestorePurchases();
+
+    /// <summary>
+    /// Triggers store restoration / purchases fetch for non-consumables and subscriptions
+    /// and reports which configured restorable products were found among existing confirmed
+    /// purchases.
+    /// </summary>
+    Task<RestorePurchasesResult> RestorePurchasesAsync(
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns true if the entitlement has already been granted and cached locally.

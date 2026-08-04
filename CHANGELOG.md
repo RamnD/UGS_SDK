@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.11.5] - 2026-08-04
+
+### Added
+- **IAP:** `RestorePurchasesAsync` + `RestorePurchasesResult` to await store restore/fetch and report which configured restorable product ids were found among existing confirmed purchases.
+
+### Changed
+- **IAP:** legacy `RestorePurchases()` remains as a fire-and-forget wrapper for backward compatibility.
+
 ## [1.11.4] - 2026-07-31
 
 ### Fixed
