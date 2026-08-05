@@ -6,7 +6,7 @@ using UnityEngine;
 
 /// <summary>
 /// <see cref="IAdsManager"/> implementation via Unity LevelPlay SDK 8.x (formerly IronSource).
-/// Recommended path for new projects — supports mediation (Unity Ads, Meta, AppLovin, etc.).
+/// Recommended path for new projects — supports mediation (Unity Ads, Meta, AppLovin, Pangle, etc.).
 /// <para>
 /// Requires: Package Manager → <c>com.unity.services.levelplay</c> version 8.x or newer.
 /// App Key comes from the LevelPlay Dashboard (not Project Settings).

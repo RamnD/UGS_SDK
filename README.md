@@ -46,6 +46,7 @@ Optional sample: **Package Manager → RamnD Game Services SDK → Samples → I
 | Cloud Save | [docs/cloud-save.md](docs/cloud-save.md) |
 | Leaderboard | [docs/leaderboard.md](docs/leaderboard.md) |
 | Achievements | [docs/achievements.md](docs/achievements.md) |
+| Ads (LevelPlay mediation) | [docs/ads.md](docs/ads.md) |
 | Analytics | [docs/analytics.md](docs/analytics.md) |
 | Remote Config | [docs/remote-config.md](docs/remote-config.md) |
 | Roadmap (`1.N.0` epics) | [docs/ROADMAP.md](docs/ROADMAP.md) |
@@ -230,7 +231,7 @@ private async void Start()
             GooglePlayGamesOAuthWebClientId = "...",
             AppleServicesId = "...",
         })
-        .WithAds(new LevelPlayAdsManager("your-app-key")) // or TestAdsManager / UnityAdsManager
+        .WithAds(new LevelPlayAdsManager("your-app-key")) // or TestAdsManager / UnityAdsManager (Pangle via LevelPlay optional)
         .WithAchievements() // optional portable achievements backed by UGS Cloud Save
         .OnAuthenticated(async auth =>
         {

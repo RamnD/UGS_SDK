@@ -39,7 +39,7 @@ private async void Start()
         // .WithProfanityFilter("badword1", "badword2")            // alternative: inline list
         // .WithProfanityFilter(new Regex(@"bad\w+"))              // alternative: regex
         // ── Ads ───────────────────────────────────────────────────────
-        .WithAds(new LevelPlayAdsManager("YOUR_APP_KEY"))
+        .WithAds(new LevelPlayAdsManager("YOUR_APP_KEY")) // LevelPlay mediation (Pangle optional)
         // ── Optional portable modules ─────────────────────────────────
         .WithAchievements()
         // ── Post-auth hook: create project-specific services ──────────
@@ -81,7 +81,7 @@ private async void Start()
 | `WithNameValidator(NameValidatorConfig)` | Full validator config (words + regex). Overrides `WithProfanityFilter`. Convert game ScriptableObjects via `ToValidatorConfig()` in the consuming project. |
 | `WithProfanityFilter(string[])` | Banned words list only |
 | `WithProfanityFilter(Regex)` | Banned pattern only |
-| `WithAds(IAdsManager)` | Ads manager (LevelPlay, TestAds, optional Unity Ads) |
+| `WithAds(IAdsManager)` | Ads manager (LevelPlay, TestAds, optional Unity Ads; Pangle via LevelPlay mediation) |
 | `WithCachedAnalytics(bool)` | Disk-backed offline analytics queue |
 | `WithRemoteConfig(bool)` | UGS Remote Config fetch after auth + PlayerPrefs cache |
 | `WithAchievements(bool)` | Portable achievement module backed by UGS Cloud Save |
