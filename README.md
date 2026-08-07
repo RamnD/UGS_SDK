@@ -38,6 +38,7 @@ Optional sample: **Package Manager → RamnD Game Services SDK → Samples → I
 |-------|---------------|
 | Initialization & bootstrap | [docs/bootstrap.md](docs/bootstrap.md) |
 | Auth & player name | [docs/auth.md](docs/auth.md) |
+| Auth identities (game services vs cloud / OIDC) | [docs/auth-identities.md](docs/auth-identities.md) |
 | Economy (currency & items) | [docs/economy.md](docs/economy.md) |
 | Purchase catalog (dynamic shop definitions) | [docs/purchase-catalog.md](docs/purchase-catalog.md) |
 | Virtual purchases (soft-currency / free bundles) | [docs/virtual-purchases.md](docs/virtual-purchases.md) |
@@ -68,6 +69,7 @@ This package is **public and contains no game-specific secrets**. Every consumin
 |---------------------|----------|-------------------|
 | UGS project link (Environment, Project ID) | Your game | **Edit → Project Settings → Services** (Unity Dashboard) |
 | Google Play Games OAuth **Web Client ID** | Your game | GPGS plugin setup **and/or** `GameServicesAuthProviderConfig.GooglePlayGamesOAuthWebClientId` |
+| Google / Apple / Facebook / OIDC tokens | Your game | `RequestGoogleIdTokenAsync`, `RequestAppleIdentityTokenAsync`, `RequestFacebookAccessTokenAsync`, `RequestOpenIdConnectIdTokenAsync` |
 | Apple **Services ID** | Your game | `GameServicesAuthProviderConfig.AppleServicesId` |
 | LevelPlay **App Key** | Your game | `new LevelPlayAdsManager("your-app-key")` in `.WithAds(...)` |
 | Profanity / name rules | Your game | `WithNameValidator(...)` or `WithProfanityFilter(...)` |

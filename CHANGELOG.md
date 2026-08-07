@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.12.0] - 2026-08-07
+
+### Added
+- **Auth:** `AuthPlatform.Google` (OpenID id_token), `Facebook`, `OpenIdConnect` for portable cloud identities.
+- **Auth:** `AuthPlatformKind` / `AuthIdentityLayer` — classify game services vs cloud / OIDC; map UGS external type ids.
+- **Auth:** `IAuthService.UnlinkWithAccountAsync`, `IsIdentityLinked`, `GetLinkedIdentityTypeIds`.
+- **Auth:** credential bridges `RequestGoogleIdTokenAsync`, `RequestFacebookAccessTokenAsync`, `RequestOpenIdConnectIdTokenAsync` (+ optional client/app ids).
+- **Docs:** [auth-identities.md](docs/auth-identities.md) — layers, markets, cloud-save contract after `SignedIntoExisting`.
+
+### Changed
+- **Auth:** Sign in with Apple (`AuthPlatform.Apple`) is no longer iOS-only in the SDK — works on any OS when the game supplies the identity-token bridge (Android SiWA supported).
+- **Auth:** `AccountAlreadyLinked` recover path covers Google OpenID, Facebook, and OpenID Connect (same as Apple / GPGS).
+
 ## [1.11.8] - 2026-08-07
 
 ### Added

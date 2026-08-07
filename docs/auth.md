@@ -1,6 +1,6 @@
 # Auth Service
 
-← [Back to README](../README.md)
+← [Back to README](../README.md) · [Identities / cloud save](auth-identities.md)
 
 ---
 
@@ -59,6 +59,9 @@ Exposed via `GameServicesLocator.Services.Auth`.
 | `string GetPlayerName()` | Display name in UGS profile; empty string if unset |
 | `Task<bool> SignInAsync(platform, ct)` | Signs in. Platform may be overridden by saved session. |
 | `Task<AccountLinkResult> LinkWithAccountAsync(platform, ct)` | Links anonymous → platform, or recovers into existing player if already linked |
+| `Task<bool> UnlinkWithAccountAsync(platform, ct)` | Unlinks an external identity from the current player |
+| `bool IsIdentityLinked(platform)` | Whether PlayerInfo has that external type id |
+| `IReadOnlyList<string> GetLinkedIdentityTypeIds()` | All linked external type ids |
 | `Task<bool> DeleteAccountAsync(ct)` | Permanently deletes the UGS Authentication player (App Store 5.1.1) |
 | `void Reset()` | Sign out + delete saved auth method |
 | `NameValidationError? ValidatePlayerName(name)` | Client-side only; no network. `null` = valid. |

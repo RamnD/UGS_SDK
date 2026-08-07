@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -10,11 +12,16 @@ public sealed class MockAuthService : IAuthService
     private const string MockPlayerId = "mock-player-000";
 
     private readonly NameValidatorConfig _validatorConfig;
+    private readonly HashSet<string> _linkedTypeIds = new(StringComparer.Ordinal);
     private string _playerName = "";
+    private string _openIdConnectIdProviderName;
 
-    public MockAuthService(NameValidatorConfig config = null)
+    public MockAuthService(
+        NameValidatorConfig config = null,
+        GameServicesAuthProviderConfig providerConfig = null)
     {
         _validatorConfig = config ?? NameValidatorConfig.Empty;
+        _openIdConnectIdProviderName = providerConfig?.OpenIdConnectIdProviderName;
     }
 
     /// <inheritdoc/>
@@ -75,8 +82,49 @@ public sealed class MockAuthService : IAuthService
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (!IsSignedIn)
+            return Task.FromResult(AccountLinkResult.NotSignedIn);
+        if (!AuthPlatformKind.IsLinkable(platform))
+            return Task.FromResult(AccountLinkResult.Failed);
+
+        string typeId = AuthPlatformKind.GetExternalIdTypeId(platform, _openIdConnectIdProviderName);
+        if (!string.IsNullOrEmpty(typeId))
+            _linkedTypeIds.Add(typeId);
+
         Debug.Log($"[Mock Auth] LinkWithAccount ({platform}) — mock Linked.");
         return Task.FromResult(AccountLinkResult.Linked);
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> UnlinkWithAccountAsync(AuthPlatform platform, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!IsSignedIn || !AuthPlatformKind.IsLinkable(platform))
+            return Task.FromResult(false);
+
+        string typeId = AuthPlatformKind.GetExternalIdTypeId(platform, _openIdConnectIdProviderName);
+        if (!string.IsNullOrEmpty(typeId))
+            _linkedTypeIds.Remove(typeId);
+
+        Debug.Log($"[Mock Auth] Unlink ({platform}) — mock.");
+        return Task.FromResult(true);
+    }
+
+    /// <inheritdoc/>
+    public bool IsIdentityLinked(AuthPlatform platform)
+    {
+        if (!IsSignedIn)
+            return false;
+        string typeId = AuthPlatformKind.GetExternalIdTypeId(platform, _openIdConnectIdProviderName);
+        return !string.IsNullOrEmpty(typeId) && _linkedTypeIds.Contains(typeId);
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<string> GetLinkedIdentityTypeIds()
+    {
+        if (!IsSignedIn)
+            return Array.Empty<string>();
+        return new List<string>(_linkedTypeIds);
     }
 
     /// <inheritdoc/>
@@ -85,6 +133,7 @@ public sealed class MockAuthService : IAuthService
         cancellationToken.ThrowIfCancellationRequested();
         IsSignedIn = false;
         _playerName = "";
+        _linkedTypeIds.Clear();
         Debug.Log("[Mock Auth] DeleteAccount — mock.");
         return Task.FromResult(true);
     }
@@ -94,6 +143,7 @@ public sealed class MockAuthService : IAuthService
     {
         IsSignedIn = false;
         _playerName = "";
+        _linkedTypeIds.Clear();
         Debug.Log("[Mock Auth] Session reset.");
     }
 }

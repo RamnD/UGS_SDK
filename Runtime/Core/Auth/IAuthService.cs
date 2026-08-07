@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -28,15 +29,35 @@ public interface IAuthService
     Task<bool> SignInAsync(AuthPlatform platform, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Links an anonymous account to a platform account (Google Play / Apple / Game Center).
-    /// Call after onboarding when the player chooses "Sign in with Google/Apple".
+    /// Links the current (usually anonymous) account to a platform / cloud identity.
+    /// Game services: <see cref="AuthPlatform.AppleGameCenter"/>, <see cref="AuthPlatform.GooglePlayGames"/>.
+    /// Portable cloud: <see cref="AuthPlatform.Apple"/>, <see cref="AuthPlatform.Google"/>,
+    /// <see cref="AuthPlatform.Facebook"/>, <see cref="AuthPlatform.OpenIdConnect"/>.
     /// </summary>
     /// <returns>
     /// <see cref="AccountLinkResult.Linked"/> on a normal link;
     /// <see cref="AccountLinkResult.SignedIntoExisting"/> when the external ID was already
-    /// tied to another UGS player (recover via SignIn — typical after reinstall).
+    /// tied to another UGS player (recover via SignIn — typical after reinstall / cross-device).
+    /// Reload Cloud Save / Economy on the game side after SignedIntoExisting.
     /// </returns>
     Task<AccountLinkResult> LinkWithAccountAsync(AuthPlatform platform, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Unlinks an external identity from the current player.
+    /// Does not delete the UGS player or wipe Cloud Save.
+    /// </summary>
+    Task<bool> UnlinkWithAccountAsync(AuthPlatform platform, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Whether the current player has the given external identity linked
+    /// (from UGS PlayerInfo). False if not signed in or identity absent.
+    /// </summary>
+    bool IsIdentityLinked(AuthPlatform platform);
+
+    /// <summary>
+    /// Type ids of all external identities on the current player (empty if not signed in).
+    /// </summary>
+    IReadOnlyList<string> GetLinkedIdentityTypeIds();
 
     /// <summary>
     /// Permanently deletes the current UGS Authentication player (App Store 5.1.1).

@@ -1,5 +1,6 @@
 // UGSAuthService.cs
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Threading;
@@ -37,10 +38,13 @@ public class UGSAuthService : IAuthService
 
 #if UNITY_ANDROID
     /// <summary>GPGS auth code from the Link attempt — reused for recover SignIn (avoid second native prompt).</summary>
-    string _recoverGoogleAuthCode;
+    string _recoverGooglePlayAuthCode;
 #endif
-#if UNITY_IOS
     string _recoverAppleIdentityToken;
+    string _recoverGoogleIdToken;
+    string _recoverFacebookAccessToken;
+    string _recoverOpenIdConnectIdToken;
+#if UNITY_IOS
     AppleGameCenterCredentials _recoverGameCenterCredentials;
 #endif
 
@@ -284,7 +288,6 @@ public class UGSAuthService : IAuthService
 #if UNITY_ANDROID
                     if (string.IsNullOrWhiteSpace(_providerConfig.GooglePlayGamesOAuthWebClientId))
                     {
-                        // TODO(GPGS→UGS): use GooglePlayGamesOAuthWebClientId when the build actually depends on passing the key through the SDK (GPGS often sets the client via Android resources today).
                         Debug.LogWarning(
                             "[Auth] TODO(GPGS→UGS): GooglePlayGamesOAuthWebClientId not passed via WithAuthProviderCredentials; add Web Client Id from GCP / game config if linking fails.");
                     }
@@ -301,6 +304,21 @@ public class UGSAuthService : IAuthService
                 case AuthPlatform.AppleGameCenter:
                     cancellationToken.ThrowIfCancellationRequested();
                     await LinkWithAppleGameCenterAsync(cancellationToken);
+                    break;
+
+                case AuthPlatform.Google:
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await LinkWithGoogleOpenIdAsync(cancellationToken);
+                    break;
+
+                case AuthPlatform.Facebook:
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await LinkWithFacebookAsync(cancellationToken);
+                    break;
+
+                case AuthPlatform.OpenIdConnect:
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await LinkWithOpenIdConnectAsync(cancellationToken);
                     break;
 
                 default:
@@ -338,12 +356,108 @@ public class UGSAuthService : IAuthService
     void ClearRecoverCredentials()
     {
 #if UNITY_ANDROID
-        _recoverGoogleAuthCode = null;
+        _recoverGooglePlayAuthCode = null;
 #endif
-#if UNITY_IOS
         _recoverAppleIdentityToken = null;
+        _recoverGoogleIdToken = null;
+        _recoverFacebookAccessToken = null;
+        _recoverOpenIdConnectIdToken = null;
+#if UNITY_IOS
         _recoverGameCenterCredentials = null;
 #endif
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> UnlinkWithAccountAsync(AuthPlatform platform,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsSignedIn)
+        {
+            Debug.LogError("[Auth] Cannot unlink — not signed in.");
+            return false;
+        }
+
+        if (!AuthPlatformKind.IsLinkable(platform))
+        {
+            Debug.LogError("[Auth] Cannot unlink Anonymous.");
+            return false;
+        }
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await UnlinkIdentityAsync(platform, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (LoadLastMethod() == platform)
+            {
+                PlayerPrefs.DeleteKey(LastAuthMethodKey);
+                PlayerPrefs.Save();
+            }
+
+            Debug.Log($"[Auth] Unlinked {platform}. PlayerId={GetPlayerId()}");
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[Auth] Unlink failed ({platform}): {e.Message}");
+            return false;
+        }
+    }
+
+    /// <inheritdoc/>
+    public bool IsIdentityLinked(AuthPlatform platform)
+    {
+        if (!IsSignedIn || !AuthPlatformKind.IsLinkable(platform))
+            return false;
+
+        string typeId = AuthPlatformKind.GetExternalIdTypeId(
+            platform,
+            _providerConfig.OpenIdConnectIdProviderName);
+        if (string.IsNullOrEmpty(typeId))
+            return false;
+
+        PlayerInfo playerInfo = AuthenticationService.Instance.PlayerInfo;
+        return HasIdentity(playerInfo, typeId);
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<string> GetLinkedIdentityTypeIds()
+    {
+        if (!IsSignedIn)
+            return Array.Empty<string>();
+
+        PlayerInfo playerInfo = AuthenticationService.Instance.PlayerInfo;
+        if (playerInfo?.Identities == null || playerInfo.Identities.Count == 0)
+            return Array.Empty<string>();
+
+        var ids = new List<string>(playerInfo.Identities.Count);
+        foreach (Identity identity in playerInfo.Identities)
+        {
+            if (identity != null && !string.IsNullOrEmpty(identity.TypeId))
+                ids.Add(identity.TypeId);
+        }
+
+        return ids;
+    }
+
+    static bool HasIdentity(PlayerInfo playerInfo, string typeId)
+    {
+        if (playerInfo?.Identities == null || string.IsNullOrEmpty(typeId))
+            return false;
+
+        foreach (Identity identity in playerInfo.Identities)
+        {
+            if (identity != null &&
+                string.Equals(identity.TypeId, typeId, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -707,13 +821,16 @@ public class UGSAuthService : IAuthService
     private Task SignInWithMethodAsync(AuthPlatform method, CancellationToken cancellationToken) =>
         method switch
         {
-            AuthPlatform.GooglePlayGames  => SignInWithGooglePlayGamesAsync(cancellationToken),
-            AuthPlatform.Apple            => SignInWithAppleAsync(cancellationToken),
-            AuthPlatform.AppleGameCenter  => SignInWithAppleGameCenterAsync(cancellationToken),
-            _                             => NetworkRequest.WithTimeout(
-                                                 AuthenticationService.Instance.SignInAnonymouslyAsync(),
-                                                 cancellationToken,
-                                                 NetworkRequest.AuthTimeoutMs)
+            AuthPlatform.GooglePlayGames => SignInWithGooglePlayGamesAsync(cancellationToken),
+            AuthPlatform.Apple => SignInWithAppleAsync(cancellationToken),
+            AuthPlatform.AppleGameCenter => SignInWithAppleGameCenterAsync(cancellationToken),
+            AuthPlatform.Google => SignInWithGoogleOpenIdAsync(cancellationToken),
+            AuthPlatform.Facebook => SignInWithFacebookAsync(cancellationToken),
+            AuthPlatform.OpenIdConnect => SignInWithOpenIdConnectAsync(cancellationToken),
+            _ => NetworkRequest.WithTimeout(
+                AuthenticationService.Instance.SignInAnonymouslyAsync(),
+                cancellationToken,
+                NetworkRequest.AuthTimeoutMs)
         };
 
 #if UNITY_ANDROID
@@ -726,8 +843,8 @@ public class UGSAuthService : IAuthService
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        string serverAuthCode = _recoverGoogleAuthCode;
-        _recoverGoogleAuthCode = null;
+        string serverAuthCode = _recoverGooglePlayAuthCode;
+        _recoverGooglePlayAuthCode = null;
         if (string.IsNullOrWhiteSpace(serverAuthCode))
             serverAuthCode = await GetGoogleServerAuthCodeAsync(cancellationToken);
         else
@@ -744,7 +861,7 @@ public class UGSAuthService : IAuthService
     {
         cancellationToken.ThrowIfCancellationRequested();
         string serverAuthCode = await GetGoogleServerAuthCodeAsync(cancellationToken);
-        _recoverGoogleAuthCode = serverAuthCode;
+        _recoverGooglePlayAuthCode = serverAuthCode;
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
             AuthenticationService.Instance.LinkWithGooglePlayGamesAsync(serverAuthCode),
@@ -845,6 +962,80 @@ public class UGSAuthService : IAuthService
 #endif
 
 #if UNITY_IOS
+    private async Task SignInWithAppleGameCenterAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        AppleGameCenterCredentials credentials = _recoverGameCenterCredentials;
+        _recoverGameCenterCredentials = null;
+        if (credentials == null || !credentials.IsValid)
+            credentials = await RequestAppleGameCenterCredentialsAsync(cancellationToken);
+        else
+            Debug.Log("[Auth] Recover: reusing Game Center credentials from Link attempt.");
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await NetworkRequest.WithTimeout(
+            AuthenticationService.Instance.SignInWithAppleGameCenterAsync(
+                credentials.Signature,
+                credentials.TeamPlayerId,
+                credentials.PublicKeyUrl,
+                credentials.Salt,
+                credentials.Timestamp),
+            cancellationToken,
+            NetworkRequest.AuthTimeoutMs);
+    }
+
+    private async Task LinkWithAppleGameCenterAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        AppleGameCenterCredentials credentials = await RequestAppleGameCenterCredentialsAsync(cancellationToken);
+        _recoverGameCenterCredentials = credentials;
+        cancellationToken.ThrowIfCancellationRequested();
+        await NetworkRequest.WithTimeout(
+            AuthenticationService.Instance.LinkWithAppleGameCenterAsync(
+                credentials.Signature,
+                credentials.TeamPlayerId,
+                credentials.PublicKeyUrl,
+                credentials.Salt,
+                credentials.Timestamp),
+            cancellationToken,
+            NetworkRequest.AuthTimeoutMs);
+    }
+
+    private async Task<AppleGameCenterCredentials> RequestAppleGameCenterCredentialsAsync(
+        CancellationToken cancellationToken)
+    {
+        if (_providerConfig.RequestAppleGameCenterCredentialsAsync == null)
+        {
+            throw new InvalidOperationException(
+                "Apple Game Center: RequestAppleGameCenterCredentialsAsync is not set. " +
+                "Install Apple GameKit and wire AppleGameCenterCredentialsProvider.");
+        }
+
+        AppleGameCenterCredentials credentials =
+            await _providerConfig.RequestAppleGameCenterCredentialsAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (credentials == null || !credentials.IsValid)
+            throw new InvalidOperationException("Apple Game Center: credentials are missing or invalid.");
+
+        return credentials;
+    }
+#else
+    private Task SignInWithAppleGameCenterAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        throw new PlatformNotSupportedException("Apple Game Center is only available on iOS.");
+    }
+
+    private Task LinkWithAppleGameCenterAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        throw new PlatformNotSupportedException("Apple Game Center is only available on iOS.");
+    }
+#endif
+
+    // —— Portable cloud identities (token bridges from the game) ——
+
     private async Task SignInWithAppleAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -888,45 +1079,6 @@ public class UGSAuthService : IAuthService
             NetworkRequest.AuthTimeoutMs);
     }
 
-    private async Task SignInWithAppleGameCenterAsync(CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        AppleGameCenterCredentials credentials = _recoverGameCenterCredentials;
-        _recoverGameCenterCredentials = null;
-        if (credentials == null || !credentials.IsValid)
-            credentials = await RequestAppleGameCenterCredentialsAsync(cancellationToken);
-        else
-            Debug.Log("[Auth] Recover: reusing Game Center credentials from Link attempt.");
-
-        cancellationToken.ThrowIfCancellationRequested();
-        await NetworkRequest.WithTimeout(
-            AuthenticationService.Instance.SignInWithAppleGameCenterAsync(
-                credentials.Signature,
-                credentials.TeamPlayerId,
-                credentials.PublicKeyUrl,
-                credentials.Salt,
-                credentials.Timestamp),
-            cancellationToken,
-            NetworkRequest.AuthTimeoutMs);
-    }
-
-    private async Task LinkWithAppleGameCenterAsync(CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        AppleGameCenterCredentials credentials = await RequestAppleGameCenterCredentialsAsync(cancellationToken);
-        _recoverGameCenterCredentials = credentials;
-        cancellationToken.ThrowIfCancellationRequested();
-        await NetworkRequest.WithTimeout(
-            AuthenticationService.Instance.LinkWithAppleGameCenterAsync(
-                credentials.Signature,
-                credentials.TeamPlayerId,
-                credentials.PublicKeyUrl,
-                credentials.Salt,
-                credentials.Timestamp),
-            cancellationToken,
-            NetworkRequest.AuthTimeoutMs);
-    }
-
     private async Task<string> RequestAppleIdentityTokenAsync(CancellationToken cancellationToken)
     {
         if (_providerConfig.RequestAppleIdentityTokenAsync == null)
@@ -945,50 +1097,177 @@ public class UGSAuthService : IAuthService
         return identityToken;
     }
 
-    private async Task<AppleGameCenterCredentials> RequestAppleGameCenterCredentialsAsync(
-        CancellationToken cancellationToken)
+    private async Task SignInWithGoogleOpenIdAsync(CancellationToken cancellationToken)
     {
-        if (_providerConfig.RequestAppleGameCenterCredentialsAsync == null)
+        cancellationToken.ThrowIfCancellationRequested();
+        string idToken = _recoverGoogleIdToken;
+        _recoverGoogleIdToken = null;
+        if (string.IsNullOrWhiteSpace(idToken))
+            idToken = await RequestGoogleIdTokenAsync(cancellationToken);
+        else
+            Debug.Log("[Auth] Recover: reusing Google OpenID id_token from Link attempt.");
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await NetworkRequest.WithTimeout(
+            AuthenticationService.Instance.SignInWithGoogleAsync(idToken),
+            cancellationToken,
+            NetworkRequest.AuthTimeoutMs);
+    }
+
+    private async Task LinkWithGoogleOpenIdAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        string idToken = await RequestGoogleIdTokenAsync(cancellationToken);
+        _recoverGoogleIdToken = idToken;
+        cancellationToken.ThrowIfCancellationRequested();
+        await NetworkRequest.WithTimeout(
+            AuthenticationService.Instance.LinkWithGoogleAsync(idToken),
+            cancellationToken,
+            NetworkRequest.AuthTimeoutMs);
+    }
+
+    private async Task<string> RequestGoogleIdTokenAsync(CancellationToken cancellationToken)
+    {
+        if (_providerConfig.RequestGoogleIdTokenAsync == null)
         {
             throw new InvalidOperationException(
-                "Apple Game Center: RequestAppleGameCenterCredentialsAsync is not set. " +
-                "Install Apple GameKit and wire AppleGameCenterCredentialsProvider.");
+                "Google OpenID: RequestGoogleIdTokenAsync is not set. " +
+                "Wire Google Sign-In via GameServicesAuthProviderConfig.");
         }
 
-        AppleGameCenterCredentials credentials =
-            await _providerConfig.RequestAppleGameCenterCredentialsAsync(cancellationToken);
+        string idToken = await _providerConfig.RequestGoogleIdTokenAsync(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (credentials == null || !credentials.IsValid)
-            throw new InvalidOperationException("Apple Game Center: credentials are missing or invalid.");
+        if (string.IsNullOrWhiteSpace(idToken))
+            throw new InvalidOperationException("Google OpenID: id_token is empty.");
 
-        return credentials;
+        return idToken;
     }
-#else
-    private Task SignInWithAppleAsync(CancellationToken cancellationToken)
+
+    private async Task SignInWithFacebookAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        throw new PlatformNotSupportedException("Apple Sign-In is only available on iOS.");
+        string accessToken = _recoverFacebookAccessToken;
+        _recoverFacebookAccessToken = null;
+        if (string.IsNullOrWhiteSpace(accessToken))
+            accessToken = await RequestFacebookAccessTokenAsync(cancellationToken);
+        else
+            Debug.Log("[Auth] Recover: reusing Facebook access token from Link attempt.");
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await NetworkRequest.WithTimeout(
+            AuthenticationService.Instance.SignInWithFacebookAsync(accessToken),
+            cancellationToken,
+            NetworkRequest.AuthTimeoutMs);
     }
 
-    private Task LinkWithAppleAsync(CancellationToken cancellationToken)
+    private async Task LinkWithFacebookAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        throw new PlatformNotSupportedException("Apple Sign-In is only available on iOS.");
+        string accessToken = await RequestFacebookAccessTokenAsync(cancellationToken);
+        _recoverFacebookAccessToken = accessToken;
+        cancellationToken.ThrowIfCancellationRequested();
+        await NetworkRequest.WithTimeout(
+            AuthenticationService.Instance.LinkWithFacebookAsync(accessToken),
+            cancellationToken,
+            NetworkRequest.AuthTimeoutMs);
     }
 
-    private Task SignInWithAppleGameCenterAsync(CancellationToken cancellationToken)
+    private async Task<string> RequestFacebookAccessTokenAsync(CancellationToken cancellationToken)
     {
+        if (_providerConfig.RequestFacebookAccessTokenAsync == null)
+        {
+            throw new InvalidOperationException(
+                "Facebook: RequestFacebookAccessTokenAsync is not set. " +
+                "Wire Facebook Login via GameServicesAuthProviderConfig.");
+        }
+
+        string accessToken = await _providerConfig.RequestFacebookAccessTokenAsync(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        throw new PlatformNotSupportedException("Apple Game Center is only available on iOS.");
+
+        if (string.IsNullOrWhiteSpace(accessToken))
+            throw new InvalidOperationException("Facebook: access token is empty.");
+
+        return accessToken;
     }
 
-    private Task LinkWithAppleGameCenterAsync(CancellationToken cancellationToken)
+    private async Task SignInWithOpenIdConnectAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        throw new PlatformNotSupportedException("Apple Game Center is only available on iOS.");
+        string idProviderName = RequireOpenIdConnectIdProviderName();
+        string idToken = _recoverOpenIdConnectIdToken;
+        _recoverOpenIdConnectIdToken = null;
+        if (string.IsNullOrWhiteSpace(idToken))
+            idToken = await RequestOpenIdConnectIdTokenAsync(cancellationToken);
+        else
+            Debug.Log("[Auth] Recover: reusing OpenID Connect id_token from Link attempt.");
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await NetworkRequest.WithTimeout(
+            AuthenticationService.Instance.SignInWithOpenIdConnectAsync(idProviderName, idToken),
+            cancellationToken,
+            NetworkRequest.AuthTimeoutMs);
     }
-#endif
+
+    private async Task LinkWithOpenIdConnectAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        string idProviderName = RequireOpenIdConnectIdProviderName();
+        string idToken = await RequestOpenIdConnectIdTokenAsync(cancellationToken);
+        _recoverOpenIdConnectIdToken = idToken;
+        cancellationToken.ThrowIfCancellationRequested();
+        await NetworkRequest.WithTimeout(
+            AuthenticationService.Instance.LinkWithOpenIdConnectAsync(idProviderName, idToken),
+            cancellationToken,
+            NetworkRequest.AuthTimeoutMs);
+    }
+
+    string RequireOpenIdConnectIdProviderName()
+    {
+        if (string.IsNullOrWhiteSpace(_providerConfig.OpenIdConnectIdProviderName))
+        {
+            throw new InvalidOperationException(
+                "OpenID Connect: OpenIdConnectIdProviderName is not set. " +
+                "Use the Id Provider name from UGS Dashboard.");
+        }
+
+        return _providerConfig.OpenIdConnectIdProviderName.Trim();
+    }
+
+    private async Task<string> RequestOpenIdConnectIdTokenAsync(CancellationToken cancellationToken)
+    {
+        if (_providerConfig.RequestOpenIdConnectIdTokenAsync == null)
+        {
+            throw new InvalidOperationException(
+                "OpenID Connect: RequestOpenIdConnectIdTokenAsync is not set. " +
+                "Wire the IdP token fetch via GameServicesAuthProviderConfig.");
+        }
+
+        string idToken = await _providerConfig.RequestOpenIdConnectIdTokenAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (string.IsNullOrWhiteSpace(idToken))
+            throw new InvalidOperationException("OpenID Connect: id_token is empty.");
+
+        return idToken;
+    }
+
+    async Task UnlinkIdentityAsync(AuthPlatform platform, CancellationToken cancellationToken)
+    {
+        Task unlinkTask = platform switch
+        {
+            AuthPlatform.GooglePlayGames => AuthenticationService.Instance.UnlinkGooglePlayGamesAsync(),
+            AuthPlatform.Apple => AuthenticationService.Instance.UnlinkAppleAsync(),
+            AuthPlatform.AppleGameCenter => AuthenticationService.Instance.UnlinkAppleGameCenterAsync(),
+            AuthPlatform.Google => AuthenticationService.Instance.UnlinkGoogleAsync(),
+            AuthPlatform.Facebook => AuthenticationService.Instance.UnlinkFacebookAsync(),
+            AuthPlatform.OpenIdConnect => AuthenticationService.Instance.UnlinkOpenIdConnectAsync(
+                RequireOpenIdConnectIdProviderName()),
+            _ => throw new InvalidOperationException($"Cannot unlink {platform}."),
+        };
+
+        await NetworkRequest.WithTimeout(unlinkTask, cancellationToken, NetworkRequest.AuthTimeoutMs);
+    }
 
     static bool IsTransportFailure(Exception exception)
     {
