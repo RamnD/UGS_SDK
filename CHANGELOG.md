@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.11.8] - 2026-08-07
+
+### Added
+- **Ads privacy:** `AdsPrivacyPipeline` (ATT → Google UMP → LevelPlay COPPA/GDPR) under `RamnD.GameServices.Ads.Privacy`.
+- **Ads privacy:** optional `RamnD.GameServices.UGS.GoogleUmp` assembly (define `RAMND_HAS_GOOGLE_MOBILE_ADS` when `com.google.ads.mobile` is present).
+- **Docs:** [ads-privacy.md](docs/ads-privacy.md) — AdMob App ID via LevelPlay settings, GMA install, child-directed rules.
+
+### Changed
+- **Package:** depends on `com.unity.ads.ios-support` for ATT; UGS asmdef references `Unity.Advertisement.IosSupport` behind `RAMND_HAS_IOS_ATT`.
+
 ## [1.11.6] - 2026-08-04
 
 ### Fixed

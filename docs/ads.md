@@ -12,6 +12,8 @@ This SDK doesn’t know individual ad networks (AdMob, Pangle, etc.) directly. I
 
 For new projects the recommended path is `LevelPlayAdsManager`, which wraps **Unity LevelPlay** SDK.
 
+**Privacy / EU consent:** run [Ads privacy (ATT → UMP → COPPA)](ads-privacy.md) before `LevelPlay.Init`.
+
 ---
 ## Pangle support (optional) via LevelPlay mediation
 
