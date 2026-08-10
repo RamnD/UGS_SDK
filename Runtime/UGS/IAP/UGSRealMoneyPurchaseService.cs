@@ -451,6 +451,8 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     public bool HasEntitlement(string entitlementId) =>
         _entitlements.Has(entitlementId);
 
+    public void ClearEntitlements() => _entitlements.Clear();
+
     public bool TryGetProductInfo(string productId, out RealMoneyProductInfo info)
     {
         info = null;
@@ -1182,6 +1184,13 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     void OnPurchasesFetched(Orders orders)
     {
         var restoredProductIds = new HashSet<string>(StringComparer.Ordinal);
+        bool grantRestoredEntitlements;
+        lock (_pendingGate)
+        {
+            grantRestoredEntitlements =
+                _restorePurchasesTcs != null && !_restorePurchasesTcs.Task.IsCompleted;
+        }
+
         try
         {
             if (orders == null)
@@ -1193,6 +1202,30 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                 Debug.Log($"[SDK][IAP] FetchPurchases returned {pendingCount} pending order(s) — redeeming.");
                 foreach (PendingOrder pending in orders.PendingOrders)
                     _ = HandlePurchasePendingAsync(pending);
+            }
+
+            // Confirmed historical purchases grant entitlements only on explicit Restore.
+            // Init / resume pending drain must not give a new player free no-ads / VIP.
+            if (!grantRestoredEntitlements)
+            {
+                int skipped = 0;
+                foreach (RealMoneyProductDefinition definition in _productsById.Values)
+                {
+                    if (!definition.RestoreEntitlementsFromExistingPurchases)
+                        continue;
+                    if (orders.ConfirmedOrders.Any(order =>
+                            ContainsProduct(order, definition.ResolvedStoreProductId)))
+                        skipped++;
+                }
+
+                if (skipped > 0)
+                {
+                    Debug.Log(
+                        $"[SDK][IAP] FetchPurchases: skipped restoring entitlements for {skipped} " +
+                        "confirmed product(s) — use RestorePurchases.");
+                }
+
+                return;
             }
 
             foreach (RealMoneyProductDefinition definition in _productsById.Values)

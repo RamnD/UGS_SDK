@@ -35,7 +35,9 @@ public interface IRealMoneyPurchaseService
     void EnsureProductsFetched();
 
     /// <summary>
-    /// Fetches existing store purchases and redeems / confirms any pending orders.
+    /// Fetches existing store purchases and redeems / confirms any <b>pending</b> orders.
+    /// Does <b>not</b> grant entitlements from confirmed historical purchases —
+    /// that happens only via <see cref="RestorePurchases"/> / <see cref="RestorePurchasesAsync"/>.
     /// Call on resume or after auth if init already ran. Safe to call concurrently
     /// (callers await the same in-flight drain).
     /// </summary>
@@ -94,6 +96,13 @@ public interface IRealMoneyPurchaseService
     /// </summary>
     /// <param name="entitlementId">Entitlement string (e.g. <c>no_ads</c>).</param>
     bool HasEntitlement(string entitlementId);
+
+    /// <summary>
+    /// Clears locally cached entitlements and persists an empty snapshot.
+    /// Call on account wipe / new player. Store-owned non-consumables can be
+    /// re-applied only via <see cref="RestorePurchases"/> / <see cref="RestorePurchasesAsync"/>.
+    /// </summary>
+    void ClearEntitlements();
 
     /// <summary>
     /// Tries to read store-localized metadata for a registered product.

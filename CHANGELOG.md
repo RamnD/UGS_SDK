@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.12.1] - 2026-08-10
+
+### Fixed
+- **IAP:** confirmed non-consumable entitlements (e.g. no-ads) are granted only on explicit `RestorePurchases` / `RestorePurchasesAsync`, not on automatic `FetchPurchases` during init / pending drain — so a wiped or new player does not inherit free entitlements from the store account.
+
+### Added
+- **IAP:** `IRealMoneyPurchaseService.ClearEntitlements()` / `CloudSaveEntitlementStore.Clear()` to reset the local entitlement cache after account wipe.
+
 ## [1.12.0] - 2026-08-07
 
 ### Added

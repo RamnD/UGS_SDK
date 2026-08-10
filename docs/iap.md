@@ -188,11 +188,19 @@ Because entitlements are stored through `ICloudSaveService<TKey>`, the value is:
 
 ```csharp
 _iap.RestorePurchases();
+// or:
+RestorePurchasesResult result = await _iap.RestorePurchasesAsync(ct);
 ```
 
-When existing purchases are fetched, any matching product with
-`RestoreEntitlementsFromExistingPurchases = true` re-grants its configured entitlements
-from **`ConfirmedOrders` only** (not pending / deferred payments).
+Entitlements from **confirmed** historical store purchases
+(`RestoreEntitlementsFromExistingPurchases = true`) are granted **only** during an
+explicit restore. Automatic `FetchPurchases` on init / resume / pre-purchase drain
+still redeems **pending** orders, but does **not** grant entitlements from old
+confirmed non-consumables — so a wiped / new player does not inherit free no-ads
+until they tap Restore.
+
+After account wipe, call `_iap.ClearEntitlements()` so the in-memory cloud-save
+cache matches the cleared `iap_entitlements` key.
 
 This is primarily useful for:
 

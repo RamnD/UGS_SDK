@@ -73,6 +73,18 @@ public sealed class CloudSaveEntitlementStore<TKey> where TKey : struct, Enum
         return _ids.ToArray();
     }
 
+    /// <summary>
+    /// Clears the in-memory set and persists an empty snapshot.
+    /// Use after account wipe / new player so stale entitlements do not survive
+    /// until the next explicit <c>RestorePurchases</c>.
+    /// </summary>
+    public void Clear()
+    {
+        _ids.Clear();
+        _loaded = true;
+        Persist();
+    }
+
     void EnsureLoaded()
     {
         if (_loaded)

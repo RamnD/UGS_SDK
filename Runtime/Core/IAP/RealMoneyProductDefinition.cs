@@ -37,8 +37,10 @@ public sealed class RealMoneyProductDefinition
     public string[] GrantedEntitlementIds = Array.Empty<string>();
 
     /// <summary>
-    /// Existing purchases fetched from the store should restore entitlements only for
-    /// non-consumables/subscriptions or any explicitly restorable products.
+    /// When true, <see cref="IRealMoneyPurchaseService.RestorePurchases"/> /
+    /// <see cref="IRealMoneyPurchaseService.RestorePurchasesAsync"/> re-grants
+    /// <see cref="GrantedEntitlementIds"/> from confirmed store purchases
+    /// (non-consumables / subscriptions). Automatic pending drain does not grant these.
     /// </summary>
     public bool RestoreEntitlementsFromExistingPurchases = true;
 }
