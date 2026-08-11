@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.12.2] - 2026-08-11
+
+### Fixed
+- **Ads privacy / UMP:** `RamnD.GameServices.UGS.GoogleUmp` now has its own `versionDefines` for `com.google.ads.mobile`. The define lived only on the parent UGS asmdef, so `defineConstraints` never passed and the real UMP gate never loaded (`NullAdsUmpConsentGate` / “UMP is not available”).
+
 ## [1.12.1] - 2026-08-10
 
 ### Fixed

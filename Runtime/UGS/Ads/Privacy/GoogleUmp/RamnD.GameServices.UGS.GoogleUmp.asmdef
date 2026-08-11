@@ -16,6 +16,12 @@
   "defineConstraints": [
     "RAMND_HAS_GOOGLE_MOBILE_ADS"
   ],
-  "versionDefines": [],
+  "versionDefines": [
+    {
+      "name": "com.google.ads.mobile",
+      "expression": "1.0.0",
+      "define": "RAMND_HAS_GOOGLE_MOBILE_ADS"
+    }
+  ],
   "noEngineReferences": false
 }
