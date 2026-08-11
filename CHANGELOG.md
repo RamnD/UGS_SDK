@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.12.4] - 2026-08-11
+
+### Fixed
+- **Ads privacy / UMP:** mark `RamnD.GameServices.UGS.GoogleUmp` with `AlwaysLinkAssembly` + `link.xml` so IL2CPP does not strip the optional assembly (device builds were stuck on `NullAdsUmpConsentGate` despite Editor compiling GoogleUmp). Pipeline now logs the active UMP gate type.
+
 ## [1.12.3] - 2026-08-11
 
 ### Fixed

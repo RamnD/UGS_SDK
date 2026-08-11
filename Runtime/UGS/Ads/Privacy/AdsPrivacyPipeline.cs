@@ -104,6 +104,8 @@ namespace RamnD.GameServices.Ads.Privacy
             lock (GateLock)
                 gate = _umpGate;
 
+            Debug.Log($"[AdsPrivacy] UMP gate: {gate.GetType().FullName}");
+
             try
             {
                 await gate.GatherConsentAsync(options, cancellationToken).ConfigureAwait(true);
