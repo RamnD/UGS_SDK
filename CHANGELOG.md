@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.12.3] - 2026-08-11
+
+### Fixed
+- **Ads privacy / UMP:** call `ConsentInformation.CanRequestAds()` as a method (GMA 11.x) — property access failed to compile (`CS0428`).
+
 ## [1.12.2] - 2026-08-11
 
 ### Fixed

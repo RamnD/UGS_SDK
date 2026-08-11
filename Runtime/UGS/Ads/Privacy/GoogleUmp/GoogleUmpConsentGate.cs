@@ -98,7 +98,7 @@ namespace RamnD.GameServices.Ads.Privacy.GoogleUmp
 
             Debug.Log(
                 $"[AdsPrivacy][UMP] Update ok. ConsentStatus={ConsentInformation.ConsentStatus}, " +
-                $"CanRequestAds={ConsentInformation.CanRequestAds}, " +
+                $"CanRequestAds={ConsentInformation.CanRequestAds()}, " +
                 $"PrivacyOptions={ConsentInformation.PrivacyOptionsRequirementStatus}");
         }
 
@@ -127,7 +127,7 @@ namespace RamnD.GameServices.Ads.Privacy.GoogleUmp
             LevelPlayPrivacySettings.SetGDPRConsent(consent);
             Debug.Log(
                 $"[AdsPrivacy][UMP] LevelPlay GDPR consent={consent} (UMP status={status}, " +
-                $"CanRequestAds={ConsentInformation.CanRequestAds})");
+                $"CanRequestAds={ConsentInformation.CanRequestAds()})");
         }
 
         static DebugGeography MapDebugGeography(AdsPrivacyDebugGeography geography) =>
