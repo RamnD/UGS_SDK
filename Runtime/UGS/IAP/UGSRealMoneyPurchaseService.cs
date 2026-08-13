@@ -33,7 +33,11 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     readonly Dictionary<string, RealMoneyProductDefinition> _productsById = new(StringComparer.Ordinal);
     readonly Dictionary<string, RealMoneyProductDefinition> _productsByStoreId = new(StringComparer.Ordinal);
     readonly HashSet<string> _txInFlightOrDone = new(StringComparer.Ordinal);
+    readonly HashSet<string> _locallyRedeemedTxIds = new(StringComparer.Ordinal);
     readonly object _pendingGate = new object();
+
+    const string RedeemedTxPrefsKey = "ugs_iap_redeemed_tx_ids_v1";
+    const int RedeemedTxPrefsMaxEntries = 64;
 
     StoreController _storeController;
     bool _isInitialized;
@@ -44,6 +48,8 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     bool _lastRedeemIndeterminate;
     RealMoneyPurchaseOutcome _lastPurchaseOutcome;
     string _activePurchaseProductId;
+    string _lastSuccessfulAppleReceiptFingerprint;
+    string _lastSuccessfulAppleRedeemProductId;
     Task _pendingDrainTask;
     TaskCompletionSource<bool> _purchasesFetchTcs;
     TaskCompletionSource<RestorePurchasesResult> _restorePurchasesTcs;
@@ -71,6 +77,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         _cloudSave = cloudSave ?? throw new ArgumentNullException(nameof(cloudSave));
         _economy = economy;
         _entitlements = new CloudSaveEntitlementStore<TKey>(cloudSave, entitlementSaveKey);
+        LoadLocallyRedeemedTxIds();
     }
 
     public async Task InitializeAsync(
@@ -451,7 +458,15 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     public bool HasEntitlement(string entitlementId) =>
         _entitlements.Has(entitlementId);
 
-    public void ClearEntitlements() => _entitlements.Clear();
+    public void ClearEntitlements()
+    {
+        _entitlements.Clear();
+        _locallyRedeemedTxIds.Clear();
+        PlayerPrefs.DeleteKey(RedeemedTxPrefsKey);
+        PlayerPrefs.Save();
+        _lastSuccessfulAppleReceiptFingerprint = null;
+        _lastSuccessfulAppleRedeemProductId = null;
+    }
 
     public bool TryGetProductInfo(string productId, out RealMoneyProductInfo info)
     {
@@ -562,6 +577,8 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         {
             if (definition.RedeemWithEconomy)
             {
+                Dictionary<TCurrency, long> balancesBeforeRedeem = CaptureBalanceSnapshot();
+
                 EconomyRedeemOutcome redeemOutcome =
                     await RedeemEconomyPurchaseAsync(order, product, definition);
 
@@ -582,7 +599,30 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                     return;
                 }
 
-                // Success or AlreadyRedeemed (idempotent) — continue grant/confirm path.
+                if (redeemOutcome == EconomyRedeemOutcome.AlreadyRedeemed)
+                {
+                    // Consumable + already-redeemed WITHOUT balance growth usually means a stale
+                    // Apple unified App Receipt (previous SKU redeem) — do NOT confirm or we
+                    // finish the store tx without granting this purchase.
+                    bool knownTx = IsLocallyRedeemedTx(txKey);
+                    bool balanceGrew = DidAnyBalanceIncrease(balancesBeforeRedeem);
+                    if (definition.ProductType == ProductType.Consumable && !knownTx && !balanceGrew)
+                    {
+                        Debug.LogError(
+                            $"[SDK][IAP] Rejecting false already-redeemed for consumable '{productId}' " +
+                            $"(tx='{txKey}'). Stale receipt suspected — leaving store order pending for retry.");
+                        _lastRedeemIndeterminate = true;
+                        CompletePurchaseRequest(productId, false);
+                        return;
+                    }
+
+                    Debug.Log(
+                        $"[SDK][IAP] Already-redeemed accepted for '{productId}' " +
+                        $"(knownTx={knownTx}, balanceGrew={balanceGrew}).");
+                }
+
+                // Success or verified AlreadyRedeemed — continue grant/confirm path.
+                RememberLocallyRedeemedTx(txKey);
                 granted = true;
             }
 
@@ -761,10 +801,27 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         string economyPurchaseId = definition.ProductId;
         string storeId = definition.ResolvedStoreProductId;
 
-        if (!TryResolveAppleReceipt(order, product, out string payload) ||
-            string.IsNullOrWhiteSpace(payload))
+        TryResolveAppleReceipt(order, product, out string receiptBefore);
+
+        string payload = null;
+        // Consumables: always force a fresh App Receipt. StoreKit 2 often reuses a stale
+        // unified receipt after a previous SKU redeem → Economy INVALIDALREADYREDEEMED.
+        if (definition.ProductType == ProductType.Consumable)
+        {
+            payload = await EnsureFreshAppleReceiptForConsumableAsync(
+                order,
+                product,
+                economyPurchaseId,
+                storeId,
+                receiptBefore);
+        }
+        else if (string.IsNullOrWhiteSpace(receiptBefore))
         {
             payload = await ResolveAppleReceiptWithRetryAsync(order, product, economyPurchaseId, storeId);
+        }
+        else
+        {
+            payload = receiptBefore;
         }
 
         if (string.IsNullOrWhiteSpace(payload))
@@ -794,6 +851,8 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                 EconomyService.Instance.Purchases.RedeemAppleAppStorePurchaseAsync(args),
                 timeoutMs: RedeemTimeoutMs);
 
+            _lastSuccessfulAppleReceiptFingerprint = FingerprintReceipt(payload);
+            _lastSuccessfulAppleRedeemProductId = economyPurchaseId;
             return await FinishSuccessfulRedeemAsync(economyPurchaseId);
         }
         catch (Exception ex)
@@ -827,7 +886,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
 
             Debug.LogWarning(
                 $"[SDK][IAP] Economy redeem for '{economyPurchaseId}' already applied — " +
-                "treating as success and confirming store order.");
+                "confirm only if this tx is known locally or balances grew.");
             if (_economy != null)
             {
                 try
@@ -1076,9 +1135,98 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             }
         }
 
+        return await TryRefreshAppleAppReceiptAsync(order, product, economyPurchaseId, storeId);
+    }
+
+    /// <summary>
+    /// For sequential consumables, force receipt refresh and prefer a payload that differs from
+    /// the last successful redeem (stale unified receipt → false already-redeemed).
+    /// </summary>
+    async Task<string> EnsureFreshAppleReceiptForConsumableAsync(
+        PendingOrder order,
+        Product product,
+        string economyPurchaseId,
+        string storeId,
+        string receiptBefore)
+    {
+        string baselineFingerprint = FingerprintReceipt(receiptBefore);
+        if (string.IsNullOrEmpty(baselineFingerprint))
+            baselineFingerprint = _lastSuccessfulAppleReceiptFingerprint;
+
+        bool needDifferentFromLastProduct =
+            !string.IsNullOrEmpty(_lastSuccessfulAppleReceiptFingerprint)
+            && !string.IsNullOrEmpty(_lastSuccessfulAppleRedeemProductId)
+            && !string.Equals(_lastSuccessfulAppleRedeemProductId, economyPurchaseId, StringComparison.Ordinal);
+
+        const int attempts = 4;
+        string best = receiptBefore;
+
+        for (int i = 0; i < attempts; i++)
+        {
+            string refreshed = await TryRefreshAppleAppReceiptAsync(order, product, economyPurchaseId, storeId);
+            if (!string.IsNullOrWhiteSpace(refreshed))
+                best = refreshed;
+            else if (TryResolveAppleReceipt(order, product, out string current) &&
+                     !string.IsNullOrWhiteSpace(current))
+                best = current;
+
+            string fingerprint = FingerprintReceipt(best);
+            bool changedFromBaseline =
+                !string.IsNullOrEmpty(fingerprint)
+                && !string.Equals(fingerprint, baselineFingerprint, StringComparison.Ordinal);
+            bool differsFromLastSuccess =
+                !needDifferentFromLastProduct
+                || string.IsNullOrEmpty(fingerprint)
+                || !string.Equals(fingerprint, _lastSuccessfulAppleReceiptFingerprint, StringComparison.Ordinal);
+
+            if (!string.IsNullOrWhiteSpace(best) && differsFromLastSuccess &&
+                (changedFromBaseline || i == attempts - 1 || !needDifferentFromLastProduct))
+            {
+                if (needDifferentFromLastProduct &&
+                    string.Equals(fingerprint, _lastSuccessfulAppleReceiptFingerprint, StringComparison.Ordinal))
+                {
+                    Debug.LogWarning(
+                        $"[SDK][IAP] Apple receipt for '{economyPurchaseId}' still matches previous redeem " +
+                        $"('{_lastSuccessfulAppleRedeemProductId}') after refresh attempt #{i + 1}.");
+                }
+                else
+                {
+                    Debug.Log(
+                        $"[SDK][IAP] Apple consumable receipt ready for '{economyPurchaseId}' " +
+                        $"(attempt #{i + 1}, changed={changedFromBaseline}).");
+                    return best;
+                }
+            }
+
+            await Task.Delay(500 * (i + 1));
+        }
+
+        if (needDifferentFromLastProduct &&
+            string.Equals(FingerprintReceipt(best), _lastSuccessfulAppleReceiptFingerprint, StringComparison.Ordinal))
+        {
+            Debug.LogError(
+                $"[SDK][IAP] Apple App Receipt did not update for '{economyPurchaseId}' after prior " +
+                $"'{_lastSuccessfulAppleRedeemProductId}' redeem — refusing stale redeem.");
+            return null;
+        }
+
+        return best;
+    }
+
+    async Task<string> TryRefreshAppleAppReceiptAsync(
+        PendingOrder order,
+        Product product,
+        string economyPurchaseId,
+        string storeId)
+    {
         IAppleStoreExtendedPurchaseService apple = _storeController?.AppleStoreExtendedPurchaseService;
         if (apple == null)
+        {
+            if (TryResolveAppleReceipt(order, product, out string existing) &&
+                !string.IsNullOrWhiteSpace(existing))
+                return existing;
             return null;
+        }
 
         Debug.Log($"[SDK][IAP] Refreshing Apple App Receipt for '{economyPurchaseId}' (store id '{storeId}')...");
         try
@@ -1094,26 +1242,93 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         catch (Exception ex)
         {
             Debug.LogWarning($"[SDK][IAP] RefreshAppReceipt failed for '{economyPurchaseId}': {ex.Message}");
+            if (TryResolveAppleReceipt(order, product, out string fallback) &&
+                !string.IsNullOrWhiteSpace(fallback))
+                return fallback;
         }
 
         return null;
     }
 
-    static bool TryExtractUnifiedPayload(string unifiedReceiptJson, out string storeName, out string payload)
+    static string FingerprintReceipt(string receipt)
     {
-        storeName = null;
-        payload = null;
-        if (string.IsNullOrWhiteSpace(unifiedReceiptJson))
-            return false;
+        if (string.IsNullOrWhiteSpace(receipt))
+            return null;
 
-        UnifiedReceipt unified = JsonUtility.FromJson<UnifiedReceipt>(unifiedReceiptJson);
-        if (unified == null || string.IsNullOrWhiteSpace(unified.Payload))
-            return false;
-
-        storeName = unified.Store;
-        payload = unified.Payload;
-        return true;
+        // Stable cheap fingerprint — full receipt compare is enough for change detection.
+        return $"{receipt.Length}:{receipt.GetHashCode():X8}";
     }
+
+    Dictionary<TCurrency, long> CaptureBalanceSnapshot()
+    {
+        var snap = new Dictionary<TCurrency, long>();
+        if (_economy == null)
+            return snap;
+
+        foreach (TCurrency currency in Enum.GetValues(typeof(TCurrency)))
+            snap[currency] = _economy.GetCachedBalance(currency);
+
+        return snap;
+    }
+
+    bool DidAnyBalanceIncrease(Dictionary<TCurrency, long> before)
+    {
+        if (_economy == null || before == null || before.Count == 0)
+            return false;
+
+        foreach (KeyValuePair<TCurrency, long> pair in before)
+        {
+            if (_economy.GetCachedBalance(pair.Key) > pair.Value)
+                return true;
+        }
+
+        return false;
+    }
+
+    void LoadLocallyRedeemedTxIds()
+    {
+        _locallyRedeemedTxIds.Clear();
+        string raw = PlayerPrefs.GetString(RedeemedTxPrefsKey, string.Empty);
+        if (string.IsNullOrWhiteSpace(raw))
+            return;
+
+        string[] parts = raw.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        for (int i = 0; i < parts.Length; i++)
+        {
+            string id = parts[i].Trim();
+            if (!string.IsNullOrEmpty(id))
+                _locallyRedeemedTxIds.Add(id);
+        }
+    }
+
+    void RememberLocallyRedeemedTx(string txKey)
+    {
+        if (string.IsNullOrWhiteSpace(txKey))
+            return;
+
+        if (!_locallyRedeemedTxIds.Add(txKey))
+            return;
+
+        while (_locallyRedeemedTxIds.Count > RedeemedTxPrefsMaxEntries)
+        {
+            string oldest = null;
+            foreach (string id in _locallyRedeemedTxIds)
+            {
+                oldest = id;
+                break;
+            }
+
+            if (oldest == null)
+                break;
+            _locallyRedeemedTxIds.Remove(oldest);
+        }
+
+        PlayerPrefs.SetString(RedeemedTxPrefsKey, string.Join("\n", _locallyRedeemedTxIds));
+        PlayerPrefs.Save();
+    }
+
+    bool IsLocallyRedeemedTx(string txKey) =>
+        !string.IsNullOrWhiteSpace(txKey) && _locallyRedeemedTxIds.Contains(txKey);
 
     static async Task<string> RefreshAppleAppReceiptAsync(IAppleStoreExtendedPurchaseService apple)
     {
@@ -1137,6 +1352,22 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             throw new TimeoutException("RefreshAppReceipt timed out after 15s.");
 
         return await tcs.Task;
+    }
+
+    static bool TryExtractUnifiedPayload(string unifiedReceiptJson, out string storeName, out string payload)
+    {
+        storeName = null;
+        payload = null;
+        if (string.IsNullOrWhiteSpace(unifiedReceiptJson))
+            return false;
+
+        UnifiedReceipt unified = JsonUtility.FromJson<UnifiedReceipt>(unifiedReceiptJson);
+        if (unified == null || string.IsNullOrWhiteSpace(unified.Payload))
+            return false;
+
+        storeName = unified.Store;
+        payload = unified.Payload;
+        return true;
     }
 
     void OnPurchaseConfirmed(Order order)

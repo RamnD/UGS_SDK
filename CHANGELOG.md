@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.5] - 2026-08-13
+
+### Fixed
+- **IAP / Apple consumables:** do not `ConfirmPurchase` on Economy `INVALIDALREADYREDEEMED` unless the transaction was locally marked redeemed or balances actually grew — prevents finishing a new StoreKit purchase when a stale unified App Receipt caused a false already-redeemed (sequential coin packs).
+- **IAP / Apple:** force App Receipt refresh before consumable redeem and refuse redeem when the receipt fingerprint still matches the previous SKU redeem.
+- **IAP:** persist recent redeemed store transaction ids locally for safe idempotent confirm; clear on `ClearEntitlements`.
+
 ## [1.12.4] - 2026-08-11
 
 ### Fixed
