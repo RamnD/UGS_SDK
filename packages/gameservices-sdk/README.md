@@ -49,6 +49,7 @@ Optional sample: **Package Manager → RamnD Game Services SDK → Samples → I
 | Achievements | [docs/achievements.md](docs/achievements.md) |
 | Ads (LevelPlay mediation) | [docs/ads.md](docs/ads.md) |
 | Ads privacy (ATT / UMP / COPPA) | [docs/ads-privacy.md](docs/ads-privacy.md) |
+| App update (Play Immediate) | [docs/app-update.md](docs/app-update.md) |
 | Analytics | [docs/analytics.md](docs/analytics.md) |
 | Remote Config | [docs/remote-config.md](docs/remote-config.md) |
 | Roadmap (`1.N.0` epics) | [docs/ROADMAP.md](docs/ROADMAP.md) |

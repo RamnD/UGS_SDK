@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.0.2] - 2026-08-17
+
+### Added
+- **App update:** optional Google Play Immediate in-app update (`AppUpdatePipeline`, assembly `RamnD.GameServices.UGS.GooglePlayAppUpdate`). No iOS UI — Apple has no native equivalent.
+
 ## [2.0.1] - 2026-08-17
 
 ### Added

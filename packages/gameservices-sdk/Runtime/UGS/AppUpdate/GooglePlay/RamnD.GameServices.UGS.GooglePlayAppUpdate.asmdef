@@ -1,0 +1,27 @@
+{
+  "name": "RamnD.GameServices.UGS.GooglePlayAppUpdate",
+  "rootNamespace": "RamnD.GameServices.AppUpdate.GooglePlay",
+  "references": [
+    "RamnD.GameServices.Core",
+    "RamnD.GameServices.UGS",
+    "Google.Play.AppUpdate",
+    "Google.Play.Common"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [
+    "RAMND_HAS_GOOGLE_PLAY_APP_UPDATE"
+  ],
+  "versionDefines": [
+    {
+      "name": "com.google.play.appupdate",
+      "expression": "1.0.0",
+      "define": "RAMND_HAS_GOOGLE_PLAY_APP_UPDATE"
+    }
+  ],
+  "noEngineReferences": false
+}
