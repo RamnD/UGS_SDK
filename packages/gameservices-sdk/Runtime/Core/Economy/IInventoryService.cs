@@ -31,6 +31,12 @@ public interface IInventoryService<TCurrency> where TCurrency : struct, Enum
     bool HasPendingTransactions { get; }
 
     /// <summary>
+    /// Outcome of the last <see cref="RefreshBalancesAsync"/>. Default
+    /// <see cref="EconomyRefreshResult.None"/> before the first refresh.
+    /// </summary>
+    EconomyRefreshResult LastRefreshResult { get; }
+
+    /// <summary>
     /// Syncs balances with the server. Call at game start, after reconnect, and on resume.
     /// Flushes the pending queue first. If offline or refresh is recoverable-failed —
     /// loads / keeps the last known cache from PlayerPrefs.

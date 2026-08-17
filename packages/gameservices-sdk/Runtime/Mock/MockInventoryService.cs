@@ -23,12 +23,16 @@ public sealed class MockInventoryService<TCurrency> : IInventoryService<TCurrenc
     public bool HasPendingTransactions => false;
 
     /// <inheritdoc/>
+    public EconomyRefreshResult LastRefreshResult { get; private set; }
+
+    /// <inheritdoc/>
     public void ClearLocalCache() => _balances.Clear();
 
     /// <inheritdoc/>
     public Task RefreshBalancesAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        LastRefreshResult = EconomyRefreshResult.ReachedServer;
         Debug.Log("[Mock Economy] RefreshBalances (mock).");
         return Task.CompletedTask;
     }

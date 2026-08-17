@@ -37,6 +37,9 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
     public bool HasPendingTransactions => _pendingQueue.HasPending;
 
     /// <inheritdoc/>
+    public EconomyRefreshResult LastRefreshResult { get; private set; }
+
+    /// <inheritdoc/>
     public void ClearLocalCache()
     {
         _cache.Clear();
@@ -87,6 +90,7 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
         if (!NetworkStatus.IsOnline)
         {
             _cache.Load();
+            LastRefreshResult = EconomyRefreshResult.OfflineCache;
             return;
         }
 
@@ -103,6 +107,7 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
                 Debug.LogWarning(
                     "[Economy] Pending queue not fully flushed — keeping local cache until next refresh.");
                 _cache.Save();
+                LastRefreshResult = EconomyRefreshResult.KeptLocalPending;
                 return;
             }
 
@@ -115,6 +120,7 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
             _cache.Save();
             _cache.LogAll();
             NetworkStatus.ReportSuccess();
+            LastRefreshResult = EconomyRefreshResult.ReachedServer;
         }
         catch (OperationCanceledException)
         {
@@ -122,6 +128,7 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
         }
         catch (InventoryOperationException)
         {
+            LastRefreshResult = EconomyRefreshResult.TransportFallback;
             throw;
         }
         catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e)
@@ -130,9 +137,11 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
             NetworkStatus.ReportFailure();
             Debug.LogWarning($"[Economy] Refresh failed (transport) — using cached balances: {e.Message}");
             _cache.Load();
+            LastRefreshResult = EconomyRefreshResult.TransportFallback;
         }
         catch (Exception e)
         {
+            LastRefreshResult = EconomyRefreshResult.TransportFallback;
             throw new InventoryOperationException(
                 InventoryFailureReason.ProviderRejected,
                 "Failed to synchronize balances from server.",

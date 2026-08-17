@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.0.1] - 2026-08-17
+
+### Added
+- **Economy:** `IInventoryService.LastRefreshResult` (`EconomyRefreshResult`) so games can tell a live GetBalances snapshot from offline / transport cache fallback.
+
 ## [1.12.5] - 2026-08-13
 
 ### Fixed
