@@ -7,11 +7,11 @@ using UnityEngine;
 [DefaultExecutionOrder(-200)]
 public sealed class ServiceFaultHost : MonoBehaviour
 {
-    [SerializeField] ServiceFaultCatalog _catalog;
+    [SerializeField] DefaultServiceFaultCatalog _catalog;
 
     ServiceFaultPopupBridge _bridge;
 
-    public ServiceFaultCatalog Catalog => _catalog;
+    public IServiceFaultCatalog Catalog => _catalog;
     public ServiceFaultPopupBridge Bridge => _bridge;
 
     void Awake()
@@ -31,7 +31,7 @@ public sealed class ServiceFaultHost : MonoBehaviour
         ServiceFaultRuntime.UnregisterHost(this);
     }
 
-    public void SetCatalog(ServiceFaultCatalog catalog)
+    public void SetCatalog(DefaultServiceFaultCatalog catalog)
     {
         _catalog = catalog;
         if (_catalog != null)

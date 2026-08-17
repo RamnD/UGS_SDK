@@ -9,7 +9,9 @@
 | `ServiceFaultPopupBridge` | Forwards pool changes to UI consumers |
 | `ServiceFaultRuntime` / `ServiceFaultHost` | DDOL lifecycle |
 | `NetworkConnectivityFaultWatcher` | Maps `NetworkStatus` → offline fault |
-| `ServiceFaultCatalog` | Optional ScriptableObject copy + icons |
+| `IServiceFaultCatalog` | Game or `DefaultServiceFaultCatalog` resolves title/body/icon |
+| `ServiceFaultFallbacks` | English safety-net copy when catalog misses a key |
+| `DefaultServiceFaultCatalog` | Optional plain-string ScriptableObject catalog |
 
 ## Invariants
 

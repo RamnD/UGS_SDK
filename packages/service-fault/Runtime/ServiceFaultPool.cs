@@ -179,8 +179,8 @@ public static class ServiceFaultPool
         string fallbackFaultKey = null)
     {
         string faultKey = fallbackFaultKey ?? ResolveDefaultFaultKey(domain);
-        title = ServiceFaultCatalog.FallbackTitle(domain, faultKey);
-        body = ServiceFaultCatalog.FallbackDescription(domain, faultKey);
+        title = ServiceFaultFallbacks.Title(domain, faultKey);
+        body = ServiceFaultFallbacks.Description(domain, faultKey);
 
         bool found = false;
         if (TryPeekHighest(out ServiceFaultEntry entry)
@@ -228,9 +228,7 @@ public static class ServiceFaultPool
             return icon;
         }
 
-        return _catalog is ServiceFaultCatalog assetCatalog
-            ? assetCatalog.GetStatusSprite(entry.Status)
-            : null;
+        return _catalog != null ? _catalog.GetStatusSprite(entry.Status) : null;
     }
 
     static bool ClearById(string id, bool removeSuppression)
@@ -272,14 +270,14 @@ public static class ServiceFaultPool
             && _catalog.TryResolve(domain, faultKey, rawCode, out status, out title, out description, out code, out icon))
         {
             if (string.IsNullOrWhiteSpace(code))
-                code = ServiceFaultCatalog.FallbackCode(domain, faultKey, rawCode);
+                code = ServiceFaultFallbacks.Code(domain, faultKey, rawCode);
             return;
         }
 
         status = ServiceFaultStatus.Error;
-        title = ServiceFaultCatalog.FallbackTitle(domain, faultKey);
-        description = ServiceFaultCatalog.FallbackDescription(domain, faultKey);
-        code = ServiceFaultCatalog.FallbackCode(domain, faultKey, rawCode);
+        title = ServiceFaultFallbacks.Title(domain, faultKey);
+        description = ServiceFaultFallbacks.Description(domain, faultKey);
+        code = ServiceFaultFallbacks.Code(domain, faultKey, rawCode);
         icon = null;
     }
 
@@ -300,7 +298,7 @@ public static class ServiceFaultPool
         OnPoolChanged?.Invoke();
     }
 
-    internal static (string topFaultId, string faultDomainsCsv)? BuildDiagnosticsSnapshot()
+    public static (string topFaultId, string faultDomainsCsv)? BuildDiagnosticsSnapshot()
     {
         if (!TryPeekHighest(out ServiceFaultEntry top) || top == null)
             return null;

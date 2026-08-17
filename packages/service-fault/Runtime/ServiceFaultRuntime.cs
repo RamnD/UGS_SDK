@@ -38,7 +38,7 @@ public static class ServiceFaultRuntime
         ApplyPendingToHost(host);
     }
 
-    public static void EnsureStarted(ServiceFaultCatalog catalog) =>
+    public static void EnsureStarted(DefaultServiceFaultCatalog catalog) =>
         EnsureStarted((IServiceFaultCatalog)catalog);
 
     static void ApplyPendingToHost(ServiceFaultHost host)
@@ -46,7 +46,7 @@ public static class ServiceFaultRuntime
         if (host == null)
             return;
 
-        if (_pendingCatalog is ServiceFaultCatalog assetCatalog)
+        if (_pendingCatalog is DefaultServiceFaultCatalog assetCatalog)
             host.SetCatalog(assetCatalog);
         else if (_pendingCatalog != null)
             host.SetCatalog(_pendingCatalog);

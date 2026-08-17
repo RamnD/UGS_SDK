@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.0.3] - 2026-08-17
+
+### Changed
+- **`com.ramnd.service-fault`:** rename optional SO catalog to `DefaultServiceFaultCatalog` so games can keep a localized `ServiceFaultCatalog`. English copy lives in `ServiceFaultFallbacks`. `IServiceFaultCatalog` includes `GetStatusSprite`. `ServiceFaultPool.BuildDiagnosticsSnapshot` is public.
+
 ## [2.0.0] - 2026-08-17
 
 ### Changed
