@@ -1,0 +1,17 @@
+{
+  "name": "RamnD.ServiceFault",
+  "rootNamespace": "",
+  "references": [
+    "RamnD.Core.Logging",
+    "RamnD.GameServices.Core"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

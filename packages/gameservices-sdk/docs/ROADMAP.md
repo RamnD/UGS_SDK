@@ -7,7 +7,7 @@ Versioned **product epics**. Each epic ships as a **minor** release: `1.N.0`.
 | Hotfixes / correctness bugs | [bug-reports/](./bug-reports/README.md) | Patch on current minor |
 | Planned features / architecture | **this file** | Minor `1.N.0` |
 
-Current package: **1.11.2**. Shipped **1.11.0** (Economy Purchase Catalog) + **1.11.1–1.11.2** hardening. Next planned server epic is **1.12.0** Cloud Code.
+Current package: **2.0.0** (monorepo under `packages/`). Shipped **1.11.0** (Economy Purchase Catalog) + **1.11.1–1.11.2** hardening. Next planned server epic is **1.12.0** Cloud Code — now continued on the **2.x** monorepo line.
 
 ---
 

@@ -1,20 +1,5 @@
 # Changelog
 
-## [2.0.0] - 2026-08-17
-
-### Changed
-- **Monorepo layout:** repository is now a UPM monorepo under `packages/`.
-- **Game Services SDK** moved to `packages/gameservices-sdk` — install via `?path=packages/gameservices-sdk#v2.0.0`.
-- Shared repo version **2.0.0** for all packages.
-
-### Added
-- **`com.ramnd.core-logging`:** `AppLog`, `AppLogLevel`, `AppDiagnostics`, `IBuildInfoProvider`.
-- **`com.ramnd.service-fault`:** headless fault pool, policy, popup bridge, runtime host, network watcher, optional `ServiceFaultCatalog`.
-
-### Migration
-- Update manifest dependency URL from repo root to `?path=packages/gameservices-sdk#v2.0.0`.
-- New foundation packages are optional until games adopt them (Maze migration planned separately).
-
 ## [1.12.5] - 2026-08-13
 
 ### Fixed

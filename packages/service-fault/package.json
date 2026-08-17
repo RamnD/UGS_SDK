@@ -1,0 +1,21 @@
+{
+  "name": "com.ramnd.service-fault",
+  "version": "2.0.0",
+  "displayName": "RamnD Service Fault",
+  "description": "Headless service-fault pipeline: global fault pool, sticky/one-shot policy, popup bridge for UI consumers. No UI prefabs included.",
+  "unity": "2022.3",
+  "unityRelease": "0f1",
+  "keywords": [
+    "fault",
+    "error",
+    "offline",
+    "ui-bridge"
+  ],
+  "author": {
+    "name": "RamnD"
+  },
+  "dependencies": {
+    "com.ramnd.core-logging": "https://github.com/RamnD/UGS_SDK.git?path=packages/core-logging",
+    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git?path=packages/gameservices-sdk"
+  }
+}

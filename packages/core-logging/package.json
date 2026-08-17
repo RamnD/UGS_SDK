@@ -1,0 +1,17 @@
+{
+  "name": "com.ramnd.core-logging",
+  "version": "2.0.0",
+  "displayName": "RamnD Core Logging",
+  "description": "Tagged logging façade with environment-based levels and optional Unity crash-report metadata enrichment.",
+  "unity": "2022.3",
+  "unityRelease": "0f1",
+  "keywords": [
+    "logging",
+    "diagnostics",
+    "debug"
+  ],
+  "author": {
+    "name": "RamnD"
+  },
+  "dependencies": {}
+}
