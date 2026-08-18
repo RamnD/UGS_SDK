@@ -105,8 +105,7 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
 
             if (HasPendingGrants())
             {
-                Debug.LogWarning(
-                    "[Consumables] Pending grants not fully flushed — keeping local quantities until next refresh.");
+                AppLog.Warn("Consumables", "Pending grants not fully flushed — keeping local quantities until next refresh.");
                 SaveToPrefs();
                 return;
             }
@@ -133,12 +132,12 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
                                   || EconomyErrorClassifier.IsIndeterminate(e))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning($"[Consumables] Balance sync failed (transport) — using cache: {e.Message}");
+            AppLog.Warn("Consumables", $"Balance sync failed (transport) — using cache: {e.Message}");
             LoadFromPrefs();
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Consumables] Balance sync failed: {e.Message}");
+            AppLog.Error("Consumables", $"Balance sync failed: {e.Message}");
             throw new InventoryOperationException(
                 InventoryFailureReason.ProviderRejected,
                 "Failed to synchronize consumable balances.",
@@ -160,7 +159,7 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
 
         if (!TryBeginMutation(id))
         {
-            Debug.LogWarning($"[Consumables] Consume rejected for '{id}' — mutation already in flight.");
+            AppLog.Warn("Consumables", $"Consume rejected for '{id}' — mutation already in flight.");
             return false;
         }
 
@@ -215,14 +214,14 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
         }
         catch (EconomyException e) when (e.Reason == EconomyExceptionReason.UnprocessableTransaction)
         {
-            Debug.LogWarning($"[Consumables] Insufficient {id} per server — refreshing cache.");
+            AppLog.Warn("Consumables", $"Insufficient {id} per server — refreshing cache.");
             try
             {
                 await RefreshAsync(cancellationToken);
             }
             catch (Exception refreshEx)
             {
-                Debug.LogWarning($"[Consumables] Re-sync after insufficient funds: {refreshEx.Message}");
+                AppLog.Warn("Consumables", $"Re-sync after insufficient funds: {refreshEx.Message}");
             }
 
             return false;
@@ -234,14 +233,14 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
         catch (Exception e) when (EconomyErrorClassifier.IsIndeterminate(e))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning($"[Consumables] Consume indeterminate for {id} — refreshing: {e.Message}");
+            AppLog.Warn("Consumables", $"Consume indeterminate for {id} — refreshing: {e.Message}");
             try
             {
                 await RefreshAsync(cancellationToken);
             }
             catch (Exception refreshEx)
             {
-                Debug.LogWarning($"[Consumables] Reconcile after indeterminate consume: {refreshEx.Message}");
+                AppLog.Warn("Consumables", $"Reconcile after indeterminate consume: {refreshEx.Message}");
             }
 
             // Do not local-debit — server may already have consumed.
@@ -250,12 +249,12 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
         catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning($"[Consumables] Consume failed (recoverable) for {id}: {e.Message}");
+            AppLog.Warn("Consumables", $"Consume failed (recoverable) for {id}: {e.Message}");
             return false;
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Consumables] Consume failed for {id}: {e.Message}");
+            AppLog.Error("Consumables", $"Consume failed for {id}: {e.Message}");
             return false;
         }
     }
@@ -274,7 +273,7 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
 
         if (!TryBeginMutation(id))
         {
-            Debug.LogWarning($"[Consumables] Grant rejected for '{id}' — mutation already in flight.");
+            AppLog.Warn("Consumables", $"Grant rejected for '{id}' — mutation already in flight.");
             return false;
         }
 
@@ -324,20 +323,19 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
                                   && _mapper.IsOfflineAllowed(id, InventoryOperation.Add))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning(
-                $"[Consumables] Grant {id} indeterminate — reconciling: {e.Message}");
+            AppLog.Warn("Consumables", $"Grant {id} indeterminate — reconciling: {e.Message}");
             try
             {
                 await RefreshAsync(cancellationToken);
             }
             catch (Exception refreshEx)
             {
-                Debug.LogWarning($"[Consumables] Reconcile refresh failed: {refreshEx.Message}");
+                AppLog.Warn("Consumables", $"Reconcile refresh failed: {refreshEx.Message}");
             }
 
             if (GetQuantity(id) >= before + amount)
             {
-                Debug.Log($"[Consumables] Indeterminate grant {id} +{amount} already on server.");
+                AppLog.Info("Consumables", $"Indeterminate grant {id} +{amount} already on server.");
                 return true;
             }
 
@@ -348,13 +346,13 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
                                   && _mapper.IsOfflineAllowed(id, InventoryOperation.Add))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning($"[Consumables] Grant {id} failed (recoverable) — queued locally: {e.Message}");
+            AppLog.Warn("Consumables", $"Grant {id} failed (recoverable) — queued locally: {e.Message}");
             ApplyLocalGrant(id, amount);
             return true;
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Consumables] Grant failed for {id}: {e.Message}");
+            AppLog.Error("Consumables", $"Grant failed for {id}: {e.Message}");
             return false;
         }
     }
@@ -403,7 +401,7 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
         }
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-        Debug.Log($"[Consumables] Flushing {work.Count} pending grant(s).");
+        AppLog.Info("Consumables", $"Flushing {work.Count} pending grant(s).");
 #endif
 
         foreach (PendingGrant snapshot in work)
@@ -442,8 +440,7 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
             catch (Exception e) when (EconomyErrorClassifier.IsIndeterminate(e))
             {
                 NetworkStatus.ReportFailure();
-                Debug.LogWarning(
-                    $"[Consumables] Pending grant flush indeterminate ({snapshot.item} +{amount}): {e.Message}");
+                AppLog.Warn("Consumables", $"Pending grant flush indeterminate ({snapshot.item} +{amount}): {e.Message}");
                 // Leave as pending (not in-flight) — next refresh reconciles via GetBalances + ApplyPendingOnTop.
                 RevertGrantToPending(snapshot.id);
                 return;
@@ -451,15 +448,14 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
             catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e))
             {
                 NetworkStatus.ReportFailure();
-                Debug.LogWarning(
-                    $"[Consumables] Pending grant flush paused ({snapshot.item} +{amount}): {e.Message}");
+                AppLog.Warn("Consumables", $"Pending grant flush paused ({snapshot.item} +{amount}): {e.Message}");
                 RevertGrantToPending(snapshot.id);
                 return;
             }
             catch (Exception e)
             {
                 RevertGrantToPending(snapshot.id);
-                Debug.LogError($"[Consumables] Pending grant flush failed ({snapshot.item}): {e.Message}");
+                AppLog.Error("Consumables", $"Pending grant flush failed ({snapshot.item}): {e.Message}");
                 throw new InventoryOperationException(
                     InventoryFailureReason.PendingTransactionsFlushFailed,
                     "Failed to upload pending consumable grants.",
@@ -530,7 +526,7 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
                 long net = (long)existing.amount + amount;
                 if (net > int.MaxValue)
                 {
-                    Debug.LogError($"[Consumables] Pending grant overflow for {key}.");
+                    AppLog.Error("Consumables", $"Pending grant overflow for {key}.");
                     return;
                 }
 
@@ -704,7 +700,7 @@ public sealed class UGSConsumableItemService<TItem> : IConsumableItemService<TIt
         PlayerPrefs.DeleteKey(legacyKey);
         PlayerPrefs.Save();
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-        Debug.Log($"[Consumables] Migrated cache key → consumables_currency_cache_{typeName}.");
+        AppLog.Info("Consumables", $"Migrated cache key → consumables_currency_cache_{typeName}.");
 #endif
     }
 

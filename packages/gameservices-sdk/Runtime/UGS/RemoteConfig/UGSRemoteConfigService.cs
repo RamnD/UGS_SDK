@@ -80,7 +80,7 @@ public sealed class UGSRemoteConfigService : IRemoteConfigService
             _hasLiveConfig = true;
             IsReady = true;
             NetworkStatus.ReportSuccess();
-            Debug.Log("[RemoteConfig] Fetch completed.");
+            AppLog.Info("RemoteConfig", "Fetch completed.");
         }
         catch (OperationCanceledException)
         {
@@ -91,7 +91,7 @@ public sealed class UGSRemoteConfigService : IRemoteConfigService
             if (IsRecoverableTransport(ex))
                 NetworkStatus.ReportFailure();
 
-            Debug.LogWarning($"[RemoteConfig] Fetch failed, using cache if available: {ex.Message}");
+            AppLog.Warn("RemoteConfig", $"Fetch failed, using cache if available: {ex.Message}");
             LoadCacheOnly();
 
             if (!IsReady)

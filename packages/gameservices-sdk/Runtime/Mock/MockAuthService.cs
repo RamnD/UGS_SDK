@@ -60,11 +60,11 @@ public sealed class MockAuthService : IAuthService
         var error = ValidatePlayerName(name);
         if (error != null)
         {
-            Debug.LogWarning($"[Mock Auth] Invalid name — {error}");
+            AppLog.Warn("MockAuth", $"Invalid name — {error}");
             return Task.FromResult<NameValidationError?>(error);
         }
         _playerName = name;
-        Debug.Log($"[Mock Auth] PlayerName → \"{_playerName}\"");
+        AppLog.DebugLog("MockAuth", $"PlayerName → \"{_playerName}\"");
         return Task.FromResult<NameValidationError?>(null);
     }
 
@@ -73,7 +73,7 @@ public sealed class MockAuthService : IAuthService
     {
         cancellationToken.ThrowIfCancellationRequested();
         IsSignedIn = true;
-        Debug.Log($"[Mock Auth] Signed in. Platform={platform}, ID={MockPlayerId}");
+        AppLog.DebugLog("MockAuth", $"Signed in. Platform={platform}, ID={MockPlayerId}");
         return Task.FromResult(true);
     }
 
@@ -91,7 +91,7 @@ public sealed class MockAuthService : IAuthService
         if (!string.IsNullOrEmpty(typeId))
             _linkedTypeIds.Add(typeId);
 
-        Debug.Log($"[Mock Auth] LinkWithAccount ({platform}) — mock Linked.");
+        AppLog.DebugLog("MockAuth", $"LinkWithAccount ({platform}) — mock Linked.");
         return Task.FromResult(AccountLinkResult.Linked);
     }
 
@@ -106,7 +106,7 @@ public sealed class MockAuthService : IAuthService
         if (!string.IsNullOrEmpty(typeId))
             _linkedTypeIds.Remove(typeId);
 
-        Debug.Log($"[Mock Auth] Unlink ({platform}) — mock.");
+        AppLog.DebugLog("MockAuth", $"Unlink ({platform}) — mock.");
         return Task.FromResult(true);
     }
 
@@ -134,7 +134,7 @@ public sealed class MockAuthService : IAuthService
         IsSignedIn = false;
         _playerName = "";
         _linkedTypeIds.Clear();
-        Debug.Log("[Mock Auth] DeleteAccount — mock.");
+        AppLog.DebugLog("MockAuth", "DeleteAccount — mock.");
         return Task.FromResult(true);
     }
 
@@ -144,6 +144,6 @@ public sealed class MockAuthService : IAuthService
         IsSignedIn = false;
         _playerName = "";
         _linkedTypeIds.Clear();
-        Debug.Log("[Mock Auth] Session reset.");
+        AppLog.DebugLog("MockAuth", "Session reset.");
     }
 }

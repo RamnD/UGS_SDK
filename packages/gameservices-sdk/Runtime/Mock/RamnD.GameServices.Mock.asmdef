@@ -3,6 +3,7 @@
   "rootNamespace": "",
   "references": [
     "RamnD.GameServices.Core",
+    "RamnD.Core.Logging",
     "Newtonsoft.Json"
   ],
   "includePlatforms": [],

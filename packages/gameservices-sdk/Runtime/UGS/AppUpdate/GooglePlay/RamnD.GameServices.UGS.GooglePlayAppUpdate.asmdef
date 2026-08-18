@@ -4,6 +4,7 @@
   "references": [
     "RamnD.GameServices.Core",
     "RamnD.GameServices.UGS",
+    "RamnD.Core.Logging",
     "Google.Play.AppUpdate",
     "Google.Play.Common"
   ],

@@ -27,7 +27,7 @@ public sealed class MockLeaderboardService : ILeaderboardService
         else          table.Add(entry);
 
         RebuildRanks(table);
-        Debug.Log($"[Mock Leaderboard] SubmitScore '{leaderboardId}': {score}");
+        AppLog.DebugLog("MockLeaderboard", $"SubmitScore '{leaderboardId}': {score}");
         return Task.CompletedTask;
     }
 
@@ -39,7 +39,7 @@ public sealed class MockLeaderboardService : ILeaderboardService
 
         var table  = GetOrCreateTable(leaderboardId);
         IReadOnlyList<LeaderboardEntry> result = table.Take(count).ToList();
-        Debug.Log($"[Mock Leaderboard] GetTopScores '{leaderboardId}': {result.Count} entries.");
+        AppLog.DebugLog("MockLeaderboard", $"GetTopScores '{leaderboardId}': {result.Count} entries.");
         return Task.FromResult(result);
     }
 
@@ -54,7 +54,7 @@ public sealed class MockLeaderboardService : ILeaderboardService
 
         LeaderboardEntry? result = entry.PlayerId == MockPlayerId ? entry : (LeaderboardEntry?)null;
 
-        Debug.Log(result.HasValue
+        AppLog.DebugLog("Mock", result.HasValue
             ? $"[Mock Leaderboard] Player found: rank {result.Value.Rank}, score {result.Value.Score}"
             : $"[Mock Leaderboard] Player not in '{leaderboardId}'.");
 

@@ -199,7 +199,7 @@ internal sealed class GooglePlayGamesAchievementBridge : PlatformAchievementBrid
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[Achievements][GooglePlay] Availability check failed: {ex.Message}");
+            AppLog.Warn("Achievements.GooglePlay", $"Availability check failed: {ex.Message}");
             return false;
         }
 #else
@@ -227,15 +227,15 @@ internal sealed class GooglePlayGamesAchievementBridge : PlatformAchievementBrid
             PlayGamesPlatform.Instance.ReportProgress(platformAchievementId, percent, success =>
             {
                 if (success)
-                    Debug.Log($"[Achievements][GooglePlay] Reported '{platformAchievementId}' = {percent:F2}%.");
+                    AppLog.Info("Achievements.GooglePlay", $"Reported '{platformAchievementId}' = {percent:F2}%.");
                 else
-                    Debug.LogWarning($"[Achievements][GooglePlay] Report failed for '{platformAchievementId}' ({percent:F2}%).");
+                    AppLog.Warn("Achievements.GooglePlay", $"Report failed for '{platformAchievementId}' ({percent:F2}%).");
                 tcs.TrySetResult(success);
             });
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[Achievements][GooglePlay] Report threw for '{platformAchievementId}': {ex.Message}");
+            AppLog.Warn("Achievements.GooglePlay", $"Report threw for '{platformAchievementId}': {ex.Message}");
             tcs.TrySetResult(false);
         }
 
@@ -286,7 +286,7 @@ internal sealed class AppleGameCenterAchievementBridge : PlatformAchievementBrid
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[Achievements][GameCenter] Availability check failed: {ex.Message}");
+            AppLog.Warn("Achievements.GameCenter", $"Availability check failed: {ex.Message}");
             return false;
         }
 #else
@@ -308,7 +308,7 @@ internal sealed class AppleGameCenterAchievementBridge : PlatformAchievementBrid
             achievement.ShowCompletionBanner = _showCompletionBanner && normalizedProgress >= 1d;
             await GKAchievement.Report(achievement);
             cancellationToken.ThrowIfCancellationRequested();
-            Debug.Log($"[Achievements][GameCenter] Reported '{platformAchievementId}' = {achievement.PercentComplete:F2}%.");
+            AppLog.Info("Achievements.GameCenter", $"Reported '{platformAchievementId}' = {achievement.PercentComplete:F2}%.");
             return true;
         }
         catch (OperationCanceledException)
@@ -317,7 +317,7 @@ internal sealed class AppleGameCenterAchievementBridge : PlatformAchievementBrid
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[Achievements][GameCenter] Report failed for '{platformAchievementId}': {ex.Message}");
+            AppLog.Warn("Achievements.GameCenter", $"Report failed for '{platformAchievementId}': {ex.Message}");
             return false;
         }
 #else
@@ -484,7 +484,7 @@ internal sealed class PlatformAchievementSyncState
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[Achievements] Platform sync state parse failed ({_prefsKey}): {ex.Message}");
+                AppLog.Warn("Achievements", $"Platform sync state parse failed ({_prefsKey}): {ex.Message}");
             }
         }
 
@@ -501,7 +501,7 @@ internal sealed class PlatformAchievementSyncState
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[Achievements] Platform sync state persist failed ({_prefsKey}): {ex.Message}");
+            AppLog.Warn("Achievements", $"Platform sync state persist failed ({_prefsKey}): {ex.Message}");
         }
     }
 

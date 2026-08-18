@@ -1,5 +1,3 @@
-using UnityEngine;
-
 /// <summary>
 /// Single entry point to all services after initialization
 /// (<see cref="UGSServicesBuilder"/> or <see cref="MockGameServices"/>).
@@ -37,7 +35,7 @@ public static class GameServicesLocator
     public static void Set(IGameServices services)
     {
         if (services != null && _services != null)
-            Debug.LogWarning("[GameServices] GameServicesLocator.Set: facade already set — overwriting.");
+            AppLog.Warn("GameServices", "GameServicesLocator.Set: facade already set — overwriting.");
         _services = services;
     }
 

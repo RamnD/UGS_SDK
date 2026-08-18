@@ -21,7 +21,7 @@ public sealed class MockRemoteConfigService : IRemoteConfigService
         cancellationToken.ThrowIfCancellationRequested();
         UsedCacheOnly = false;
         IsReady = true;
-        Debug.Log("[Mock RemoteConfig] Fetch completed (in-memory).");
+        AppLog.DebugLog("MockRemoteConfig", "Fetch completed (in-memory).");
         return Task.CompletedTask;
     }
 

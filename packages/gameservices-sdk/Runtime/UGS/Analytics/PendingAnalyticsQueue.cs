@@ -37,8 +37,7 @@ internal sealed class PendingAnalyticsQueue
             if (next.Length > MaxEvents)
             {
                 int overflow = next.Length - MaxEvents;
-                Debug.LogWarning(
-                    $"[Analytics] Pending queue full — dropping {overflow} oldest event(s).");
+                AppLog.Warn("Analytics", $"Pending queue full — dropping {overflow} oldest event(s).");
                 var trimmed = new PendingAnalyticsRecord[MaxEvents];
                 Array.Copy(next, overflow, trimmed, 0, MaxEvents);
                 next = trimmed;
@@ -104,8 +103,7 @@ internal sealed class PendingAnalyticsQueue
             if (next.Length > MaxEvents)
             {
                 int overflow = next.Length - MaxEvents;
-                Debug.LogWarning(
-                    $"[Analytics] Pending queue full after requeue — dropping {overflow} oldest event(s).");
+                AppLog.Warn("Analytics", $"Pending queue full after requeue — dropping {overflow} oldest event(s).");
                 var trimmed = new PendingAnalyticsRecord[MaxEvents];
                 Array.Copy(next, overflow, trimmed, 0, MaxEvents);
                 next = trimmed;

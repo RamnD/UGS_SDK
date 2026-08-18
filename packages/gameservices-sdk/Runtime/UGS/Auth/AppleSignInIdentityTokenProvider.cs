@@ -36,13 +36,13 @@ public static class AppleSignInIdentityTokenProvider
 #if UNITY_IOS && !UNITY_EDITOR && RAMND_HAS_APPLE_SIGNIN
         if (!AppleAuthManager.IsCurrentPlatformSupported)
         {
-            Debug.LogError("[Auth] Apple Sign-In is not supported on this device.");
+            AppLog.Error("Auth", "Apple Sign-In is not supported on this device.");
             return null;
         }
 
         if (Interlocked.CompareExchange(ref _requestInFlight, 1, 0) != 0)
         {
-            Debug.LogWarning("[Auth] Apple Sign-In already in progress.");
+            AppLog.Warn("Auth", "Apple Sign-In already in progress.");
             return null;
         }
 
@@ -67,7 +67,7 @@ public static class AppleSignInIdentityTokenProvider
                         byte[] tokenBytes = appleIdCredential.IdentityToken;
                         if (tokenBytes == null || tokenBytes.Length == 0)
                         {
-                            Debug.LogError("[Auth] Apple Sign-In returned empty identity token.");
+                            AppLog.Error("Auth", "Apple Sign-In returned empty identity token.");
                             tcs.TrySetResult(null);
                             return;
                         }
@@ -79,12 +79,12 @@ public static class AppleSignInIdentityTokenProvider
                         if (error != null
                             && error.GetAuthorizationErrorCode() == AuthorizationErrorCode.Canceled)
                         {
-                            Debug.Log("[Auth] Apple Sign-In cancelled by user.");
+                            AppLog.Info("Auth", "Apple Sign-In cancelled by user.");
                             tcs.TrySetCanceled();
                             return;
                         }
 
-                        Debug.LogWarning($"[Auth] Apple Sign-In failed: {error?.LocalizedDescription ?? "unknown"}");
+                        AppLog.Warn("Auth", $"Apple Sign-In failed: {error?.LocalizedDescription ?? "unknown"}");
                         tcs.TrySetResult(null);
                     });
 
@@ -104,7 +104,7 @@ public static class AppleSignInIdentityTokenProvider
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[Auth] Apple Sign-In exception: {ex.Message}");
+            AppLog.Error("Auth", $"Apple Sign-In exception: {ex.Message}");
             return null;
         }
         finally
@@ -112,8 +112,7 @@ public static class AppleSignInIdentityTokenProvider
             Interlocked.Exchange(ref _requestInFlight, 0);
         }
 #else
-        Debug.LogWarning(
-            "[Auth] Apple Sign-In identity token requires iOS device build + " +
+        AppLog.Warn("Auth", "Apple Sign-In identity token requires iOS device build + " +
             "com.lupidan.apple-signin-unity.");
         await UniTask.CompletedTask;
         cancellationToken.ThrowIfCancellationRequested();

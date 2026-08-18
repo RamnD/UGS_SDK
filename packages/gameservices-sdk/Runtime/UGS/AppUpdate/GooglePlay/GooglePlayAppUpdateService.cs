@@ -33,20 +33,19 @@ namespace RamnD.GameServices.AppUpdate.GooglePlay
             PlayAsyncOperation<AppUpdateInfo, AppUpdateErrorCode> infoOp = manager.GetAppUpdateInfo();
             if (!await WaitUntilDoneAsync(() => infoOp.IsDone, InfoTimeoutMs, cancellationToken))
             {
-                Debug.LogWarning("[AppUpdate] GetAppUpdateInfo timed out.");
+                AppLog.Warn("AppUpdate", "GetAppUpdateInfo timed out.");
                 return;
             }
 
             if (!infoOp.IsSuccessful)
             {
-                Debug.LogWarning($"[AppUpdate] GetAppUpdateInfo failed: {infoOp.Error}");
+                AppLog.Warn("AppUpdate", $"GetAppUpdateInfo failed: {infoOp.Error}");
                 return;
             }
 
             AppUpdateInfo info = infoOp.GetResult();
             UpdateAvailability availability = info.UpdateAvailability;
-            Debug.Log(
-                $"[AppUpdate] availability={availability} immediateAllowed=" +
+            AppLog.Info("AppUpdate", $"availability={availability} immediateAllowed=" +
                 $"{info.IsUpdateTypeAllowed(AppUpdateType.Immediate)}");
 
             bool shouldStart =
@@ -57,7 +56,7 @@ namespace RamnD.GameServices.AppUpdate.GooglePlay
 
             if (!info.IsUpdateTypeAllowed(AppUpdateType.Immediate))
             {
-                Debug.Log("[AppUpdate] Immediate flow not allowed — skipping.");
+                AppLog.Info("AppUpdate", "Immediate flow not allowed — skipping.");
                 return;
             }
 
@@ -66,9 +65,9 @@ namespace RamnD.GameServices.AppUpdate.GooglePlay
             await WaitUntilDoneAsync(() => request.IsDone, timeoutMs: 0, cancellationToken);
 
             if (request.Error != AppUpdateErrorCode.NoError)
-                Debug.LogWarning($"[AppUpdate] StartUpdate ended with {request.Error} status={request.Status}");
+                AppLog.Warn("AppUpdate", $"StartUpdate ended with {request.Error} status={request.Status}");
             else
-                Debug.Log($"[AppUpdate] Immediate flow finished status={request.Status}");
+                AppLog.Info("AppUpdate", $"Immediate flow finished status={request.Status}");
         }
 
         static async Task<bool> WaitUntilDoneAsync(

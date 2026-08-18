@@ -67,7 +67,7 @@ public static class GameServicesSync
         {
             if (!Handlers.TryGetValue(service, out handler) || handler == null)
             {
-                Debug.LogWarning($"[SDK][Sync] No refresh handler registered for {service}.");
+                AppLog.Warn("SDK.Sync", $"No refresh handler registered for {service}.");
                 return;
             }
         }
@@ -83,7 +83,7 @@ public static class GameServicesSync
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[SDK][Sync] Refresh {service} failed: {ex.Message}");
+            AppLog.Warn("SDK.Sync", $"Refresh {service} failed: {ex.Message}");
             throw;
         }
     }
@@ -138,7 +138,7 @@ public static class GameServicesSync
                 catch (Exception ex)
                 {
                     // One service must not abort the reconnect hub for the rest.
-                    Debug.LogWarning($"[SDK][Sync] Refresh {id} failed: {ex.Message}");
+                    AppLog.Warn("SDK.Sync", $"Refresh {id} failed: {ex.Message}");
                 }
             }
         }
@@ -166,7 +166,7 @@ public static class GameServicesSync
         if (!isOnline)
             return;
 
-        Debug.Log("[SDK][Sync] Online restored — refreshing registered services.");
+        AppLog.Info("SDK.Sync", "Online restored — refreshing registered services.");
         _ = RefreshAllAsync(CancellationToken.None);
     }
 }

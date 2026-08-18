@@ -12,12 +12,12 @@ public sealed class MockAnalyticsSystem : IAnalyticsSystem
     /// <inheritdoc/>
     public void LogEvent<T>(T eventPayload) where T : struct, IAnalyticsEvent
     {
-        Debug.Log($"[Mock Analytics] Event: {eventPayload.EventName}");
+        AppLog.DebugLog("MockAnalytics", $"Event: {eventPayload.EventName}");
     }
 
     /// <inheritdoc/>
     public void Flush()
     {
-        Debug.Log("[Mock Analytics] Flush (mock, nothing to send).");
+        AppLog.DebugLog("MockAnalytics", "Flush (mock, nothing to send).");
     }
 }

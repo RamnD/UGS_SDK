@@ -78,14 +78,14 @@ public class UGSAuthService : IAuthService
     {
         if (!IsSignedIn)
         {
-            Debug.LogError("[Auth] SetPlayerNameAsync: not signed in.");
+            AppLog.Error("Auth", "SetPlayerNameAsync: not signed in.");
             return NameValidationError.NotSignedIn;
         }
 
         var clientError = ValidatePlayerName(name);
         if (clientError != null)
         {
-            Debug.LogWarning($"[Auth] SetPlayerNameAsync: client validation failed — {clientError}");
+            AppLog.Warn("Auth", $"SetPlayerNameAsync: client validation failed — {clientError}");
             return clientError;
         }
 
@@ -101,12 +101,12 @@ public class UGSAuthService : IAuthService
                 NetworkRequest.AuthTimeoutMs);
             cancellationToken.ThrowIfCancellationRequested();
             NetworkStatus.ReportSuccess();
-            Debug.Log("[Auth] PlayerName updated.");
+            AppLog.Info("Auth", "PlayerName updated.");
             return null;
         }
         catch (AuthenticationException e) when (e.ErrorCode == AuthenticationErrorCodes.InvalidParameters)
         {
-            Debug.LogWarning($"[Auth] Server rejected player name: {e.Message}");
+            AppLog.Warn("Auth", $"Server rejected player name: {e.Message}");
             return NameValidationError.ServerRejected;
         }
         catch (OperationCanceledException)
@@ -117,7 +117,7 @@ public class UGSAuthService : IAuthService
         {
             if (IsTransportFailure(e))
                 NetworkStatus.ReportFailure();
-            Debug.LogError($"[Auth] UpdatePlayerName failed: {e.Message}");
+            AppLog.Error("Auth", $"UpdatePlayerName failed: {e.Message}");
             return NameValidationError.NetworkError;
         }
     }
@@ -163,7 +163,7 @@ public class UGSAuthService : IAuthService
             }
             catch (RegexMatchTimeoutException)
             {
-                Debug.LogWarning("[Auth] BannedPattern match timed out — treating as invalid.");
+                AppLog.Warn("Auth", "BannedPattern match timed out — treating as invalid.");
                 return NameValidationError.Profanity;
             }
         }
@@ -227,7 +227,7 @@ public class UGSAuthService : IAuthService
 
             if (platform == AuthPlatform.Anonymous)
             {
-                Debug.Log("[Auth] Forced anonymous sign-in.");
+                AppLog.Info("Auth", "Forced anonymous sign-in.");
                 cancellationToken.ThrowIfCancellationRequested();
                 await NetworkRequest.WithTimeout(
                     AuthenticationService.Instance.SignInAnonymouslyAsync(),
@@ -236,7 +236,7 @@ public class UGSAuthService : IAuthService
             }
             else if (!AuthenticationService.Instance.SessionTokenExists)
             {
-                Debug.Log("[Auth] First visit — anonymous sign-in.");
+                AppLog.Info("Auth", "First visit — anonymous sign-in.");
                 cancellationToken.ThrowIfCancellationRequested();
                 await NetworkRequest.WithTimeout(
                     AuthenticationService.Instance.SignInAnonymouslyAsync(),
@@ -247,25 +247,25 @@ public class UGSAuthService : IAuthService
             else
             {
                 AuthPlatform lastMethod = LoadLastMethod();
-                Debug.Log($"[Auth] Returning visit — signing in via: {lastMethod}.");
+                AppLog.Info("Auth", $"Returning visit — signing in via: {lastMethod}.");
                 cancellationToken.ThrowIfCancellationRequested();
                 await SignInWithMethodAsync(lastMethod, cancellationToken);
             }
 
             NetworkStatus.ReportSuccess();
-            Debug.Log($"[Auth] Success. PlayerId={GetPlayerId()}");
+            AppLog.Info("Auth", $"Success. PlayerId={GetPlayerId()}");
             return true;
         }
         catch (OperationCanceledException)
         {
-            Debug.LogWarning("[Auth] Sign-in cancelled.");
+            AppLog.Warn("Auth", "Sign-in cancelled.");
             return false;
         }
         catch (Exception e)
         {
             if (IsTransportFailure(e))
                 NetworkStatus.ReportFailure();
-            Debug.LogError($"[Auth] Sign-in failed: {e.Message}");
+            AppLog.Error("Auth", $"Sign-in failed: {e.Message}");
             return false;
         }
     }
@@ -276,7 +276,7 @@ public class UGSAuthService : IAuthService
     {
         if (!IsSignedIn)
         {
-            Debug.LogError("[Auth] Cannot link account — not signed in.");
+            AppLog.Error("Auth", "Cannot link account — not signed in.");
             return AccountLinkResult.NotSignedIn;
         }
 
@@ -288,8 +288,7 @@ public class UGSAuthService : IAuthService
 #if UNITY_ANDROID
                     if (string.IsNullOrWhiteSpace(_providerConfig.GooglePlayGamesOAuthWebClientId))
                     {
-                        Debug.LogWarning(
-                            "[Auth] TODO(GPGS→UGS): GooglePlayGamesOAuthWebClientId not passed via WithAuthProviderCredentials; add Web Client Id from GCP / game config if linking fails.");
+                        AppLog.Warn("Auth", "TODO(GPGS→UGS): GooglePlayGamesOAuthWebClientId not passed via WithAuthProviderCredentials; add Web Client Id from GCP / game config if linking fails.");
                     }
 #endif
                     cancellationToken.ThrowIfCancellationRequested();
@@ -322,33 +321,32 @@ public class UGSAuthService : IAuthService
                     break;
 
                 default:
-                    Debug.LogError("[Auth] Anonymous cannot be used as a link target.");
+                    AppLog.Error("Auth", "Anonymous cannot be used as a link target.");
                     return AccountLinkResult.Failed;
             }
 
             SaveLastMethod(platform);
             ClearRecoverCredentials();
-            Debug.Log($"[Auth] Account linked: {platform}. PlayerId={GetPlayerId()}");
+            AppLog.Info("Auth", $"Account linked: {platform}. PlayerId={GetPlayerId()}");
             return AccountLinkResult.Linked;
         }
         catch (OperationCanceledException)
         {
             ClearRecoverCredentials();
-            Debug.LogWarning("[Auth] Account link cancelled.");
+            AppLog.Warn("Auth", "Account link cancelled.");
             return AccountLinkResult.Cancelled;
         }
         catch (AuthenticationException e) when (e.ErrorCode == AuthenticationErrorCodes.AccountAlreadyLinked)
         {
             // Unity AuthenticationExceptionHandler already logged the 409 stack — that is expected.
-            Debug.LogWarning(
-                $"[Auth] External ID already linked to another player ({platform}) — " +
+            AppLog.Warn("Auth", $"External ID already linked to another player ({platform}) — " +
                 "recover: leave current session then SignIn existing (not ForceLink).");
             return await SignIntoExistingAfterAlreadyLinkedAsync(platform, cancellationToken);
         }
         catch (Exception e)
         {
             ClearRecoverCredentials();
-            Debug.LogError($"[Auth] Account link failed ({platform}): {e.Message}");
+            AppLog.Error("Auth", $"Account link failed ({platform}): {e.Message}");
             return AccountLinkResult.Failed;
         }
     }
@@ -373,13 +371,13 @@ public class UGSAuthService : IAuthService
     {
         if (!IsSignedIn)
         {
-            Debug.LogError("[Auth] Cannot unlink — not signed in.");
+            AppLog.Error("Auth", "Cannot unlink — not signed in.");
             return false;
         }
 
         if (!AuthPlatformKind.IsLinkable(platform))
         {
-            Debug.LogError("[Auth] Cannot unlink Anonymous.");
+            AppLog.Error("Auth", "Cannot unlink Anonymous.");
             return false;
         }
 
@@ -395,7 +393,7 @@ public class UGSAuthService : IAuthService
                 PlayerPrefs.Save();
             }
 
-            Debug.Log($"[Auth] Unlinked {platform}. PlayerId={GetPlayerId()}");
+            AppLog.Info("Auth", $"Unlinked {platform}. PlayerId={GetPlayerId()}");
             return true;
         }
         catch (OperationCanceledException)
@@ -404,7 +402,7 @@ public class UGSAuthService : IAuthService
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Auth] Unlink failed ({platform}): {e.Message}");
+            AppLog.Error("Auth", $"Unlink failed ({platform}): {e.Message}");
             return false;
         }
     }
@@ -478,46 +476,45 @@ public class UGSAuthService : IAuthService
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Debug.Log($"[Auth] Recover begin ({platform}). IsSignedIn={IsSignedIn} PlayerId={GetPlayerId()}");
+            AppLog.Info("Auth", $"Recover begin ({platform}). IsSignedIn={IsSignedIn} PlayerId={GetPlayerId()}");
 
             if (IsSignedIn)
             {
                 await LeaveCurrentSessionForRecoverAsync(cancellationToken);
                 PlayerPrefs.DeleteKey(LastAuthMethodKey);
                 PlayerPrefs.Save();
-                Debug.Log($"[Auth] Recover session left. IsSignedIn={IsSignedIn}");
+                AppLog.Info("Auth", $"Recover session left. IsSignedIn={IsSignedIn}");
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            Debug.Log($"[Auth] Recover SignInWith {platform}…");
+            AppLog.Info("Auth", $"Recover SignInWith {platform}…");
             await SignInWithMethodAsync(platform, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
             if (!IsSignedIn)
             {
                 ClearRecoverCredentials();
-                Debug.LogError($"[Auth] Recover SignIn failed — still not signed in ({platform}).");
+                AppLog.Error("Auth", $"Recover SignIn failed — still not signed in ({platform}).");
                 await EnsureAnonymousFallbackAsync(cancellationToken);
                 return AccountLinkResult.Failed;
             }
 
             SaveLastMethod(platform);
             ClearRecoverCredentials();
-            Debug.Log(
-                $"[Auth] Signed into existing account via {platform}. PlayerId={GetPlayerId()}");
+            AppLog.Info("Auth", $"Signed into existing account via {platform}. PlayerId={GetPlayerId()}");
             return AccountLinkResult.SignedIntoExisting;
         }
         catch (OperationCanceledException)
         {
             ClearRecoverCredentials();
-            Debug.LogWarning("[Auth] Recover SignIn cancelled.");
+            AppLog.Warn("Auth", "Recover SignIn cancelled.");
             await EnsureAnonymousFallbackAsync(CancellationToken.None);
             return AccountLinkResult.Cancelled;
         }
         catch (Exception e)
         {
             ClearRecoverCredentials();
-            Debug.LogError($"[Auth] Recover SignIn failed ({platform}): {e.Message}");
+            AppLog.Error("Auth", $"Recover SignIn failed ({platform}): {e.Message}");
             await EnsureAnonymousFallbackAsync(cancellationToken);
             return AccountLinkResult.Failed;
         }
@@ -534,16 +531,15 @@ public class UGSAuthService : IAuthService
 
         try
         {
-            Debug.LogWarning("[Auth] Restoring anonymous session after failed recover…");
+            AppLog.Warn("Auth", "Restoring anonymous session after failed recover…");
             bool ok = await SignInAsync(AuthPlatform.Anonymous, cancellationToken);
-            Debug.Log(
-                ok && IsSignedIn
+            AppLog.Info("Auth", ok && IsSignedIn
                     ? $"[Auth] Anonymous fallback OK. PlayerId={GetPlayerId()}"
                     : "[Auth] Anonymous fallback failed — still signed out.");
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[Auth] Anonymous fallback failed: {ex.Message}");
+            AppLog.Error("Auth", $"Anonymous fallback failed: {ex.Message}");
         }
     }
 
@@ -560,28 +556,26 @@ public class UGSAuthService : IAuthService
         {
             try
             {
-                Debug.Log($"[Auth] Recover: deleting empty anonymous PlayerId={orphanId}…");
+                AppLog.Info("Auth", $"Recover: deleting empty anonymous PlayerId={orphanId}…");
                 await AuthenticationService.Instance.DeleteAccountAsync();
-                Debug.Log($"[Auth] Deleted empty anonymous PlayerId={orphanId} before recover SignIn.");
+                AppLog.Info("Auth", $"Deleted empty anonymous PlayerId={orphanId} before recover SignIn.");
                 return;
             }
             catch (Exception deleteEx)
             {
-                Debug.LogWarning(
-                    $"[Auth] Could not delete empty anonymous ({deleteEx.Message}) — SignOut fallback.");
+                AppLog.Warn("Auth", $"Could not delete empty anonymous ({deleteEx.Message}) — SignOut fallback.");
             }
         }
         else
         {
-            Debug.Log(
-                $"[Auth] Recover: SignOut non-empty/unverifiable anonymous PlayerId={orphanId} " +
+            AppLog.Info("Auth", $"Recover: SignOut non-empty/unverifiable anonymous PlayerId={orphanId} " +
                 "(server data preserved; cannot delete after switch).");
         }
 
         if (IsSignedIn)
         {
             AuthenticationService.Instance.SignOut(clearCredentials: true);
-            Debug.Log("[Auth] Recover: SignOut(clearCredentials: true) done.");
+            AppLog.Info("Auth", "Recover: SignOut(clearCredentials: true) done.");
         }
     }
 
@@ -602,8 +596,7 @@ public class UGSAuthService : IAuthService
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            Debug.LogWarning(
-                $"[Auth] Empty-check timed out after {EmptyCheckTimeoutMs}ms — SignOut instead of Delete.");
+            AppLog.Warn("Auth", $"Empty-check timed out after {EmptyCheckTimeoutMs}ms — SignOut instead of Delete.");
             return false;
         }
     }
@@ -617,15 +610,14 @@ public class UGSAuthService : IAuthService
     {
         if (!NetworkStatus.IsOnline)
         {
-            Debug.LogWarning("[Auth] Cannot verify empty orphan offline — SignOut instead of Delete.");
+            AppLog.Warn("Auth", "Cannot verify empty orphan offline — SignOut instead of Delete.");
             return false;
         }
 
         // Local deferred / cached economy must block Delete even when server still shows 0.
         if (HasLocalEconomyProgressInPrefs())
         {
-            Debug.Log(
-                "[Auth] Empty-check: local economy cache/pending has progress — SignOut instead of Delete.");
+            AppLog.Info("Auth", "Empty-check: local economy cache/pending has progress — SignOut instead of Delete.");
             return false;
         }
 
@@ -681,7 +673,7 @@ public class UGSAuthService : IAuthService
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[Auth] Empty-check failed ({ex.Message}) — SignOut instead of Delete.");
+            AppLog.Warn("Auth", $"Empty-check failed ({ex.Message}) — SignOut instead of Delete.");
             return false;
         }
     }
@@ -753,7 +745,7 @@ public class UGSAuthService : IAuthService
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[Auth] Local economy prefs probe failed ({ex.Message}) — treat as non-empty.");
+            AppLog.Warn("Auth", $"Local economy prefs probe failed ({ex.Message}) — treat as non-empty.");
             return true;
         }
 
@@ -768,7 +760,7 @@ public class UGSAuthService : IAuthService
 
         PlayerPrefs.DeleteKey(LastAuthMethodKey);
         PlayerPrefs.Save();
-        Debug.Log("[Auth] Session cleared. Next sign-in will create a new anonymous session.");
+        AppLog.Info("Auth", "Session cleared. Next sign-in will create a new anonymous session.");
     }
 
     /// <inheritdoc/>
@@ -778,7 +770,7 @@ public class UGSAuthService : IAuthService
         {
             PlayerPrefs.DeleteKey(LastAuthMethodKey);
             PlayerPrefs.Save();
-            Debug.LogWarning("[Auth] DeleteAccountAsync: not signed in — cleared local auth prefs only.");
+            AppLog.Warn("Auth", "DeleteAccountAsync: not signed in — cleared local auth prefs only.");
             return true;
         }
 
@@ -791,17 +783,17 @@ public class UGSAuthService : IAuthService
 
             PlayerPrefs.DeleteKey(LastAuthMethodKey);
             PlayerPrefs.Save();
-            Debug.Log($"[Auth] Account deleted. Former PlayerId={playerId}");
+            AppLog.Info("Auth", $"Account deleted. Former PlayerId={playerId}");
             return true;
         }
         catch (OperationCanceledException)
         {
-            Debug.LogWarning("[Auth] DeleteAccountAsync cancelled.");
+            AppLog.Warn("Auth", "DeleteAccountAsync cancelled.");
             return false;
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Auth] DeleteAccountAsync failed: {e.Message}");
+            AppLog.Error("Auth", $"DeleteAccountAsync failed: {e.Message}");
             return false;
         }
     }
@@ -838,8 +830,7 @@ public class UGSAuthService : IAuthService
     {
         if (string.IsNullOrWhiteSpace(_providerConfig.GooglePlayGamesOAuthWebClientId))
         {
-            Debug.LogWarning(
-                "[Auth] TODO(GPGS→UGS): GooglePlayGamesOAuthWebClientId not set; pass WithAuthProviderCredentials if auth fails.");
+            AppLog.Warn("Auth", "TODO(GPGS→UGS): GooglePlayGamesOAuthWebClientId not set; pass WithAuthProviderCredentials if auth fails.");
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -848,7 +839,7 @@ public class UGSAuthService : IAuthService
         if (string.IsNullOrWhiteSpace(serverAuthCode))
             serverAuthCode = await GetGoogleServerAuthCodeAsync(cancellationToken);
         else
-            Debug.Log("[Auth] Recover: reusing Google Play Games auth code from Link attempt.");
+            AppLog.Info("Auth", "Recover: reusing Google Play Games auth code from Link attempt.");
 
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
@@ -891,12 +882,12 @@ public class UGSAuthService : IAuthService
 
             if (status != SignInStatus.Success)
             {
-                Debug.LogError($"[Auth] Google Play Games sign-in failed: {status}");
+                AppLog.Error("Auth", $"Google Play Games sign-in failed: {status}");
                 tcs.TrySetException(new Exception($"Google Play Games sign-in failed: {status}"));
                 return;
             }
 
-            Debug.Log("[Auth] Google Play Games authenticated — requesting server auth code.");
+            AppLog.Info("Auth", "Google Play Games authenticated — requesting server auth code.");
             PlayGamesPlatform.Instance.RequestServerSideAccess(forceRefreshToken: false, authCode =>
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -922,12 +913,12 @@ public class UGSAuthService : IAuthService
         // which shows the Google Play Games sign-in sheet.
         if (PlayGamesPlatform.Instance.IsAuthenticated())
         {
-            Debug.Log("[Auth] Google Play Games already authenticated.");
+            AppLog.Info("Auth", "Google Play Games already authenticated.");
             OnAuthComplete(SignInStatus.Success);
         }
         else
         {
-            Debug.Log("[Auth] Google Play Games: showing manual sign-in UI.");
+            AppLog.Info("Auth", "Google Play Games: showing manual sign-in UI.");
             PlayGamesPlatform.Instance.ManuallyAuthenticate(OnAuthComplete);
         }
 
@@ -970,7 +961,7 @@ public class UGSAuthService : IAuthService
         if (credentials == null || !credentials.IsValid)
             credentials = await RequestAppleGameCenterCredentialsAsync(cancellationToken);
         else
-            Debug.Log("[Auth] Recover: reusing Game Center credentials from Link attempt.");
+            AppLog.Info("Auth", "Recover: reusing Game Center credentials from Link attempt.");
 
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
@@ -1042,8 +1033,7 @@ public class UGSAuthService : IAuthService
 
         if (string.IsNullOrWhiteSpace(_providerConfig.AppleServicesId))
         {
-            Debug.LogWarning(
-                "[Auth] AppleServicesId is empty — ensure UGS Dashboard Apple provider + game config are set.");
+            AppLog.Warn("Auth", "AppleServicesId is empty — ensure UGS Dashboard Apple provider + game config are set.");
         }
 
         string identityToken = _recoverAppleIdentityToken;
@@ -1051,7 +1041,7 @@ public class UGSAuthService : IAuthService
         if (string.IsNullOrWhiteSpace(identityToken))
             identityToken = await RequestAppleIdentityTokenAsync(cancellationToken);
         else
-            Debug.Log("[Auth] Recover: reusing Apple identity token from Link attempt.");
+            AppLog.Info("Auth", "Recover: reusing Apple identity token from Link attempt.");
 
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
@@ -1066,8 +1056,7 @@ public class UGSAuthService : IAuthService
 
         if (string.IsNullOrWhiteSpace(_providerConfig.AppleServicesId))
         {
-            Debug.LogWarning(
-                "[Auth] AppleServicesId is empty — ensure UGS Dashboard Apple provider + game config are set.");
+            AppLog.Warn("Auth", "AppleServicesId is empty — ensure UGS Dashboard Apple provider + game config are set.");
         }
 
         string identityToken = await RequestAppleIdentityTokenAsync(cancellationToken);
@@ -1105,7 +1094,7 @@ public class UGSAuthService : IAuthService
         if (string.IsNullOrWhiteSpace(idToken))
             idToken = await RequestGoogleIdTokenAsync(cancellationToken);
         else
-            Debug.Log("[Auth] Recover: reusing Google OpenID id_token from Link attempt.");
+            AppLog.Info("Auth", "Recover: reusing Google OpenID id_token from Link attempt.");
 
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
@@ -1152,7 +1141,7 @@ public class UGSAuthService : IAuthService
         if (string.IsNullOrWhiteSpace(accessToken))
             accessToken = await RequestFacebookAccessTokenAsync(cancellationToken);
         else
-            Debug.Log("[Auth] Recover: reusing Facebook access token from Link attempt.");
+            AppLog.Info("Auth", "Recover: reusing Facebook access token from Link attempt.");
 
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
@@ -1200,7 +1189,7 @@ public class UGSAuthService : IAuthService
         if (string.IsNullOrWhiteSpace(idToken))
             idToken = await RequestOpenIdConnectIdTokenAsync(cancellationToken);
         else
-            Debug.Log("[Auth] Recover: reusing OpenID Connect id_token from Link attempt.");
+            AppLog.Info("Auth", "Recover: reusing OpenID Connect id_token from Link attempt.");
 
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(

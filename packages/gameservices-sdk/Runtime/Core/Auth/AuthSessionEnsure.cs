@@ -25,22 +25,22 @@ public static class AuthSessionEnsure
 
         if (!NetworkStatus.IsOnline)
         {
-            Debug.LogWarning($"[Auth] {context}: signed out and offline - skip anonymous SignIn.");
+            AppLog.Warn("Auth", $"{context}: signed out and offline - skip anonymous SignIn.");
             return false;
         }
 
         try
         {
-            Debug.LogWarning($"[Auth] {context}: signed out - restoring anonymous session...");
+            AppLog.Warn("Auth", $"{context}: signed out - restoring anonymous session...");
             bool ok = await auth.SignInAsync(AuthPlatform.Anonymous, cancellationToken);
             if (ok && auth.IsSignedIn)
             {
                 string playerId = auth.GetPlayerId();
-                Debug.Log($"[Auth] {context}: anonymous SignIn OK. PlayerId={playerId}");
+                AppLog.Info("Auth", $"{context}: anonymous SignIn OK. PlayerId={playerId}");
                 return true;
             }
 
-            Debug.LogWarning($"[Auth] {context}: anonymous SignIn did not restore session.");
+            AppLog.Warn("Auth", $"{context}: anonymous SignIn did not restore session.");
             return false;
         }
         catch (OperationCanceledException)
@@ -49,7 +49,7 @@ public static class AuthSessionEnsure
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[Auth] {context}: anonymous SignIn failed: {ex.Message}");
+            AppLog.Warn("Auth", $"{context}: anonymous SignIn failed: {ex.Message}");
             return false;
         }
     }

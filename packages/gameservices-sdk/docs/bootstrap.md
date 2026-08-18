@@ -12,6 +12,8 @@ Generic services (`IInventoryService<T>`, `IItemService<T>`, `ICloudSaveService<
 
 `Achievements` live **inside** the façade because they are portable and non-generic: use `GameServicesLocator.Services?.Achievements`.
 
+SDK runtime logs go through `AppLog`. Call `AppLog.ConfigureFromEnvironment()` once **before** `BuildAsync` so `UGS_ENV_*` levels apply.
+
 ---
 
 ## UGSServicesBuilder — full example
@@ -26,6 +28,7 @@ private ICloudSaveService<SaveKey>     _cloudSave;
 
 private async void Start()
 {
+    AppLog.ConfigureFromEnvironment();
     var services = await new UGSServicesBuilder()
         // ── Auth options ──────────────────────────────────────────────
         .WithForceAnonymous(_forceAnonymous)            // true = always anonymous (dev)

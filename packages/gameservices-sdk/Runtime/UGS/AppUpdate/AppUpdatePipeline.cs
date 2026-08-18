@@ -25,7 +25,7 @@ namespace RamnD.GameServices.AppUpdate
             lock (Gate)
                 _service = service;
 
-            Debug.Log($"[AppUpdate] Registered {service.GetType().FullName}.");
+            AppLog.Info("AppUpdate", $"Registered {service.GetType().FullName}.");
         }
 
         /// <summary>
@@ -56,7 +56,7 @@ namespace RamnD.GameServices.AppUpdate
             }
             catch (System.Exception ex)
             {
-                Debug.LogWarning($"[AppUpdate] Prompt failed (ignored): {ex.Message}");
+                AppLog.Warn("AppUpdate", $"Prompt failed (ignored): {ex.Message}");
             }
         }
     }

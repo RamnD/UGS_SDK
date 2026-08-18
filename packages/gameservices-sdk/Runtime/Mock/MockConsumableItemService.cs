@@ -30,14 +30,14 @@ public sealed class MockConsumableItemService<TItem> : IConsumableItemService<TI
     public void ClearLocalCache()
     {
         _quantities.Clear();
-        Debug.Log("[Mock Consumables] ClearLocalCache.");
+        AppLog.DebugLog("MockConsumables", "ClearLocalCache.");
     }
 
     /// <inheritdoc/>
     public Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Debug.Log("[Mock Consumables] Refresh (mock).");
+        AppLog.DebugLog("MockConsumables", "Refresh (mock).");
         return Task.CompletedTask;
     }
 
@@ -54,12 +54,12 @@ public sealed class MockConsumableItemService<TItem> : IConsumableItemService<TI
         int current = GetQuantity(id);
         if (current < amount)
         {
-            Debug.Log($"[Mock Consumables] Consume {id} x{amount}: insufficient (have {current}).");
+            AppLog.DebugLog("MockConsumables", $"Consume {id} x{amount}: insufficient (have {current}).");
             return Task.FromResult(false);
         }
 
         SetQuantity(id, current - amount);
-        Debug.Log($"[Mock Consumables] Consume {id} x{amount} → {GetQuantity(id)}");
+        AppLog.DebugLog("MockConsumables", $"Consume {id} x{amount} → {GetQuantity(id)}");
         return Task.FromResult(true);
     }
 
@@ -74,7 +74,7 @@ public sealed class MockConsumableItemService<TItem> : IConsumableItemService<TI
             return Task.FromResult(false);
 
         SetQuantity(id, GetQuantity(id) + amount);
-        Debug.Log($"[Mock Consumables] Grant {id} x{amount} → {GetQuantity(id)}");
+        AppLog.DebugLog("MockConsumables", $"Grant {id} x{amount} → {GetQuantity(id)}");
         return Task.FromResult(true);
     }
 

@@ -33,7 +33,7 @@ public sealed class MockInventoryService<TCurrency> : IInventoryService<TCurrenc
     {
         cancellationToken.ThrowIfCancellationRequested();
         LastRefreshResult = EconomyRefreshResult.ReachedServer;
-        Debug.Log("[Mock Economy] RefreshBalances (mock).");
+        AppLog.DebugLog("MockEconomy", "RefreshBalances (mock).");
         return Task.CompletedTask;
     }
 
@@ -41,7 +41,7 @@ public sealed class MockInventoryService<TCurrency> : IInventoryService<TCurrenc
     public Task FlushPendingAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Debug.Log("[Mock Economy] FlushPending (mock).");
+        AppLog.DebugLog("MockEconomy", "FlushPending (mock).");
         return Task.CompletedTask;
     }
 
@@ -55,8 +55,7 @@ public sealed class MockInventoryService<TCurrency> : IInventoryService<TCurrenc
         cancellationToken.ThrowIfCancellationRequested();
         if (amount <= 0) return Task.CompletedTask;
         _balances[type] = GetCachedBalance(type) + amount;
-        Debug.Log(
-            $"[Mock Economy] Add {amount} {type} → {_balances[type]}" +
+        AppLog.DebugLog("MockEconomy", $"Add {amount} {type} → {_balances[type]}" +
             (syncImmediately ? " (immediate)" : " (deferred)"));
         return Task.CompletedTask;
     }
@@ -72,13 +71,12 @@ public sealed class MockInventoryService<TCurrency> : IInventoryService<TCurrenc
         var current = GetCachedBalance(type);
         if (current < amount)
         {
-            Debug.Log($"[Mock Economy] Spend {amount} {type}: insufficient (have {current}).");
+            AppLog.DebugLog("MockEconomy", $"Spend {amount} {type}: insufficient (have {current}).");
             return Task.FromResult(false);
         }
 
         _balances[type] = current - amount;
-        Debug.Log(
-            $"[Mock Economy] Spend {amount} {type} → {_balances[type]}" +
+        AppLog.DebugLog("MockEconomy", $"Spend {amount} {type} → {_balances[type]}" +
             (syncImmediately ? " (immediate)" : " (deferred)"));
         return Task.FromResult(true);
     }

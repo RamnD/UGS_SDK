@@ -56,8 +56,7 @@ public sealed class MockCloudSaveService<TKey> : ICloudSaveService<TKey>
         }
         catch (Exception ex)
         {
-            Debug.LogError(
-                $"[Mock CloudSave] Corrupt value for key '{key}' — leaving raw JSON intact. {ex.Message}");
+            AppLog.Error("MockCloudSave", $"Corrupt value for key '{key}' — leaving raw JSON intact. {ex.Message}");
             throw new InvalidOperationException(
                 $"Cloud save key '{key}' contains corrupt data and cannot be read safely.",
                 ex);
@@ -69,7 +68,7 @@ public sealed class MockCloudSaveService<TKey> : ICloudSaveService<TKey>
     {
         _data[_mapper.ToCloudKey(key)] = JsonConvert.SerializeObject(value);
         LocalTimestamp = DateTime.UtcNow;
-        Debug.Log($"[Mock CloudSave] Set {key} = {value}");
+        AppLog.DebugLog("MockCloudSave", $"Set {key} = {value}");
     }
 
     /// <inheritdoc/>
@@ -78,14 +77,14 @@ public sealed class MockCloudSaveService<TKey> : ICloudSaveService<TKey>
         _data.Clear();
         LocalTimestamp = null;
         BaseTimestamp = null;
-        Debug.Log("[Mock CloudSave] ClearLocalCache.");
+        AppLog.DebugLog("MockCloudSave", "ClearLocalCache.");
     }
 
     /// <inheritdoc/>
     public Task<SaveConflict?> LoadAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Debug.Log("[Mock CloudSave] LoadAsync (mock, no conflicts).");
+        AppLog.DebugLog("MockCloudSave", "LoadAsync (mock, no conflicts).");
         return Task.FromResult<SaveConflict?>(null);
     }
 
@@ -96,15 +95,15 @@ public sealed class MockCloudSaveService<TKey> : ICloudSaveService<TKey>
         var ts = DateTime.UtcNow;
         LocalTimestamp = ts;
         BaseTimestamp  = ts;
-        Debug.Log("[Mock CloudSave] PushToCloud (mock, nothing sent).");
+        AppLog.DebugLog("MockCloudSave", "PushToCloud (mock, nothing sent).");
         return Task.FromResult<SaveConflict?>(null);
     }
 
     /// <inheritdoc/>
     public void ApplyCloud() =>
-        Debug.Log("[Mock CloudSave] ApplyCloud (mock, nothing to apply).");
+        AppLog.DebugLog("MockCloudSave", "ApplyCloud (mock, nothing to apply).");
 
     /// <inheritdoc/>
     public void KeepLocal() =>
-        Debug.Log("[Mock CloudSave] KeepLocal (mock).");
+        AppLog.DebugLog("MockCloudSave", "KeepLocal (mock).");
 }

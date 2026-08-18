@@ -16,8 +16,7 @@ namespace RamnD.GameServices.Ads.Privacy
             if (!_warnedMissing)
             {
                 _warnedMissing = true;
-                Debug.LogWarning(
-                    "[AdsPrivacy] Google Mobile Ads (UMP) is not available — consent form skipped. " +
+                AppLog.Warn("AdsPrivacy", "Google Mobile Ads (UMP) is not available — consent form skipped. " +
                     "Add com.google.ads.mobile for EU consent.");
             }
 

@@ -36,7 +36,7 @@ public sealed class MockEconomyPurchaseCatalog : IEconomyPurchaseCatalog
     {
         cancellationToken.ThrowIfCancellationRequested();
         IsSynced = true;
-        Debug.Log($"[Mock PurchaseCatalog] Refresh — {_entries.Count} entr(y/ies).");
+        AppLog.DebugLog("MockPurchaseCatalog", $"Refresh — {_entries.Count} entr(y/ies).");
         return Task.CompletedTask;
     }
 

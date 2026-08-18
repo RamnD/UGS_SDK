@@ -57,7 +57,7 @@ public sealed class UnityAdsManager : IAdsManager,
     {
         if (Advertisement.isInitialized)
         {
-            Debug.Log("[Ads] Unity Ads already initialized.");
+            AppLog.Info("Ads", "Unity Ads already initialized.");
             return;
         }
 
@@ -66,7 +66,7 @@ public sealed class UnityAdsManager : IAdsManager,
 #elif UNITY_IOS
         Advertisement.Initialize(_iosGameId, _testMode, this);
 #else
-        Debug.LogWarning("[Ads] UnityAdsManager: unsupported platform, init skipped.");
+        AppLog.Warn("Ads", "UnityAdsManager: unsupported platform, init skipped.");
 #endif
     }
 
@@ -75,7 +75,7 @@ public sealed class UnityAdsManager : IAdsManager,
     {
         if (!Advertisement.isInitialized)
         {
-            Debug.LogWarning("[Ads] Rewarded: SDK not initialized.");
+            AppLog.Warn("Ads", "Rewarded: SDK not initialized.");
             onFailed?.Invoke();
             return;
         }
@@ -92,7 +92,7 @@ public sealed class UnityAdsManager : IAdsManager,
     {
         if (!Advertisement.isInitialized)
         {
-            Debug.LogWarning("[Ads] Interstitial: SDK not initialized.");
+            AppLog.Warn("Ads", "Interstitial: SDK not initialized.");
             onFailed?.Invoke();
             return;
         }
@@ -108,13 +108,13 @@ public sealed class UnityAdsManager : IAdsManager,
     /// <summary>Unity Ads SDK initialized successfully.</summary>
     public void OnInitializationComplete()
     {
-        Debug.Log("[Ads] Unity Ads initialized.");
+        AppLog.Info("Ads", "Unity Ads initialized.");
     }
 
     /// <summary>SDK initialization error.</summary>
     public void OnInitializationFailed(UnityAdsInitializationError error, string message)
     {
-        Debug.LogError($"[Ads] Init failed: {error} — {message}");
+        AppLog.Error("Ads", $"Init failed: {error} — {message}");
     }
 
     // ─── IUnityAdsLoadListener ────────────────────────────────────────────────
@@ -122,7 +122,7 @@ public sealed class UnityAdsManager : IAdsManager,
     /// <summary>Ad loaded — start show.</summary>
     public void OnUnityAdsAdLoaded(string placementId)
     {
-        Debug.Log($"[Ads] Loaded: {placementId}");
+        AppLog.Info("Ads", $"Loaded: {placementId}");
         // Show only the placement we requested (collision guard)
         if (placementId == _activeShowPlacementId)
             Advertisement.Show(placementId, this);
@@ -131,7 +131,7 @@ public sealed class UnityAdsManager : IAdsManager,
     /// <summary>Ad load error.</summary>
     public void OnUnityAdsFailedToLoad(string placementId, UnityAdsLoadError error, string message)
     {
-        Debug.LogWarning($"[Ads] Failed to load {placementId}: {error} — {message}");
+        AppLog.Warn("Ads", $"Failed to load {placementId}: {error} — {message}");
         if (placementId == _activeShowPlacementId)
             InvokeFailedAndReset();
     }
@@ -150,7 +150,7 @@ public sealed class UnityAdsManager : IAdsManager,
     /// </summary>
     public void OnUnityAdsShowComplete(string placementId, UnityAdsShowCompletionState showCompletionState)
     {
-        Debug.Log($"[Ads] Show complete: {placementId}, result: {showCompletionState}");
+        AppLog.Info("Ads", $"Show complete: {placementId}, result: {showCompletionState}");
 
         // Rewarded path
         if (placementId == _activeShowPlacementId)
@@ -183,7 +183,7 @@ public sealed class UnityAdsManager : IAdsManager,
     /// <summary>Error during ad show.</summary>
     public void OnUnityAdsShowFailure(string placementId, UnityAdsShowError error, string message)
     {
-        Debug.LogError($"[Ads] Show failed {placementId}: {error} — {message}");
+        AppLog.Error("Ads", $"Show failed {placementId}: {error} — {message}");
         if (placementId == _activeShowPlacementId)
         {
             InvokeFailedAndReset();

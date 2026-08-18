@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.1] - 2026-08-18
+
+### Changed
+- **`com.ramnd.gameservices-sdk`:** runtime logs use `AppLog` from `com.ramnd.core-logging` instead of `Debug.Log*`.
+
+### Fixed
+- **`com.ramnd.gameservices-sdk`:** `AuthSessionEnsure` was missing `using UnityEngine`, so `Debug` failed to compile in Core (`CS0103`).
+
 ## [2.0.4] - 2026-08-18
 
 ### Added

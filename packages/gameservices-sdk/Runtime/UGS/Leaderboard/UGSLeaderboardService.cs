@@ -28,7 +28,7 @@ public sealed class UGSLeaderboardService : ILeaderboardService
                 LeaderboardsService.Instance.AddPlayerScoreAsync(leaderboardId, score),
                 cancellationToken);
             NetworkStatus.ReportSuccess();
-            Debug.Log($"[Leaderboard] Score submitted: {leaderboardId} → {score}");
+            AppLog.Info("Leaderboard", $"Score submitted: {leaderboardId} → {score}");
         }
         catch (OperationCanceledException)
         {
@@ -37,13 +37,13 @@ public sealed class UGSLeaderboardService : ILeaderboardService
         catch (Exception e) when (IsRecoverableTransport(e))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogError($"[Leaderboard] Submit failed '{leaderboardId}' (transport): {e.Message}");
+            AppLog.Error("Leaderboard", $"Submit failed '{leaderboardId}' (transport): {e.Message}");
             throw new LeaderboardOperationException(
                 $"Failed to submit score for '{leaderboardId}'.", e);
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Leaderboard] Submit failed '{leaderboardId}': {e.Message}");
+            AppLog.Error("Leaderboard", $"Submit failed '{leaderboardId}': {e.Message}");
             throw new LeaderboardOperationException(
                 $"Failed to submit score for '{leaderboardId}'.", e);
         }
@@ -80,12 +80,12 @@ public sealed class UGSLeaderboardService : ILeaderboardService
         catch (Exception e) when (IsRecoverableTransport(e))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning($"[Leaderboard] GetTopScores failed '{leaderboardId}' (transport): {e.Message}");
+            AppLog.Warn("Leaderboard", $"GetTopScores failed '{leaderboardId}' (transport): {e.Message}");
             return Array.Empty<LeaderboardEntry>();
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Leaderboard] GetTopScores failed '{leaderboardId}': {e.Message}");
+            AppLog.Error("Leaderboard", $"GetTopScores failed '{leaderboardId}': {e.Message}");
             throw new LeaderboardOperationException(
                 $"Failed to load top scores for '{leaderboardId}'.", e);
         }
@@ -115,18 +115,18 @@ public sealed class UGSLeaderboardService : ILeaderboardService
         catch (Exception e) when (IsRecoverableTransport(e))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning($"[Leaderboard] GetPlayerScore failed '{leaderboardId}' (transport): {e.Message}");
+            AppLog.Warn("Leaderboard", $"GetPlayerScore failed '{leaderboardId}' (transport): {e.Message}");
             return null;
         }
         catch (Exception e)
         {
             if (IsMissingPlayerScore(e))
             {
-                Debug.Log($"[Leaderboard] Player has no row yet '{leaderboardId}'.");
+                AppLog.Info("Leaderboard", $"Player has no row yet '{leaderboardId}'.");
                 return null;
             }
 
-            Debug.LogWarning($"[Leaderboard] GetPlayerScore failed '{leaderboardId}': {e.Message}");
+            AppLog.Warn("Leaderboard", $"GetPlayerScore failed '{leaderboardId}': {e.Message}");
             throw new LeaderboardOperationException(
                 $"Failed to get player entry for '{leaderboardId}'.", e);
         }

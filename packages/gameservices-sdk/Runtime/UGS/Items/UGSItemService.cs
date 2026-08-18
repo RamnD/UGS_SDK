@@ -110,18 +110,18 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
         catch (Exception e) when (IsRecoverableTransport(e))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning($"[Items] Inventory load failed (recoverable) — using cache: {e.Message}");
+            AppLog.Warn("Items", $"Inventory load failed (recoverable) — using cache: {e.Message}");
             LoadFromPrefs();
         }
         catch (Exception e) when (e is TimeoutException)
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning($"[Items] Inventory load timed out — using cache: {e.Message}");
+            AppLog.Warn("Items", $"Inventory load timed out — using cache: {e.Message}");
             LoadFromPrefs();
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Items] Inventory load failed: {e.Message}");
+            AppLog.Error("Items", $"Inventory load failed: {e.Message}");
             throw new InventoryOperationException(
                 InventoryFailureReason.ProviderRejected,
                 "Failed to synchronize inventory.",
@@ -167,7 +167,7 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
         {
             if (_purchaseInFlight)
             {
-                Debug.LogWarning($"[Items] Purchase rejected for '{id}' — another purchase is already in flight.");
+                AppLog.Warn("Items", $"Purchase rejected for '{id}' — another purchase is already in flight.");
                 return false;
             }
 
@@ -235,7 +235,7 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Items] Grant failed for {id}: {e.Message}");
+            AppLog.Error("Items", $"Grant failed for {id}: {e.Message}");
             if (!granted)
                 await TryConfirmGrantOrRefundAsync(id, costCurrency, cost);
 
@@ -258,12 +258,12 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
         }
         catch (Exception refreshEx)
         {
-            Debug.LogWarning($"[Items] Post-cancel ownership refresh failed: {refreshEx.Message}");
+            AppLog.Warn("Items", $"Post-cancel ownership refresh failed: {refreshEx.Message}");
         }
 
         if (IsOwned(id))
         {
-            Debug.Log($"[Items] Grant confirmed after cancel for {id} — no currency refund.");
+            AppLog.Info("Items", $"Grant confirmed after cancel for {id} — no currency refund.");
             return;
         }
 
@@ -278,11 +278,11 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
         }
         catch (InventoryOperationException)
         {
-            Debug.LogError("[Items] Currency rollback after item grant failure was incomplete.");
+            AppLog.Error("Items", "Currency rollback after item grant failure was incomplete.");
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[Items] Currency rollback failed: {ex.Message}");
+            AppLog.Error("Items", $"Currency rollback failed: {ex.Message}");
         }
     }
 
@@ -317,7 +317,7 @@ public sealed class UGSItemService<TItem, TCurrency> : IItemService<TItem>
         PlayerPrefs.SetString(_cachePrefsKey, PlayerPrefs.GetString(legacyKey, "{}"));
         PlayerPrefs.DeleteKey(legacyKey);
         PlayerPrefs.Save();
-        Debug.Log($"[Items] Migrated cache key → {_cachePrefsKey}.");
+        AppLog.Info("Items", $"Migrated cache key → {_cachePrefsKey}.");
     }
 
     [Serializable] private class ItemCache { public List<string> items = new(); }

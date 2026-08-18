@@ -18,8 +18,7 @@ namespace RamnD.GameServices.AppUpdate
             if (!_logged)
             {
                 _logged = true;
-                Debug.Log(
-                    "[AppUpdate] Play In-App Updates not available — add com.google.play.appupdate " +
+                AppLog.Info("AppUpdate", "Play In-App Updates not available — add com.google.play.appupdate " +
                     "for the native Google Play update flow.");
             }
 #endif

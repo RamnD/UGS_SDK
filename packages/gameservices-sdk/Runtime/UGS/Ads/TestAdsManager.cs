@@ -12,28 +12,27 @@ public class TestAdsManager : IAdsManager
     /// <inheritdoc/>
     public void Initialize()
     {
-        Debug.LogWarning("[Ads] TestAdsManager initialized. No real SDK.");
+        AppLog.Warn("Ads", "TestAdsManager initialized. No real SDK.");
     }
 
     /// <inheritdoc/>
     public async void ShowRewardedAd(string placementId, Action onSuccess, Action onFailed = null)
     {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-        Debug.Log($"[Ads] Rewarded: simulating view ({placementId})...");
+        AppLog.Info("Ads", $"Rewarded: simulating view ({placementId})...");
         try
         {
             await Task.Delay(1500);
-            Debug.Log("[Ads] Rewarded: view complete, grant reward.");
+            AppLog.Info("Ads", "Rewarded: view complete, grant reward.");
             onSuccess?.Invoke();
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[Ads] Test rewarded simulation failed: {ex.Message}");
+            AppLog.Error("Ads", $"Test rewarded simulation failed: {ex.Message}");
             onFailed?.Invoke();
         }
 #else
-        Debug.LogError(
-            $"[Ads] TestAdsManager.ShowRewardedAd called in non-dev build ({placementId}) — failing.");
+        AppLog.Error("Ads", $"TestAdsManager.ShowRewardedAd called in non-dev build ({placementId}) — failing.");
         onFailed?.Invoke();
 #endif
     }
@@ -42,11 +41,10 @@ public class TestAdsManager : IAdsManager
     public void ShowInterstitial(string placementId, Action onClosed = null, Action onFailed = null)
     {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-        Debug.Log($"[Ads] Interstitial: simulating show ({placementId}).");
+        AppLog.Info("Ads", $"Interstitial: simulating show ({placementId}).");
         onClosed?.Invoke();
 #else
-        Debug.LogError(
-            $"[Ads] TestAdsManager.ShowInterstitial called in non-dev build ({placementId}) — failing.");
+        AppLog.Error("Ads", $"TestAdsManager.ShowInterstitial called in non-dev build ({placementId}) — failing.");
         onFailed?.Invoke();
 #endif
     }

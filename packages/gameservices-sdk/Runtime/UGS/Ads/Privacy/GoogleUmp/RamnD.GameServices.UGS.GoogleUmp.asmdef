@@ -3,6 +3,7 @@
   "rootNamespace": "RamnD.GameServices.Ads.Privacy.GoogleUmp",
   "references": [
     "RamnD.GameServices.UGS",
+    "RamnD.Core.Logging",
     "Unity.LevelPlay",
     "GoogleMobileAds",
     "GoogleMobileAds.Ump"

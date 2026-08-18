@@ -3,6 +3,7 @@
   "rootNamespace": "",
   "references": [
     "RamnD.GameServices.Core",
+    "RamnD.Core.Logging",
     "UniTask",
     "Unity.Services.Core",
     "Unity.Services.Authentication",

@@ -19,7 +19,7 @@ namespace RamnD.GameServices.Ads.Privacy.GoogleUmp
 
             if (options.IsChildDirected)
             {
-                Debug.Log("[AdsPrivacy][UMP] Child-directed — skipping consent form (TagForUnderAgeOfConsent).");
+                AppLog.Info("AdsPrivacy.UMP", "Child-directed — skipping consent form (TagForUnderAgeOfConsent).");
                 await UpdateConsentInfoAsync(options, tagForUnderAge: true, cancellationToken)
                     .ConfigureAwait(true);
                 LevelPlayPrivacySettings.SetGDPRConsent(false);
@@ -38,7 +38,7 @@ namespace RamnD.GameServices.Ads.Privacy.GoogleUmp
         {
             if (!IsPrivacyOptionsRequired)
             {
-                Debug.Log("[AdsPrivacy][UMP] Privacy options not required — skip.");
+                AppLog.Info("AdsPrivacy.UMP", "Privacy options not required — skip.");
                 return;
             }
 
@@ -46,7 +46,7 @@ namespace RamnD.GameServices.Ads.Privacy.GoogleUmp
             ConsentForm.ShowPrivacyOptionsForm(error =>
             {
                 if (error != null)
-                    Debug.LogWarning($"[AdsPrivacy][UMP] Privacy options error: {error.Message}");
+                    AppLog.Warn("AdsPrivacy.UMP", $"Privacy options error: {error.Message}");
                 else
                     ApplyLevelPlayGdprFromUmp();
                 tcs.TrySetResult(true);
@@ -91,13 +91,12 @@ namespace RamnD.GameServices.Ads.Privacy.GoogleUmp
                 FormError error = await tcs.Task.ConfigureAwait(true);
                 if (error != null)
                 {
-                    Debug.LogWarning($"[AdsPrivacy][UMP] ConsentInformation.Update failed: {error.Message}");
+                    AppLog.Warn("AdsPrivacy.UMP", $"ConsentInformation.Update failed: {error.Message}");
                     return;
                 }
             }
 
-            Debug.Log(
-                $"[AdsPrivacy][UMP] Update ok. ConsentStatus={ConsentInformation.ConsentStatus}, " +
+            AppLog.Info("AdsPrivacy.UMP", $"Update ok. ConsentStatus={ConsentInformation.ConsentStatus}, " +
                 $"CanRequestAds={ConsentInformation.CanRequestAds()}, " +
                 $"PrivacyOptions={ConsentInformation.PrivacyOptionsRequirementStatus}");
         }
@@ -111,9 +110,9 @@ namespace RamnD.GameServices.Ads.Privacy.GoogleUmp
             {
                 FormError error = await tcs.Task.ConfigureAwait(true);
                 if (error != null)
-                    Debug.LogWarning($"[AdsPrivacy][UMP] Consent form error: {error.Message}");
+                    AppLog.Warn("AdsPrivacy.UMP", $"Consent form error: {error.Message}");
                 else
-                    Debug.Log("[AdsPrivacy][UMP] Consent form step finished.");
+                    AppLog.Info("AdsPrivacy.UMP", "Consent form step finished.");
             }
         }
 
@@ -125,8 +124,7 @@ namespace RamnD.GameServices.Ads.Privacy.GoogleUmp
                 || status == ConsentStatus.NotRequired;
 
             LevelPlayPrivacySettings.SetGDPRConsent(consent);
-            Debug.Log(
-                $"[AdsPrivacy][UMP] LevelPlay GDPR consent={consent} (UMP status={status}, " +
+            AppLog.Info("AdsPrivacy.UMP", $"LevelPlay GDPR consent={consent} (UMP status={status}, " +
                 $"CanRequestAds={ConsentInformation.CanRequestAds()})");
         }
 

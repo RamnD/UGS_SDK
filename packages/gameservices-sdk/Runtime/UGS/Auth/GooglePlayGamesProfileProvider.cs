@@ -33,7 +33,7 @@ public static class GooglePlayGamesProfileProvider
         }
         catch (System.Exception ex)
         {
-            Debug.LogWarning($"[Auth] Google Play Games display name read failed: {ex.Message}");
+            AppLog.Warn("Auth", $"Google Play Games display name read failed: {ex.Message}");
         }
 #endif
         return null;
@@ -52,7 +52,7 @@ public static class GooglePlayGamesProfileProvider
         }
         catch (System.Exception ex)
         {
-            Debug.LogWarning($"[Auth] Google Play Games avatar URL read failed: {ex.Message}");
+            AppLog.Warn("Auth", $"Google Play Games avatar URL read failed: {ex.Message}");
         }
 #endif
         return null;

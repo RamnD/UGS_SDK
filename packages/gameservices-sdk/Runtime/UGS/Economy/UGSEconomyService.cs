@@ -104,8 +104,7 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
             // Unconfirmed rows must not block GetBalances (needed to resolve them).
             if (_pendingQueue.HasFlushablePending)
             {
-                Debug.LogWarning(
-                    "[Economy] Pending queue not fully flushed — keeping local cache until next refresh.");
+                AppLog.Warn("Economy", "Pending queue not fully flushed — keeping local cache until next refresh.");
                 _cache.Save();
                 LastRefreshResult = EconomyRefreshResult.KeptLocalPending;
                 return;
@@ -135,7 +134,7 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
                                   || EconomyErrorClassifier.IsIndeterminate(e))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning($"[Economy] Refresh failed (transport) — using cached balances: {e.Message}");
+            AppLog.Warn("Economy", $"Refresh failed (transport) — using cached balances: {e.Message}");
             _cache.Load();
             LastRefreshResult = EconomyRefreshResult.TransportFallback;
         }
@@ -163,7 +162,7 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
         {
             ApplyLocalDeltaOrThrow(type, amount, InventoryOperation.Add);
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            Debug.Log($"[Economy] Deferred +{amount} {type} → {_cache.Get(type)} (queued)");
+            AppLog.Info("Economy", $"Deferred +{amount} {type} → {_cache.Get(type)} (queued)");
 #endif
             return;
         }
@@ -187,7 +186,7 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
             _cache.Save();
             NetworkStatus.ReportSuccess();
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            Debug.Log($"[Economy] Applied online +{amount} {type} → {result.Balance}");
+            AppLog.Info("Economy", $"Applied online +{amount} {type} → {result.Balance}");
 #endif
         }
         catch (OperationCanceledException)
@@ -197,21 +196,19 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
         catch (Exception e) when (EconomyErrorClassifier.IsIndeterminate(e))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning(
-                $"[Economy] Add {type} indeterminate — reconciling before queue: {e.Message}");
+            AppLog.Warn("Economy", $"Add {type} indeterminate — reconciling before queue: {e.Message}");
             await ReconcileIndeterminateAddAsync(type, amount, before, cancellationToken);
         }
         catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e)
                                   && _mapper.IsOfflineAllowed(type, InventoryOperation.Add))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning(
-                $"[Economy] Add {type} failed (recoverable) — queued locally: {e.Message}");
+            AppLog.Warn("Economy", $"Add {type} failed (recoverable) — queued locally: {e.Message}");
             ApplyLocalDelta(type, amount);
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Economy] Add failed {type}: {e.Message}");
+            AppLog.Error("Economy", $"Add failed {type}: {e.Message}");
             throw new InventoryOperationException(
                 InventoryFailureReason.ProviderRejected,
                 $"Failed to add {type}.",
@@ -233,14 +230,14 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
         {
             if (!_mapper.IsOfflineAllowed(type, InventoryOperation.Spend))
             {
-                Debug.LogWarning($"[Economy] Spend {type} offline not allowed — returning false.");
+                AppLog.Warn("Economy", $"Spend {type} offline not allowed — returning false.");
                 return false;
             }
 
             bool deferred = TryApplyLocalSpend(type, amount);
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             if (deferred)
-                Debug.Log($"[Economy] Deferred -{amount} {type} → {_cache.Get(type)} (queued)");
+                AppLog.Info("Economy", $"Deferred -{amount} {type} → {_cache.Get(type)} (queued)");
 #endif
             return deferred;
         }
@@ -249,7 +246,7 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
         {
             if (!_mapper.IsOfflineAllowed(type, InventoryOperation.Spend))
             {
-                Debug.LogWarning($"[Economy] Spend {type} offline not allowed — returning false.");
+                AppLog.Warn("Economy", $"Spend {type} offline not allowed — returning false.");
                 return false;
             }
 
@@ -272,13 +269,13 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
             _cache.Save();
             NetworkStatus.ReportSuccess();
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            Debug.Log($"[Economy] Applied online -{amount} {type} → {result.Balance}");
+            AppLog.Info("Economy", $"Applied online -{amount} {type} → {result.Balance}");
 #endif
             return true;
         }
         catch (EconomyException e) when (e.Reason == EconomyExceptionReason.UnprocessableTransaction)
         {
-            Debug.LogWarning($"[Economy] Insufficient {type} per server — refreshing balance cache.");
+            AppLog.Warn("Economy", $"Insufficient {type} per server — refreshing balance cache.");
             await RefreshBalancesAsync(cancellationToken);
             return false;
         }
@@ -289,28 +286,25 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
         catch (Exception e) when (EconomyErrorClassifier.IsIndeterminate(e))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning(
-                $"[Economy] Spend {type} indeterminate — reconciling: {e.Message}");
+            AppLog.Warn("Economy", $"Spend {type} indeterminate — reconciling: {e.Message}");
             return await ReconcileIndeterminateSpendAsync(type, amount, before, cancellationToken);
         }
         catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e)
                                   && _mapper.IsOfflineAllowed(type, InventoryOperation.Spend))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning(
-                $"[Economy] Spend {type} failed (recoverable) — queued locally: {e.Message}");
+            AppLog.Warn("Economy", $"Spend {type} failed (recoverable) — queued locally: {e.Message}");
             return TryApplyLocalSpend(type, amount);
         }
         catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning(
-                $"[Economy] Spend {type} failed (recoverable, offline spend disallowed): {e.Message}");
+            AppLog.Warn("Economy", $"Spend {type} failed (recoverable, offline spend disallowed): {e.Message}");
             return false;
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Economy] Spend failed {type}: {e.Message}");
+            AppLog.Error("Economy", $"Spend failed {type}: {e.Message}");
             return false;
         }
     }
@@ -337,14 +331,13 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
 
         if (_cache.Get(type) >= before + amount)
         {
-            Debug.Log($"[Economy] Indeterminate add {type} +{amount} already on server.");
+            AppLog.Info("Economy", $"Indeterminate add {type} +{amount} already on server.");
             return;
         }
 
         if (_mapper.IsOfflineAllowed(type, InventoryOperation.Add))
         {
-            Debug.LogWarning(
-                $"[Economy] Indeterminate add {type} +{amount} missing on server — queuing locally.");
+            AppLog.Warn("Economy", $"Indeterminate add {type} +{amount} missing on server — queuing locally.");
             ApplyLocalDelta(type, amount);
         }
     }
@@ -359,14 +352,13 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
 
         if (_cache.Get(type) <= before - amount)
         {
-            Debug.Log($"[Economy] Indeterminate spend {type} -{amount} already on server.");
+            AppLog.Info("Economy", $"Indeterminate spend {type} -{amount} already on server.");
             return true;
         }
 
         if (_mapper.IsOfflineAllowed(type, InventoryOperation.Spend))
         {
-            Debug.LogWarning(
-                $"[Economy] Indeterminate spend {type} -{amount} missing on server — queuing locally.");
+            AppLog.Warn("Economy", $"Indeterminate spend {type} -{amount} missing on server — queuing locally.");
             return TryApplyLocalSpend(type, amount);
         }
 
@@ -397,7 +389,7 @@ public sealed class UGSEconomyService<TCurrency> : IInventoryService<TCurrency>
         catch (Exception refreshEx)
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning($"[Economy] Force snapshot after indeterminate write failed: {refreshEx.Message}");
+            AppLog.Warn("Economy", $"Force snapshot after indeterminate write failed: {refreshEx.Message}");
             _cache.Load();
         }
     }

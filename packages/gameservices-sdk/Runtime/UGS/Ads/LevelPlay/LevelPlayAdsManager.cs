@@ -84,14 +84,14 @@ public sealed class LevelPlayAdsManager : IAdsManager
     {
         if (_initState != InitState.NotStarted)
         {
-            Debug.Log("[LevelPlay] Initialize skipped — already started.");
+            AppLog.Info("LevelPlay", "Initialize skipped — already started.");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(_appKey))
         {
             _initState = InitState.Failed;
-            Debug.LogError("[LevelPlay] Initialize failed: app key is empty.");
+            AppLog.Error("LevelPlay", "Initialize failed: app key is empty.");
             return;
         }
 
@@ -102,12 +102,12 @@ public sealed class LevelPlayAdsManager : IAdsManager
 #if UGS_ENV_STAGING || UGS_ENV_DEVELOPMENT
         // Integration Helper: logs network VERIFIED/MISSING and prints Advertising ID
         // (IDFA/GAID) for LevelPlay Dashboard → Setup → Testing → Add test device.
-        Debug.Log("[LevelPlay] ValidateIntegration (staging/development)...");
+        AppLog.Info("LevelPlay", "ValidateIntegration (staging/development)...");
         LevelPlay.SetAdaptersDebug(true);
         LevelPlay.ValidateIntegration();
 #endif
 
-        Debug.Log("[LevelPlay] Initializing SDK...");
+        AppLog.Info("LevelPlay", "Initializing SDK...");
         LevelPlay.Init(_appKey);
     }
 
@@ -116,7 +116,7 @@ public sealed class LevelPlayAdsManager : IAdsManager
     {
         if (!NetworkStatus.IsOnline)
         {
-            Debug.LogWarning("[LevelPlay] ShowRewardedAd skipped — offline / soft-offline.");
+            AppLog.Warn("LevelPlay", "ShowRewardedAd skipped — offline / soft-offline.");
             onFailed?.Invoke();
             return;
         }
@@ -128,7 +128,7 @@ public sealed class LevelPlayAdsManager : IAdsManager
         {
             if (!string.IsNullOrWhiteSpace(_deferredRewardedShow.PlacementId))
             {
-                Debug.LogWarning("[LevelPlay] Rewarded already deferred — rejecting new show.");
+                AppLog.Warn("LevelPlay", "Rewarded already deferred — rejecting new show.");
                 onFailed?.Invoke();
                 return;
             }
@@ -144,15 +144,14 @@ public sealed class LevelPlayAdsManager : IAdsManager
 
         if (_initState == InitState.Failed)
         {
-            Debug.LogWarning("[LevelPlay] ShowRewardedAd: SDK init failed.");
+            AppLog.Warn("LevelPlay", "ShowRewardedAd: SDK init failed.");
             onFailed?.Invoke();
             return;
         }
 
         if (_activeRewardedUnitId != null)
         {
-            Debug.LogWarning(
-                $"[LevelPlay] Rewarded already in progress ({_activeRewardedUnitId}) — rejecting '{placementId}'.");
+            AppLog.Warn("LevelPlay", $"Rewarded already in progress ({_activeRewardedUnitId}) — rejecting '{placementId}'.");
             onFailed?.Invoke();
             return;
         }
@@ -184,7 +183,7 @@ public sealed class LevelPlayAdsManager : IAdsManager
         {
             if (!string.IsNullOrWhiteSpace(_deferredInterstitialShow.PlacementId))
             {
-                Debug.LogWarning("[LevelPlay] Interstitial already deferred — rejecting new show.");
+                AppLog.Warn("LevelPlay", "Interstitial already deferred — rejecting new show.");
                 onFailed?.Invoke();
                 return;
             }
@@ -200,15 +199,14 @@ public sealed class LevelPlayAdsManager : IAdsManager
 
         if (_initState == InitState.Failed)
         {
-            Debug.LogWarning("[LevelPlay] ShowInterstitial: SDK init failed.");
+            AppLog.Warn("LevelPlay", "ShowInterstitial: SDK init failed.");
             onFailed?.Invoke();
             return;
         }
 
         if (_activeInterstitialUnitId != null)
         {
-            Debug.LogWarning(
-                $"[LevelPlay] Interstitial already in progress ({_activeInterstitialUnitId}) — rejecting '{placementId}'.");
+            AppLog.Warn("LevelPlay", $"Interstitial already in progress ({_activeInterstitialUnitId}) — rejecting '{placementId}'.");
             onFailed?.Invoke();
             return;
         }
@@ -236,14 +234,14 @@ public sealed class LevelPlayAdsManager : IAdsManager
     private void OnInitSuccess(LevelPlayConfiguration config)
     {
         _initState = InitState.Succeeded;
-        Debug.Log($"[LevelPlay] Initialized. {config}");
+        AppLog.Info("LevelPlay", $"Initialized. {config}");
         FlushDeferredShows();
     }
 
     private void OnInitFailed(LevelPlayInitError error)
     {
         _initState = InitState.Failed;
-        Debug.LogError($"[LevelPlay] Init failed: {error}");
+        AppLog.Error("LevelPlay", $"Init failed: {error}");
 
         var deferredRewarded = _deferredRewardedShow;
         _deferredRewardedShow = default;
@@ -290,7 +288,7 @@ public sealed class LevelPlayAdsManager : IAdsManager
 
     private void OnRewardedLoaded(string adUnitId)
     {
-        Debug.Log($"[LevelPlay] Rewarded loaded: {adUnitId}");
+        AppLog.Info("LevelPlay", $"Rewarded loaded: {adUnitId}");
         // Show only if this unit was requested via ShowRewardedAd
         if (adUnitId == _activeRewardedUnitId)
             _rewardedAds[adUnitId].ShowAd();
@@ -298,14 +296,14 @@ public sealed class LevelPlayAdsManager : IAdsManager
 
     private void OnRewardedLoadFailed(string adUnitId, LevelPlayAdError error)
     {
-        Debug.LogWarning($"[LevelPlay] Rewarded load failed ({adUnitId}): {error}");
+        AppLog.Warn("LevelPlay", $"Rewarded load failed ({adUnitId}): {error}");
         if (adUnitId == _activeRewardedUnitId)
             InvokeFailedAndReset();
     }
 
     private void OnRewardedDisplayFailed(string adUnitId, LevelPlayAdError error)
     {
-        Debug.LogWarning($"[LevelPlay] Rewarded display failed ({adUnitId}): {error}");
+        AppLog.Warn("LevelPlay", $"Rewarded display failed ({adUnitId}): {error}");
         if (adUnitId == _activeRewardedUnitId)
             InvokeFailedAndReset();
     }
@@ -410,7 +408,7 @@ public sealed class LevelPlayAdsManager : IAdsManager
 
     private void OnInterstitialLoaded(string adUnitId)
     {
-        Debug.Log($"[LevelPlay] Interstitial loaded: {adUnitId}");
+        AppLog.Info("LevelPlay", $"Interstitial loaded: {adUnitId}");
         if (adUnitId != _activeInterstitialUnitId)
             return;
 
@@ -422,21 +420,21 @@ public sealed class LevelPlayAdsManager : IAdsManager
 
     private void OnInterstitialLoadFailed(string adUnitId, LevelPlayAdError error)
     {
-        Debug.LogWarning($"[LevelPlay] Interstitial load failed ({adUnitId}): {error}");
+        AppLog.Warn("LevelPlay", $"Interstitial load failed ({adUnitId}): {error}");
         if (adUnitId == _activeInterstitialUnitId)
             InvokeInterstitialFailedAndReset();
     }
 
     private void OnInterstitialDisplayFailed(string adUnitId, LevelPlayAdError error)
     {
-        Debug.LogWarning($"[LevelPlay] Interstitial display failed ({adUnitId}): {error}");
+        AppLog.Warn("LevelPlay", $"Interstitial display failed ({adUnitId}): {error}");
         if (adUnitId == _activeInterstitialUnitId)
             InvokeInterstitialFailedAndReset();
     }
 
     private void OnInterstitialClosed(string adUnitId)
     {
-        Debug.Log($"[LevelPlay] Interstitial closed adUnitId={adUnitId}, active={_activeInterstitialUnitId}");
+        AppLog.Info("LevelPlay", $"Interstitial closed adUnitId={adUnitId}, active={_activeInterstitialUnitId}");
 
         if (adUnitId == _activeInterstitialUnitId)
         {
@@ -495,8 +493,7 @@ public sealed class LevelPlayAdsManager : IAdsManager
         if (adUnitId != _activeInterstitialUnitId)
             return;
 
-        Debug.LogWarning(
-            $"[LevelPlay] Editor interstitial auto-closed after {fallbackMs}ms " +
+        AppLog.Warn("LevelPlay", $"Editor interstitial auto-closed after {fallbackMs}ms " +
             $"(mock OnAdClosed fallback): {adUnitId}");
 
         // Fallback only invokes the C# callback — it does not call InterstitialPrefab.HideAd(),

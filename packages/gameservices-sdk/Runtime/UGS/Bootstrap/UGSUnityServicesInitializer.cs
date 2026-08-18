@@ -58,7 +58,7 @@ internal static class UGSUnityServicesInitializer
         var initOptions = new InitializationOptions();
         TrySetEnvironmentName(initOptions, environmentName);
 
-        Debug.Log($"[SDK] Initializing Unity Services. Environment={environmentName}");
+        AppLog.Info("SDK", $"Initializing Unity Services. Environment={environmentName}");
         await UnityServices.InitializeAsync(initOptions);
     }
 
@@ -113,12 +113,11 @@ internal static class UGSUnityServicesInitializer
             setOptionMethod.Invoke(
                 initOptions,
                 new object[] { "com.unity.services.core.environment-name", environmentName });
-            Debug.Log($"[SDK] Applied Unity Services environment via SetOption: {environmentName}");
+            AppLog.Info("SDK", $"Applied Unity Services environment via SetOption: {environmentName}");
             return;
         }
 
-        Debug.LogWarning(
-            "[SDK] Unity Services environment was not set via InitializationOptions API " +
+        AppLog.Warn("SDK", "Unity Services environment was not set via InitializationOptions API " +
             "(SetEnvironmentName/EnvironmentName/SetOption not found). Falling back to default Unity environment.");
     }
 }

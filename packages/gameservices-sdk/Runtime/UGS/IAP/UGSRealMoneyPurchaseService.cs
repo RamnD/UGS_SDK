@@ -128,9 +128,9 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
 
         FetchProducts();
         _isInitialized = true;
-        Debug.Log("[SDK][IAP] Store connected — draining pending purchases...");
+        AppLog.Info("SDK.IAP", "Store connected — draining pending purchases...");
         await ProcessPendingPurchasesAsync(cancellationToken);
-        Debug.Log("[SDK][IAP] Pending purchase drain finished.");
+        AppLog.Info("SDK.IAP", "Pending purchase drain finished.");
     }
 
     public void EnsureProductsFetched()
@@ -188,7 +188,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             Task completed = await Task.WhenAny(fetchTcs.Task, Task.Delay(20000, cancellationToken));
             if (completed != fetchTcs.Task)
             {
-                Debug.LogWarning("[SDK][IAP] FetchPurchases timed out while draining pending orders.");
+                AppLog.Warn("SDK.IAP", "FetchPurchases timed out while draining pending orders.");
                 fetchTcs.TrySetResult(false);
             }
             else
@@ -221,7 +221,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         }
 
         if (Volatile.Read(ref _pendingHandlersInFlight) > 0)
-            Debug.LogWarning("[SDK][IAP] Pending purchase handlers still running after drain wait.");
+            AppLog.Warn("SDK.IAP", "Pending purchase handlers still running after drain wait.");
     }
 
     public async Task<bool> PurchaseAsync(
@@ -244,8 +244,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         // and leave orphan store sheets / TCS entries.
         if (_purchaseRequests.Count > 0)
         {
-            Debug.LogWarning(
-                $"[SDK][IAP] Purchase rejected for '{productId}' — another purchase is already in flight.");
+            AppLog.Warn("SDK.IAP", $"Purchase rejected for '{productId}' — another purchase is already in flight.");
             _lastPurchaseOutcome = RealMoneyPurchaseOutcome.Failed;
             return false;
         }
@@ -261,7 +260,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[SDK][IAP] Pre-purchase pending drain failed: {ex.Message}");
+            AppLog.Warn("SDK.IAP", $"Pre-purchase pending drain failed: {ex.Message}");
         }
 
         string storeId = definition.ResolvedStoreProductId;
@@ -269,8 +268,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         if (product == null)
         {
             EnsureProductsFetched();
-            Debug.LogWarning(
-                $"[SDK][IAP] Product '{productId}' (store id '{storeId}') not fetched from the store — refetch kicked.");
+            AppLog.Warn("SDK.IAP", $"Product '{productId}' (store id '{storeId}') not fetched from the store — refetch kicked.");
             _lastPurchaseOutcome = RealMoneyPurchaseOutcome.Failed;
             return false;
         }
@@ -366,9 +364,9 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                 _storeController.RestoreTransactions((success, error) =>
                 {
                     if (!string.IsNullOrWhiteSpace(error))
-                        Debug.LogWarning($"[SDK][IAP] Restore transactions result: success={success}, error={error}");
+                        AppLog.Warn("SDK.IAP", $"Restore transactions result: success={success}, error={error}");
                     else
-                        Debug.Log($"[SDK][IAP] Restore transactions result: success={success}");
+                        AppLog.Info("SDK.IAP", $"Restore transactions result: success={success}");
 
                     if (!success)
                     {
@@ -513,7 +511,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     {
         _areProductsReady = true;
         int count = products?.Count ?? 0;
-        Debug.Log($"[SDK][IAP] Products fetched: {count}.");
+        AppLog.Info("SDK.IAP", $"Products fetched: {count}.");
         ProductsUpdated?.Invoke();
     }
 
@@ -521,8 +519,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     {
         // Let EnsureProductsFetched / next purchase attempt request again.
         _fetchRequested = false;
-        Debug.LogWarning(
-            $"[SDK][IAP] Products fetch failed: {failure?.FailureReason}; " +
+        AppLog.Warn("SDK.IAP", $"Products fetch failed: {failure?.FailureReason}; " +
             $"failedCount={failure?.FailedFetchProducts?.Count ?? 0}");
     }
 
@@ -550,13 +547,13 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         string storeId = product?.definition?.id;
         if (product == null || string.IsNullOrWhiteSpace(storeId))
         {
-            Debug.LogWarning("[SDK][IAP] Pending order has no product; cannot process.");
+            AppLog.Warn("SDK.IAP", "Pending order has no product; cannot process.");
             return;
         }
 
         if (!TryResolveDefinition(storeId, out RealMoneyProductDefinition definition))
         {
-            Debug.LogWarning($"[SDK][IAP] Pending order contains unknown store product '{storeId}'.");
+            AppLog.Warn("SDK.IAP", $"Pending order contains unknown store product '{storeId}'.");
             return;
         }
 
@@ -565,7 +562,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         {
             if (!_txInFlightOrDone.Add(txKey))
             {
-                Debug.Log($"[SDK][IAP] Skipping duplicate pending tx '{txKey}' for '{definition.ProductId}'.");
+                AppLog.Info("SDK.IAP", $"Skipping duplicate pending tx '{txKey}' for '{definition.ProductId}'.");
                 return;
             }
         }
@@ -608,16 +605,14 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                     bool balanceGrew = DidAnyBalanceIncrease(balancesBeforeRedeem);
                     if (definition.ProductType == ProductType.Consumable && !knownTx && !balanceGrew)
                     {
-                        Debug.LogError(
-                            $"[SDK][IAP] Rejecting false already-redeemed for consumable '{productId}' " +
+                        AppLog.Error("SDK.IAP", $"Rejecting false already-redeemed for consumable '{productId}' " +
                             $"(tx='{txKey}'). Stale receipt suspected — leaving store order pending for retry.");
                         _lastRedeemIndeterminate = true;
                         CompletePurchaseRequest(productId, false);
                         return;
                     }
 
-                    Debug.Log(
-                        $"[SDK][IAP] Already-redeemed accepted for '{productId}' " +
+                    AppLog.Info("SDK.IAP", $"Already-redeemed accepted for '{productId}' " +
                         $"(knownTx={knownTx}, balanceGrew={balanceGrew}).");
                 }
 
@@ -640,7 +635,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[SDK][IAP] Failed to process purchase '{productId}': {ex}");
+            AppLog.Error("SDK.IAP", $"Failed to process purchase '{productId}': {ex}");
             if (granted)
             {
                 keepDedupe = true;
@@ -673,14 +668,12 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         {
             if (afterGrant)
             {
-                Debug.LogWarning(
-                    $"[SDK][IAP] Store confirm failed after grant for '{productId}': {confirmEx.Message}. " +
+                AppLog.Warn("SDK.IAP", $"Store confirm failed after grant for '{productId}': {confirmEx.Message}. " +
                     "Purchase already reported as success; store may retry confirm later.");
             }
             else
             {
-                Debug.LogWarning(
-                    $"[SDK][IAP] Store confirm failed for '{productId}' (no grant claimed): {confirmEx.Message}");
+                AppLog.Warn("SDK.IAP", $"Store confirm failed for '{productId}' (no grant claimed): {confirmEx.Message}");
             }
         }
     }
@@ -732,8 +725,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
 
         if (!TryDetectStore(order, product, out string storeName))
         {
-            Debug.LogWarning(
-                $"[SDK][IAP] Cannot detect store for '{economyPurchaseId}' (store id '{storeId}'); " +
+            AppLog.Warn("SDK.IAP", $"Cannot detect store for '{economyPurchaseId}' (store id '{storeId}'); " +
                 "refusing to redeem.");
             return EconomyRedeemOutcome.Failed;
         }
@@ -744,8 +736,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         if (string.Equals(storeName, AppleAppStore.Name, StringComparison.Ordinal))
             return await RedeemAppleAppStorePurchaseAsync(order, product, definition);
 
-        Debug.LogWarning(
-            $"[SDK][IAP] Unsupported store '{storeName}' for '{economyPurchaseId}'; refusing to redeem.");
+        AppLog.Warn("SDK.IAP", $"Unsupported store '{storeName}' for '{economyPurchaseId}'; refusing to redeem.");
         return EconomyRedeemOutcome.Failed;
     }
 
@@ -760,8 +751,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
 
         if (!TryResolveGoogleReceipt(order, product, out GoogleReceiptPayload googleReceipt))
         {
-            Debug.LogWarning(
-                $"[SDK][IAP] Google Play receipt missing/invalid for '{economyPurchaseId}' " +
+            AppLog.Warn("SDK.IAP", $"Google Play receipt missing/invalid for '{economyPurchaseId}' " +
                 $"(store id '{storeId}'). " +
                 $"product.receipt empty={string.IsNullOrWhiteSpace(product?.receipt)}; " +
                 $"order.tx={order?.Info?.TransactionID}.");
@@ -827,8 +817,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         if (string.IsNullOrWhiteSpace(payload))
         {
             string jws = order?.Info?.Apple?.jwsRepresentation;
-            Debug.LogWarning(
-                $"[SDK][IAP] Apple App Receipt missing for '{economyPurchaseId}' (store id '{storeId}'). " +
+            AppLog.Warn("SDK.IAP", $"Apple App Receipt missing for '{economyPurchaseId}' (store id '{storeId}'). " +
                 $"product.receipt empty={string.IsNullOrWhiteSpace(product?.receipt)}; " +
                 $"order.tx={order?.Info?.TransactionID}; " +
                 $"jwsPresent={!string.IsNullOrWhiteSpace(jws)}. " +
@@ -868,7 +857,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         if (_economy != null)
             await _economy.RefreshBalancesAsync();
 
-        Debug.Log($"[SDK][IAP] Economy redeem succeeded for '{economyPurchaseId}'.");
+        AppLog.Info("SDK.IAP", $"Economy redeem succeeded for '{economyPurchaseId}'.");
         return EconomyRedeemOutcome.Success;
     }
 
@@ -878,14 +867,12 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         {
             if (otherPlayer)
             {
-                Debug.LogWarning(
-                    $"[SDK][IAP] Economy redeem for '{economyPurchaseId}' belongs to another player — " +
+                AppLog.Warn("SDK.IAP", $"Economy redeem for '{economyPurchaseId}' belongs to another player — " +
                     "confirming store order without granting on this account.");
                 return EconomyRedeemOutcome.RedeemedByOtherPlayer;
             }
 
-            Debug.LogWarning(
-                $"[SDK][IAP] Economy redeem for '{economyPurchaseId}' already applied — " +
+            AppLog.Warn("SDK.IAP", $"Economy redeem for '{economyPurchaseId}' already applied — " +
                 "confirm only if this tx is known locally or balances grew.");
             if (_economy != null)
             {
@@ -895,8 +882,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                 }
                 catch (Exception refreshEx)
                 {
-                    Debug.LogWarning(
-                        $"[SDK][IAP] Balance refresh after already-redeemed failed: {refreshEx.Message}");
+                    AppLog.Warn("SDK.IAP", $"Balance refresh after already-redeemed failed: {refreshEx.Message}");
                 }
             }
 
@@ -907,7 +893,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         {
             NetworkStatus.ReportFailure();
             _lastRedeemIndeterminate = true;
-            Debug.LogError($"[SDK][IAP] Economy redeem timed out for '{economyPurchaseId}': {ex.Message}");
+            AppLog.Error("SDK.IAP", $"Economy redeem timed out for '{economyPurchaseId}': {ex.Message}");
             return EconomyRedeemOutcome.Indeterminate;
         }
 
@@ -915,19 +901,19 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         {
             NetworkStatus.ReportFailure();
             _lastRedeemIndeterminate = true;
-            Debug.LogError($"[SDK][IAP] Economy redeem transport failure for '{economyPurchaseId}': {ex.Message}");
+            AppLog.Error("SDK.IAP", $"Economy redeem transport failure for '{economyPurchaseId}': {ex.Message}");
             return EconomyRedeemOutcome.Indeterminate;
         }
 
         if (ex is EconomyException)
         {
             // Hard reject from Economy — typically not charged / not granted.
-            Debug.LogError($"[SDK][IAP] Economy redeem failed for '{economyPurchaseId}': {ex}");
+            AppLog.Error("SDK.IAP", $"Economy redeem failed for '{economyPurchaseId}': {ex}");
             return EconomyRedeemOutcome.Failed;
         }
 
         _lastRedeemIndeterminate = true;
-        Debug.LogError($"[SDK][IAP] Unexpected redeem failure for '{economyPurchaseId}': {ex}");
+        AppLog.Error("SDK.IAP", $"Unexpected redeem failure for '{economyPurchaseId}': {ex}");
         return EconomyRedeemOutcome.Indeterminate;
     }
 
@@ -1129,8 +1115,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             if (TryResolveAppleReceipt(order, product, out string payload) &&
                 !string.IsNullOrWhiteSpace(payload))
             {
-                Debug.Log(
-                    $"[SDK][IAP] Apple App Receipt became available after poll #{i + 1} for '{economyPurchaseId}'.");
+                AppLog.Info("SDK.IAP", $"Apple App Receipt became available after poll #{i + 1} for '{economyPurchaseId}'.");
                 return payload;
             }
         }
@@ -1185,14 +1170,12 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                 if (needDifferentFromLastProduct &&
                     string.Equals(fingerprint, _lastSuccessfulAppleReceiptFingerprint, StringComparison.Ordinal))
                 {
-                    Debug.LogWarning(
-                        $"[SDK][IAP] Apple receipt for '{economyPurchaseId}' still matches previous redeem " +
+                    AppLog.Warn("SDK.IAP", $"Apple receipt for '{economyPurchaseId}' still matches previous redeem " +
                         $"('{_lastSuccessfulAppleRedeemProductId}') after refresh attempt #{i + 1}.");
                 }
                 else
                 {
-                    Debug.Log(
-                        $"[SDK][IAP] Apple consumable receipt ready for '{economyPurchaseId}' " +
+                    AppLog.Info("SDK.IAP", $"Apple consumable receipt ready for '{economyPurchaseId}' " +
                         $"(attempt #{i + 1}, changed={changedFromBaseline}).");
                     return best;
                 }
@@ -1204,8 +1187,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         if (needDifferentFromLastProduct &&
             string.Equals(FingerprintReceipt(best), _lastSuccessfulAppleReceiptFingerprint, StringComparison.Ordinal))
         {
-            Debug.LogError(
-                $"[SDK][IAP] Apple App Receipt did not update for '{economyPurchaseId}' after prior " +
+            AppLog.Error("SDK.IAP", $"Apple App Receipt did not update for '{economyPurchaseId}' after prior " +
                 $"'{_lastSuccessfulAppleRedeemProductId}' redeem — refusing stale redeem.");
             return null;
         }
@@ -1228,7 +1210,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             return null;
         }
 
-        Debug.Log($"[SDK][IAP] Refreshing Apple App Receipt for '{economyPurchaseId}' (store id '{storeId}')...");
+        AppLog.Info("SDK.IAP", $"Refreshing Apple App Receipt for '{economyPurchaseId}' (store id '{storeId}')...");
         try
         {
             string refreshed = await RefreshAppleAppReceiptAsync(apple);
@@ -1241,7 +1223,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[SDK][IAP] RefreshAppReceipt failed for '{economyPurchaseId}': {ex.Message}");
+            AppLog.Warn("SDK.IAP", $"RefreshAppReceipt failed for '{economyPurchaseId}': {ex.Message}");
             if (TryResolveAppleReceipt(order, product, out string fallback) &&
                 !string.IsNullOrWhiteSpace(fallback))
                 return fallback;
@@ -1374,7 +1356,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     {
         Product product = order?.CartOrdered?.Items().FirstOrDefault()?.Product;
         if (product != null)
-            Debug.Log($"[SDK][IAP] Purchase confirmed: {product.definition.id}");
+            AppLog.Info("SDK.IAP", $"Purchase confirmed: {product.definition.id}");
     }
 
     void OnPurchaseFailed(FailedOrder order)
@@ -1395,10 +1377,9 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             _lastPurchaseWasUserCancelled = userCancelled;
 
         if (userCancelled)
-            Debug.Log($"[SDK][IAP] Purchase cancelled by user: {productId}; storeId={storeId}");
+            AppLog.Info("SDK.IAP", $"Purchase cancelled by user: {productId}; storeId={storeId}");
         else
-            Debug.LogWarning(
-                $"[SDK][IAP] Purchase failed: {productId}; storeId={storeId}; " +
+            AppLog.Warn("SDK.IAP", $"Purchase failed: {productId}; storeId={storeId}; " +
                 $"reason={order?.FailureReason}; details={order?.Details}");
 
         // If rewards already landed from a parallel pending redeem, keep success path.
@@ -1430,7 +1411,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             int pendingCount = orders.PendingOrders?.Count ?? 0;
             if (pendingCount > 0)
             {
-                Debug.Log($"[SDK][IAP] FetchPurchases returned {pendingCount} pending order(s) — redeeming.");
+                AppLog.Info("SDK.IAP", $"FetchPurchases returned {pendingCount} pending order(s) — redeeming.");
                 foreach (PendingOrder pending in orders.PendingOrders)
                     _ = HandlePurchasePendingAsync(pending);
             }
@@ -1451,8 +1432,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
 
                 if (skipped > 0)
                 {
-                    Debug.Log(
-                        $"[SDK][IAP] FetchPurchases: skipped restoring entitlements for {skipped} " +
+                    AppLog.Info("SDK.IAP", $"FetchPurchases: skipped restoring entitlements for {skipped} " +
                         "confirmed product(s) — use RestorePurchases.");
                 }
 
@@ -1474,7 +1454,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
                 restoredProductIds.Add(definition.ProductId);
                 _entitlements.GrantRange(definition.GrantedEntitlementIds);
                 if (definition.GrantedEntitlementIds != null && definition.GrantedEntitlementIds.Length > 0)
-                    Debug.Log($"[SDK][IAP] Restored entitlements for '{definition.ProductId}'.");
+                    AppLog.Info("SDK.IAP", $"Restored entitlements for '{definition.ProductId}'.");
             }
         }
         finally
@@ -1503,7 +1483,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
 
     void OnPurchasesFetchFailed(PurchasesFetchFailureDescription failure)
     {
-        Debug.LogWarning($"[SDK][IAP] Existing purchases fetch failed: {failure?.Message}");
+        AppLog.Warn("SDK.IAP", $"Existing purchases fetch failed: {failure?.Message}");
         TaskCompletionSource<bool> tcs;
         TaskCompletionSource<RestorePurchasesResult> restoreTcs;
         lock (_pendingGate)

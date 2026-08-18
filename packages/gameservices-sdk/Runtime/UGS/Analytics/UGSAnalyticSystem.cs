@@ -41,7 +41,7 @@ public class UGSAnalyticSystem : IAnalyticsSystem
         }
         catch (System.Exception ex)
         {
-            Debug.LogError($"[Analytics] Event '{eventPayload.EventName}' failed: {ex.Message}");
+            AppLog.Error("Analytics", $"Event '{eventPayload.EventName}' failed: {ex.Message}");
         }
     }
 
@@ -59,13 +59,13 @@ public class UGSAnalyticSystem : IAnalyticsSystem
         var customEvent = eventPayload.ToCustomEvent();
         AnalyticsCustomEventEnricher.ApplyUgsPlayerId(customEvent, _playerId);
         _sdk.RecordEvent(customEvent);
-        Debug.Log($"[Analytics] {eventPayload.EventName}");
+        AppLog.Info("Analytics", $"{eventPayload.EventName}");
     }
 
     /// <inheritdoc/>
     public void Flush()
     {
         try { _sdk.Flush(); }
-        catch (System.Exception ex) { Debug.LogError($"[Analytics] Flush error: {ex.Message}"); }
+        catch (System.Exception ex) { AppLog.Error("Analytics", $"Flush error: {ex.Message}"); }
     }
 }

@@ -101,7 +101,7 @@ internal sealed class BalanceCache<TCurrency> where TCurrency : struct, Enum
         var sb = new System.Text.StringBuilder("[Economy] Balances after sync:\n");
         foreach (var kvp in _data)
             sb.AppendLine($"  {kvp.Key}: {kvp.Value}");
-        Debug.Log(sb.ToString());
+        AppLog.Info("Economy", sb.ToString());
 #endif
     }
 

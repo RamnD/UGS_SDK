@@ -44,7 +44,7 @@ public static class AppleGameCenterCredentialsProvider
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[Auth] Game Center display name read failed: {ex.Message}");
+            AppLog.Warn("Auth", $"Game Center display name read failed: {ex.Message}");
         }
 #endif
         return null;
@@ -70,7 +70,7 @@ public static class AppleGameCenterCredentialsProvider
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[Auth] Game Center photo load failed: {ex.Message}");
+            AppLog.Warn("Auth", $"Game Center photo load failed: {ex.Message}");
         }
 #endif
         await UniTask.CompletedTask;
@@ -84,7 +84,7 @@ public static class AppleGameCenterCredentialsProvider
 #if UNITY_IOS && !UNITY_EDITOR && APPLE_GAMEKIT
         if (Interlocked.CompareExchange(ref _requestInFlight, 1, 0) != 0)
         {
-            Debug.LogWarning("[Auth] Apple Game Center auth already in progress.");
+            AppLog.Warn("Auth", "Apple Game Center auth already in progress.");
             return null;
         }
 
@@ -101,7 +101,7 @@ public static class AppleGameCenterCredentialsProvider
             var localPlayer = GKLocalPlayer.Local;
             if (localPlayer == null || !localPlayer.IsAuthenticated)
             {
-                Debug.LogWarning("[Auth] Apple Game Center: player is not authenticated.");
+                AppLog.Warn("Auth", "Apple Game Center: player is not authenticated.");
                 return null;
             }
 
@@ -109,7 +109,7 @@ public static class AppleGameCenterCredentialsProvider
             cancellationToken.ThrowIfCancellationRequested();
             if (fetchItemsResponse == null)
             {
-                Debug.LogError("[Auth] Apple Game Center: FetchItems returned null.");
+                AppLog.Error("Auth", "Apple Game Center: FetchItems returned null.");
                 return null;
             }
 
@@ -117,7 +117,7 @@ public static class AppleGameCenterCredentialsProvider
             byte[] saltBytes = fetchItemsResponse.GetSalt();
             if (signatureBytes == null || signatureBytes.Length == 0 || saltBytes == null || saltBytes.Length == 0)
             {
-                Debug.LogError("[Auth] Apple Game Center: signature/salt missing.");
+                AppLog.Error("Auth", "Apple Game Center: signature/salt missing.");
                 return null;
             }
 
@@ -132,7 +132,7 @@ public static class AppleGameCenterCredentialsProvider
 
             if (!credentials.IsValid)
             {
-                Debug.LogError("[Auth] Apple Game Center: credentials invalid after FetchItems.");
+                AppLog.Error("Auth", "Apple Game Center: credentials invalid after FetchItems.");
                 return null;
             }
 
@@ -144,7 +144,7 @@ public static class AppleGameCenterCredentialsProvider
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[Auth] Apple Game Center auth failed: {ex.Message}");
+            AppLog.Error("Auth", $"Apple Game Center auth failed: {ex.Message}");
             return null;
         }
         finally
@@ -152,8 +152,7 @@ public static class AppleGameCenterCredentialsProvider
             Interlocked.Exchange(ref _requestInFlight, 0);
         }
 #else
-        Debug.LogWarning(
-            "[Auth] Apple Game Center requires iOS device build + Apple.GameKit packages " +
+        AppLog.Warn("Auth", "Apple Game Center requires iOS device build + Apple.GameKit packages " +
             "and scripting define APPLE_GAMEKIT.");
         await UniTask.CompletedTask;
         cancellationToken.ThrowIfCancellationRequested();

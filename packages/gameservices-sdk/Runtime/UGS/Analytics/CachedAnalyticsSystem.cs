@@ -68,7 +68,7 @@ public sealed class CachedAnalyticsSystem : IAnalyticsSystem
         }
         catch (System.Exception ex)
         {
-            Debug.LogWarning($"[Analytics] Immediate send failed, queueing event '{eventPayload.EventName}': {ex.Message}");
+            AppLog.Warn("Analytics", $"Immediate send failed, queueing event '{eventPayload.EventName}': {ex.Message}");
             return false;
         }
     }
@@ -111,11 +111,11 @@ public sealed class CachedAnalyticsSystem : IAnalyticsSystem
                     CustomEvent customEvent = AnalyticsEventSerializer.ToCustomEvent(record);
                     AnalyticsCustomEventEnricher.ApplyUgsPlayerId(customEvent, _playerId ?? _inner?.PlayerId);
                     _sdk.RecordEvent(customEvent);
-                    Debug.Log($"[Analytics] Replayed queued event '{record.eventName}'");
+                    AppLog.Info("Analytics", $"Replayed queued event '{record.eventName}'");
                 }
                 catch (System.Exception ex)
                 {
-                    Debug.LogError($"[Analytics] Failed to replay queued event '{record?.eventName}': {ex.Message}");
+                    AppLog.Error("Analytics", $"Failed to replay queued event '{record?.eventName}': {ex.Message}");
                     var remaining = new System.Collections.Generic.List<PendingAnalyticsRecord>();
                     for (int j = i; j < batch.Count; j++)
                         remaining.Add(batch[j]);

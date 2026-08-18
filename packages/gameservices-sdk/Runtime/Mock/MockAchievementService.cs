@@ -17,7 +17,7 @@ public sealed class MockAchievementService : IAchievementService
     public void ClearLocalCache()
     {
         _states.Clear();
-        Debug.Log("[Mock Achievements] ClearLocalCache.");
+        AppLog.DebugLog("MockAchievements", "ClearLocalCache.");
     }
 
     public bool TryGetState(string achievementId, out AchievementState state)
@@ -50,7 +50,7 @@ public sealed class MockAchievementService : IAchievementService
             unlockedAt,
             now);
 
-        Debug.Log($"[Mock Achievements] SetProgress '{achievementId}': {currentProgress}/{targetProgress}, unlocked={isUnlocked}");
+        AppLog.DebugLog("MockAchievements", $"SetProgress '{achievementId}': {currentProgress}/{targetProgress}, unlocked={isUnlocked}");
         return Task.CompletedTask;
     }
 
@@ -85,7 +85,7 @@ public sealed class MockAchievementService : IAchievementService
             unlockedAt,
             now);
 
-        Debug.Log($"[Mock Achievements] IncrementProgress '{achievementId}': +{deltaProgress}, total={current}/{targetProgress}, unlocked={isUnlocked}");
+        AppLog.DebugLog("MockAchievements", $"IncrementProgress '{achievementId}': +{deltaProgress}, total={current}/{targetProgress}, unlocked={isUnlocked}");
         return Task.CompletedTask;
     }
 
@@ -106,14 +106,14 @@ public sealed class MockAchievementService : IAchievementService
             : new AchievementState(achievementId, 1d, 1d, true, now, now);
 
         _states[achievementId] = next;
-        Debug.Log($"[Mock Achievements] Unlock '{achievementId}'.");
+        AppLog.DebugLog("MockAchievements", $"Unlock '{achievementId}'.");
         return Task.CompletedTask;
     }
 
     public Task FlushAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Debug.Log("[Mock Achievements] Flush (mock, nothing to send).");
+        AppLog.DebugLog("MockAchievements", "Flush (mock, nothing to send).");
         return Task.CompletedTask;
     }
 

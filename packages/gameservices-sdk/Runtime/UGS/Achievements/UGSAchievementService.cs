@@ -48,7 +48,7 @@ public sealed class UGSAchievementService : IAchievementService
         lock (_flushGate) _flushTask = null;
         PlayerPrefs.DeleteKey(LocalCachePrefsKey);
         PlayerPrefs.Save();
-        Debug.Log("[Achievements] ClearLocalCache — in-memory state wiped.");
+        AppLog.Info("Achievements", "ClearLocalCache — in-memory state wiped.");
     }
 
     /// <inheritdoc/>
@@ -103,7 +103,7 @@ public sealed class UGSAchievementService : IAchievementService
         _isDirty = true;
         PersistLocalCacheToPrefs();
 
-        Debug.Log($"[Achievements] SetProgress '{achievementId}': {currentProgress}/{targetProgress}, unlocked={next.isUnlocked}");
+        AppLog.Info("Achievements", $"SetProgress '{achievementId}': {currentProgress}/{targetProgress}, unlocked={next.isUnlocked}");
         await FlushAsync(cancellationToken);
     }
 
@@ -137,7 +137,7 @@ public sealed class UGSAchievementService : IAchievementService
         _isDirty = true;
         PersistLocalCacheToPrefs();
 
-        Debug.Log($"[Achievements] IncrementProgress '{achievementId}': +{deltaProgress}, total={next.currentProgress}/{targetProgress}, unlocked={next.isUnlocked}");
+        AppLog.Info("Achievements", $"IncrementProgress '{achievementId}': +{deltaProgress}, total={next.currentProgress}/{targetProgress}, unlocked={next.isUnlocked}");
         await FlushAsync(cancellationToken);
     }
 
@@ -163,7 +163,7 @@ public sealed class UGSAchievementService : IAchievementService
         _isDirty = true;
         PersistLocalCacheToPrefs();
 
-        Debug.Log($"[Achievements] Unlock '{achievementId}'.");
+        AppLog.Info("Achievements", $"Unlock '{achievementId}'.");
         await FlushAsync(cancellationToken);
     }
 
@@ -205,7 +205,7 @@ public sealed class UGSAchievementService : IAchievementService
 
         if (!NetworkStatus.IsOnline)
         {
-            Debug.LogWarning("[Achievements] Offline — keeping pending local achievement state in memory.");
+            AppLog.Warn("Achievements", "Offline — keeping pending local achievement state in memory.");
             return;
         }
 
@@ -214,7 +214,7 @@ public sealed class UGSAchievementService : IAchievementService
             await EnsureCloudBaselineAsync(cancellationToken);
             if (!_hasCloudBaseline)
             {
-                Debug.LogWarning("[Achievements] Flush skipped — cloud baseline unavailable; local dirty kept in memory.");
+                AppLog.Warn("Achievements", "Flush skipped — cloud baseline unavailable; local dirty kept in memory.");
                 return;
             }
         }
@@ -248,7 +248,7 @@ public sealed class UGSAchievementService : IAchievementService
 
             NetworkStatus.ReportSuccess();
             _isDirty = false;
-            Debug.Log($"[Achievements] Flushed {snapshot.Count} achievements to Cloud Save.");
+            AppLog.Info("Achievements", $"Flushed {snapshot.Count} achievements to Cloud Save.");
         }
         catch (OperationCanceledException)
         {
@@ -257,11 +257,11 @@ public sealed class UGSAchievementService : IAchievementService
         catch (Exception ex) when (IsRecoverableTransport(ex))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning($"[Achievements] Flush failed (recoverable transport): {ex.Message} — keeping dirty local state.");
+            AppLog.Warn("Achievements", $"Flush failed (recoverable transport): {ex.Message} — keeping dirty local state.");
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[Achievements] Flush failed: {ex.Message}");
+            AppLog.Error("Achievements", $"Flush failed: {ex.Message}");
             throw new AchievementOperationException("Failed to flush achievements to Cloud Save.", ex);
         }
     }
@@ -306,7 +306,7 @@ public sealed class UGSAchievementService : IAchievementService
         {
             _isLoaded = true;
             _hasCloudBaseline = false;
-            Debug.LogWarning("[Achievements] Offline during warmup — local cache only; flush deferred until cloud baseline loads.");
+            AppLog.Warn("Achievements", "Offline during warmup — local cache only; flush deferred until cloud baseline loads.");
             return;
         }
 
@@ -326,13 +326,13 @@ public sealed class UGSAchievementService : IAchievementService
             NetworkStatus.ReportFailure();
             _isLoaded = true;
             _hasCloudBaseline = false;
-            Debug.LogWarning($"[Achievements] Warmup cloud load failed (recoverable): {ex.Message} — using local cache.");
+            AppLog.Warn("Achievements", $"Warmup cloud load failed (recoverable): {ex.Message} — using local cache.");
         }
         catch (Exception ex)
         {
             _isLoaded = false;
             _hasCloudBaseline = false;
-            Debug.LogError($"[Achievements] Warmup failed: {ex.Message}");
+            AppLog.Error("Achievements", $"Warmup failed: {ex.Message}");
             throw new AchievementOperationException("Failed to load achievements from Cloud Save.", ex);
         }
     }
@@ -355,7 +355,7 @@ public sealed class UGSAchievementService : IAchievementService
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[Achievements] Cloud baseline load failed: {ex.Message}");
+            AppLog.Warn("Achievements", $"Cloud baseline load failed: {ex.Message}");
         }
     }
 
@@ -389,7 +389,7 @@ public sealed class UGSAchievementService : IAchievementService
         }
         else
         {
-            Debug.Log("[Achievements] No cloud payload found — starting with empty state.");
+            AppLog.Info("Achievements", "No cloud payload found — starting with empty state.");
         }
 
         foreach (var kvp in localOverlay)
@@ -397,7 +397,7 @@ public sealed class UGSAchievementService : IAchievementService
 
         _hasCloudBaseline = true;
         PersistLocalCacheToPrefs();
-        Debug.Log($"[Achievements] Loaded cloud baseline ({_states.Count} achievements, local overlay keys={localOverlay.Count}).");
+        AppLog.Info("Achievements", $"Loaded cloud baseline ({_states.Count} achievements, local overlay keys={localOverlay.Count}).");
     }
 
     // ── Local PlayerPrefs cache ──────────────────────────────────────────────
@@ -413,7 +413,7 @@ public sealed class UGSAchievementService : IAchievementService
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[Achievements] Failed to persist local cache: {ex.Message}");
+            AppLog.Warn("Achievements", $"Failed to persist local cache: {ex.Message}");
         }
     }
 
@@ -440,12 +440,12 @@ public sealed class UGSAchievementService : IAchievementService
                 if (_states.Count > 0)
                     _isDirty = true;
 
-                Debug.Log($"[Achievements] Restored {_states.Count} achievements from local cache.");
+                AppLog.Info("Achievements", $"Restored {_states.Count} achievements from local cache.");
             }
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[Achievements] Failed to parse local cache: {ex.Message}");
+            AppLog.Warn("Achievements", $"Failed to parse local cache: {ex.Message}");
         }
     }
 

@@ -28,7 +28,7 @@ namespace RamnD.GameServices.Ads.Privacy
 
             if (isChildDirected)
             {
-                Debug.Log("[ATT] Skipped — child-directed user (COPPA).");
+                AppLog.Info("ATT", "Skipped — child-directed user (COPPA).");
                 return;
             }
 
@@ -37,11 +37,11 @@ namespace RamnD.GameServices.Ads.Privacy
 
             if (status != ATTrackingStatusBinding.AuthorizationTrackingStatus.NOT_DETERMINED)
             {
-                Debug.Log($"[ATT] Already decided: {status}");
+                AppLog.Info("ATT", $"Already decided: {status}");
                 return;
             }
 
-            Debug.Log("[ATT] Requesting App Tracking Transparency…");
+            AppLog.Info("ATT", "Requesting App Tracking Transparency…");
 
             var tcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
             ATTrackingStatusBinding.RequestAuthorizationTracking(code =>
@@ -52,8 +52,7 @@ namespace RamnD.GameServices.Ads.Privacy
             using (cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken)))
             {
                 int result = await tcs.Task.ConfigureAwait(true);
-                Debug.Log(
-                    $"[ATT] Result: {(ATTrackingStatusBinding.AuthorizationTrackingStatus)result}");
+                AppLog.Info("ATT", $"Result: {(ATTrackingStatusBinding.AuthorizationTrackingStatus)result}");
             }
 #else
             await Task.CompletedTask;

@@ -103,8 +103,7 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
                 long net = (long)existing.amount + amount;
                 if (net > int.MaxValue || net < int.MinValue)
                 {
-                    Debug.LogError(
-                        $"[Economy] Pending queue overflow for {key} ({existing.amount} + {amount}). " +
+                    AppLog.Error("Economy", $"Pending queue overflow for {key} ({existing.amount} + {amount}). " +
                         "Keeping previous value.");
                     return;
                 }
@@ -195,14 +194,12 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
 
                 if (landed)
                 {
-                    Debug.Log(
-                        $"[Economy] Unconfirmed {tx.currency} {tx.amount} already on server — dropping.");
+                    AppLog.Info("Economy", $"Unconfirmed {tx.currency} {tx.amount} already on server — dropping.");
                     queue.items.RemoveAt(i);
                 }
                 else
                 {
-                    Debug.LogWarning(
-                        $"[Economy] Unconfirmed {tx.currency} {tx.amount} missing on server — re-queue pending.");
+                    AppLog.Warn("Economy", $"Unconfirmed {tx.currency} {tx.amount} missing on server — re-queue pending.");
                     tx.status = StatusPending;
                     queue.items[i] = tx;
                 }
@@ -274,7 +271,7 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
             return;
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-        Debug.Log($"[Economy] Flush started ({work.Count} pending).");
+        AppLog.Info("Economy", $"Flush started ({work.Count} pending).");
 #endif
 
         foreach (PendingTx snapshot in work)
@@ -321,8 +318,7 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
             {
                 // Impossible offline spend (server balance too low) — drop the dead row and continue.
                 // Credits that 422 are NOT dropped here (would lose a legitimate grant).
-                Debug.LogWarning(
-                    $"[Economy] Dropping impossible pending spend ({snapshot.currency} {amount}): {e.Message}. " +
+                AppLog.Warn("Economy", $"Dropping impossible pending spend ({snapshot.currency} {amount}): {e.Message}. " +
                     "Will reconcile from GetBalances.");
                 RemoveById(snapshot.id);
                 continue;
@@ -330,8 +326,7 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
             catch (Exception e) when (EconomyErrorClassifier.IsIndeterminate(e))
             {
                 NetworkStatus.ReportFailure();
-                Debug.LogWarning(
-                    $"[Economy] Flush indeterminate ({snapshot.currency} {amount}): {e.Message}. " +
+                AppLog.Warn("Economy", $"Flush indeterminate ({snapshot.currency} {amount}): {e.Message}. " +
                     "Will reconcile after next GetBalances.");
                 MarkUnconfirmed(snapshot.id, balanceBefore);
                 cache.Save();
@@ -340,8 +335,7 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
             catch (Exception e) when (EconomyErrorClassifier.IsRecoverable(e))
             {
                 NetworkStatus.ReportFailure();
-                Debug.LogWarning(
-                    $"[Economy] Flush paused ({snapshot.currency} {amount}): {e.Message}. " +
+                AppLog.Warn("Economy", $"Flush paused ({snapshot.currency} {amount}): {e.Message}. " +
                     "Will retry on next RefreshBalancesAsync.");
                 RevertToPending(snapshot.id);
                 cache.Save();
@@ -351,7 +345,7 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
             {
                 RevertToPending(snapshot.id);
                 cache.Save();
-                Debug.LogError($"[Economy] Pending queue flush error ({snapshot.currency}): {e.Message}");
+                AppLog.Error("Economy", $"Pending queue flush error ({snapshot.currency}): {e.Message}");
                 throw new InventoryOperationException(
                     InventoryFailureReason.PendingTransactionsFlushFailed,
                     "Failed to upload pending offline transactions.",
@@ -361,7 +355,7 @@ internal sealed class PendingTransactionQueue<TCurrency> where TCurrency : struc
 
         cache.Save();
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-        Debug.Log("[Economy] Flush completed.");
+        AppLog.Info("Economy", "Flush completed.");
 #endif
     }
 

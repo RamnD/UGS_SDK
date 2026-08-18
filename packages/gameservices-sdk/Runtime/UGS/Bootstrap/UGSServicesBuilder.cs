@@ -194,7 +194,7 @@ public sealed class UGSServicesBuilder
 
         bool signedIn = await auth.SignInAsync(platform, cancellationToken);
 
-        Debug.Log($"[SDK] Auth: SignedIn={signedIn}, PlayerId={auth.GetPlayerId()}");
+        AppLog.Info("SDK", $"Auth: SignedIn={signedIn}, PlayerId={auth.GetPlayerId()}");
 
         if (signedIn)
         {
@@ -219,7 +219,7 @@ public sealed class UGSServicesBuilder
         if (signedIn)
         {
             leaderboards = new UGSLeaderboardService();
-            Debug.Log("[SDK] Leaderboards initialized.");
+            AppLog.Info("SDK", "Leaderboards initialized.");
 
             if (_useRemoteConfig)
             {
@@ -227,7 +227,7 @@ public sealed class UGSServicesBuilder
                 try
                 {
                     await remoteConfig.FetchAsync(cancellationToken);
-                    Debug.Log("[SDK] Remote Config initialized.");
+                    AppLog.Info("SDK", "Remote Config initialized.");
                 }
                 catch (OperationCanceledException)
                 {
@@ -235,7 +235,7 @@ public sealed class UGSServicesBuilder
                 }
                 catch (RemoteConfigOperationException ex)
                 {
-                    Debug.LogWarning($"[SDK] Remote Config fetch failed: {ex.Message}");
+                    AppLog.Warn("SDK", $"Remote Config fetch failed: {ex.Message}");
                 }
             }
 
@@ -246,7 +246,7 @@ public sealed class UGSServicesBuilder
                 {
                     await ugsAchievements.WarmupAsync(cancellationToken);
                     achievements = ugsAchievements;
-                    Debug.Log("[SDK] Achievements initialized.");
+                    AppLog.Info("SDK", "Achievements initialized.");
                 }
                 catch (OperationCanceledException)
                 {
@@ -254,7 +254,7 @@ public sealed class UGSServicesBuilder
                 }
                 catch (AchievementOperationException ex)
                 {
-                    Debug.LogWarning($"[SDK] Achievements warmup failed: {ex.Message}");
+                    AppLog.Warn("SDK", $"Achievements warmup failed: {ex.Message}");
                     achievements = ugsAchievements;
                 }
             }
@@ -263,20 +263,20 @@ public sealed class UGSServicesBuilder
             {
                 platformAchievements = PlatformAchievementBridgeFactory.Create(_platformAchievements);
                 if (platformAchievements is NullPlatformAchievementBridge)
-                    Debug.Log("[SDK] Platform Achievements disabled for the current runtime platform.");
+                    AppLog.Info("SDK", "Platform Achievements disabled for the current runtime platform.");
                 else
-                    Debug.Log("[SDK] Platform Achievements initialized.");
+                    AppLog.Info("SDK", "Platform Achievements initialized.");
             }
         }
         else
         {
-            Debug.LogWarning("[SDK] Leaderboards skipped — user not authenticated. GameServicesLocator.Services.Leaderboards will be null.");
+            AppLog.Warn("SDK", "Leaderboards skipped — user not authenticated. GameServicesLocator.Services.Leaderboards will be null.");
             if (_useRemoteConfig)
-                Debug.LogWarning("[SDK] Remote Config skipped — user not authenticated.");
+                AppLog.Warn("SDK", "Remote Config skipped — user not authenticated.");
             if (_useAchievements)
-                Debug.LogWarning("[SDK] Achievements skipped — user not authenticated.");
+                AppLog.Warn("SDK", "Achievements skipped — user not authenticated.");
             if (_platformAchievements?.Mapper != null)
-                Debug.LogWarning("[SDK] Platform Achievements skipped — user not authenticated.");
+                AppLog.Warn("SDK", "Platform Achievements skipped — user not authenticated.");
         }
 
         if (signedIn && _onAuthenticated != null)

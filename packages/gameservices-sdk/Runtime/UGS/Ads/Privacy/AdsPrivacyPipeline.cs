@@ -43,7 +43,7 @@ namespace RamnD.GameServices.Ads.Privacy
                 _umpGate = gate;
             }
 
-            Debug.Log("[AdsPrivacy] UMP consent gate registered.");
+            AppLog.Info("AdsPrivacy", "UMP consent gate registered.");
         }
 
         /// <summary>
@@ -104,7 +104,7 @@ namespace RamnD.GameServices.Ads.Privacy
             lock (GateLock)
                 gate = _umpGate;
 
-            Debug.Log($"[AdsPrivacy] UMP gate: {gate.GetType().FullName}");
+            AppLog.Info("AdsPrivacy", $"UMP gate: {gate.GetType().FullName}");
 
             try
             {
@@ -116,14 +116,13 @@ namespace RamnD.GameServices.Ads.Privacy
             }
             catch (System.Exception ex)
             {
-                Debug.LogWarning($"[AdsPrivacy] UMP gather failed (fail-open): {ex.Message}");
+                AppLog.Warn("AdsPrivacy", $"UMP gather failed (fail-open): {ex.Message}");
             }
 
             cancellationToken.ThrowIfCancellationRequested();
             ApplyLevelPlayPrivacyFlags(options.IsChildDirected);
             _completed = true;
-            Debug.Log(
-                $"[AdsPrivacy] Pipeline completed. COPPA={options.IsChildDirected}, " +
+            AppLog.Info("AdsPrivacy", $"Pipeline completed. COPPA={options.IsChildDirected}, " +
                 $"privacyOptionsRequired={gate.IsPrivacyOptionsRequired}");
         }
 
@@ -138,7 +137,7 @@ namespace RamnD.GameServices.Ads.Privacy
             if (isChildDirected)
                 LevelPlayPrivacySettings.SetGDPRConsent(false);
 
-            Debug.Log($"[AdsPrivacy] LevelPlay COPPA={isChildDirected}");
+            AppLog.Info("AdsPrivacy", $"LevelPlay COPPA={isChildDirected}");
         }
     }
 }

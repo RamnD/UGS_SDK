@@ -11,22 +11,22 @@ public sealed class MockAdsManager : IAdsManager
     /// <inheritdoc/>
     public void Initialize()
     {
-        Debug.LogWarning("[Mock Ads] Initialized. No real ad SDK.");
+        AppLog.Warn("MockAds", "Initialized. No real ad SDK.");
     }
 
     /// <inheritdoc/>
     public async void ShowRewardedAd(string placementId, Action onSuccess, Action onFailed = null)
     {
-        Debug.Log($"[Mock Ads] Rewarded: simulating view ({placementId})...");
+        AppLog.DebugLog("MockAds", $"Rewarded: simulating view ({placementId})...");
         await Task.Delay(1500);
-        Debug.Log("[Mock Ads] Rewarded: view complete → onSuccess.");
+        AppLog.DebugLog("MockAds", "Rewarded: view complete → onSuccess.");
         onSuccess?.Invoke();
     }
 
     /// <inheritdoc/>
     public void ShowInterstitial(string placementId, Action onClosed = null, Action onFailed = null)
     {
-        Debug.Log($"[Mock Ads] Interstitial: shown ({placementId}) (mock).");
+        AppLog.DebugLog("MockAds", $"Interstitial: shown ({placementId}) (mock).");
         onClosed?.Invoke();
     }
 }

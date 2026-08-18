@@ -44,8 +44,7 @@ public sealed class UGSVirtualPurchaseService<TCurrency> : IVirtualPurchaseServi
         {
             if (_purchaseInFlight)
             {
-                Debug.LogWarning(
-                    $"[SDK][VirtualPurchase] Purchase rejected for '{purchaseId}' — another purchase is already in flight.");
+                AppLog.Warn("SDK.VirtualPurchase", $"Purchase rejected for '{purchaseId}' — another purchase is already in flight.");
                 return false;
             }
 
@@ -67,7 +66,7 @@ public sealed class UGSVirtualPurchaseService<TCurrency> : IVirtualPurchaseServi
     {
         if (!NetworkStatus.IsOnline)
         {
-            Debug.LogWarning($"[SDK][VirtualPurchase] Purchase requires network: '{purchaseId}'.");
+            AppLog.Warn("SDK.VirtualPurchase", $"Purchase requires network: '{purchaseId}'.");
             return false;
         }
 
@@ -83,13 +82,12 @@ public sealed class UGSVirtualPurchaseService<TCurrency> : IVirtualPurchaseServi
             await RefreshBalancesIfAvailableAsync(cancellationToken);
             NetworkStatus.ReportSuccess();
             PurchaseSucceeded?.Invoke(purchaseId);
-            Debug.Log($"[SDK][VirtualPurchase] Purchase succeeded for '{purchaseId}'.");
+            AppLog.Info("SDK.VirtualPurchase", $"Purchase succeeded for '{purchaseId}'.");
             return true;
         }
         catch (EconomyException ex) when (ex.Reason == EconomyExceptionReason.ConfigNotSynced)
         {
-            Debug.LogWarning(
-                $"[SDK][VirtualPurchase] Config not synced for '{purchaseId}' — resyncing once.");
+            AppLog.Warn("SDK.VirtualPurchase", $"Config not synced for '{purchaseId}' — resyncing once.");
             UGSEconomyConfigurationSync.Invalidate();
             await UGSEconomyConfigurationSync.SyncAsync(cancellationToken, force: true);
 
@@ -103,7 +101,7 @@ public sealed class UGSVirtualPurchaseService<TCurrency> : IVirtualPurchaseServi
                 await RefreshBalancesIfAvailableAsync(cancellationToken);
                 NetworkStatus.ReportSuccess();
                 PurchaseSucceeded?.Invoke(purchaseId);
-                Debug.Log($"[SDK][VirtualPurchase] Purchase succeeded for '{purchaseId}' after config resync.");
+                AppLog.Info("SDK.VirtualPurchase", $"Purchase succeeded for '{purchaseId}' after config resync.");
                 return true;
             }
             catch (Exception retryEx)
@@ -128,24 +126,24 @@ public sealed class UGSVirtualPurchaseService<TCurrency> : IVirtualPurchaseServi
         if (ex is TimeoutException)
         {
             NetworkStatus.ReportFailure();
-            Debug.LogError($"[SDK][VirtualPurchase] Purchase timed out for '{purchaseId}': {ex.Message}");
+            AppLog.Error("SDK.VirtualPurchase", $"Purchase timed out for '{purchaseId}': {ex.Message}");
             return false;
         }
 
         if (EconomyErrorClassifier.IsRecoverable(ex) || EconomyErrorClassifier.IsIndeterminate(ex))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogError($"[SDK][VirtualPurchase] Transport failure for '{purchaseId}': {ex.Message}");
+            AppLog.Error("SDK.VirtualPurchase", $"Transport failure for '{purchaseId}': {ex.Message}");
             return false;
         }
 
         if (ex is EconomyException)
         {
-            Debug.LogError($"[SDK][VirtualPurchase] Purchase failed for '{purchaseId}': {ex}");
+            AppLog.Error("SDK.VirtualPurchase", $"Purchase failed for '{purchaseId}': {ex}");
             return false;
         }
 
-        Debug.LogError($"[SDK][VirtualPurchase] Unexpected purchase failure for '{purchaseId}': {ex}");
+        AppLog.Error("SDK.VirtualPurchase", $"Unexpected purchase failure for '{purchaseId}': {ex}");
         return false;
     }
 }

@@ -77,8 +77,7 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
         }
         catch (Exception ex)
         {
-            Debug.LogError(
-                $"[CloudSave] Corrupt local value for key '{key}' — leaving raw JSON intact. {ex.Message}");
+            AppLog.Error("CloudSave", $"Corrupt local value for key '{key}' — leaving raw JSON intact. {ex.Message}");
             throw new InvalidOperationException(
                 $"Cloud save key '{key}' contains corrupt data and cannot be read safely.",
                 ex);
@@ -170,18 +169,18 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
 
             ParseCloudItemsIntoSnapshot(items);
 
-            Debug.Log($"[CloudSave] Loaded from cloud: {_cloudSnapshot.Count} keys, ts={_cloudSnapshotTimestamp:O}");
+            AppLog.Info("CloudSave", $"Loaded from cloud: {_cloudSnapshot.Count} keys, ts={_cloudSnapshotTimestamp:O}");
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             foreach (var kvp in _cloudSnapshot)
-                Debug.Log($"  [CloudSave] key={kvp.Key} bytes={kvp.Value?.Length ?? 0}");
+                AppLog.Info("CloudSave", $"  key={kvp.Key} bytes={kvp.Value?.Length ?? 0}");
 #else
-            Debug.Log($"[CloudSave] Cloud key names: {string.Join(", ", _cloudSnapshot.Keys)}");
+            AppLog.Info("CloudSave", $"Cloud key names: {string.Join(", ", _cloudSnapshot.Keys)}");
 #endif
 
             // Cloud has only __ts and no data — keep local data
             if (_cloudSnapshot.Count == 0)
             {
-                Debug.Log("[CloudSave] Cloud has only timestamp payload — keeping local save.");
+                AppLog.Info("CloudSave", "Cloud has only timestamp payload — keeping local save.");
                 ClearCloudSnapshot();
                 return null;
             }
@@ -202,7 +201,7 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
                 _unconfirmedPushTs = null;
                 ClearCloudSnapshot();
                 PersistTimestampsToPrefs();
-                Debug.Log("[CloudSave] Cloud ts matches unconfirmed push — treating as own write.");
+                AppLog.Info("CloudSave", "Cloud ts matches unconfirmed push — treating as own write.");
                 return null;
             }
 
@@ -238,12 +237,12 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
         catch (Exception e) when (IsRecoverableTransport(e))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning($"[CloudSave] Load failed (recoverable) — keeping local: {e.Message}");
+            AppLog.Warn("CloudSave", $"Load failed (recoverable) — keeping local: {e.Message}");
             return null;
         }
         catch (Exception e)
         {
-            Debug.LogError($"[CloudSave] Load failed: {e.Message}");
+            AppLog.Error("CloudSave", $"Load failed: {e.Message}");
             throw new CloudSaveOperationException("Failed to load cloud save.", e);
         }
     }
@@ -314,8 +313,7 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
             }
 
             var conflictCloudTs = _cloudSnapshotTimestamp ?? cloudTs.Value;
-            Debug.LogWarning(
-                $"[CloudSave] Push conflict — local dirty, cloud moved. " +
+            AppLog.Warn("CloudSave", $"Push conflict — local dirty, cloud moved. " +
                 $"base={BaseTimestamp:O}, cloud={conflictCloudTs:O}, local={LocalTimestamp:O}");
 
             return new SaveConflict(
@@ -330,12 +328,12 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
         catch (Exception e) when (IsRecoverableTransport(e))
         {
             NetworkStatus.ReportFailure();
-            Debug.LogWarning($"[CloudSave] Push failed (recoverable) — keeping dirty local: {e.Message}");
+            AppLog.Warn("CloudSave", $"Push failed (recoverable) — keeping dirty local: {e.Message}");
             return null;
         }
         catch (Exception e)
         {
-            Debug.LogError($"[CloudSave] Push failed: {e.Message}");
+            AppLog.Error("CloudSave", $"Push failed: {e.Message}");
             throw new CloudSaveOperationException("Failed to push save to cloud.", e);
         }
     }
@@ -348,7 +346,7 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
         BaseTimestamp  = _cloudSnapshotTimestamp;
         ClearCloudSnapshot();
         PersistLocalToPrefs();
-        Debug.Log("[CloudSave] Applied cloud snapshot.");
+        AppLog.Info("CloudSave", "Applied cloud snapshot.");
     }
 
     /// <inheritdoc/>
@@ -360,7 +358,7 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
 
         ClearCloudSnapshot();
         PersistTimestampsToPrefs();
-        Debug.Log("[CloudSave] Kept local save (base acknowledged for overwrite).");
+        AppLog.Info("CloudSave", "Kept local save (base acknowledged for overwrite).");
     }
 
     // ── Internals ─────────────────────────────────────────────────────────
@@ -446,12 +444,12 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
 
         cloudData[TimestampCloudKey] = ts.ToString("O");
 
-        Debug.Log($"[CloudSave] Pushing to cloud: {snapshotLocal.Count} keys + __ts");
+        AppLog.Info("CloudSave", $"Pushing to cloud: {snapshotLocal.Count} keys + __ts");
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         foreach (var kvp in snapshotLocal)
-            Debug.Log($"  [CloudSave] key={kvp.Key} bytes={kvp.Value?.Length ?? 0}");
+            AppLog.Info("CloudSave", $"  key={kvp.Key} bytes={kvp.Value?.Length ?? 0}");
 #else
-        Debug.Log($"[CloudSave] Push key names: {string.Join(", ", snapshotLocal.Keys)}");
+        AppLog.Info("CloudSave", $"Push key names: {string.Join(", ", snapshotLocal.Keys)}");
 #endif
 
         try
@@ -470,13 +468,13 @@ public sealed class UGSCloudSaveService<TKey> : ICloudSaveService<TKey>
             _unconfirmedPushTs = null;
             ClearCloudSnapshot();
             PersistLocalToPrefs();
-            Debug.Log($"[CloudSave] Saved to cloud. Timestamp: {ts:O}");
+            AppLog.Info("CloudSave", $"Saved to cloud. Timestamp: {ts:O}");
         }
         catch (Exception e) when (IsRecoverableTransport(e))
         {
             _unconfirmedPushTs = ts;
             NetworkStatus.ReportFailure();
-            Debug.LogWarning($"[CloudSave] Push timed out / transport failure — marking unconfirmed ts={ts:O}: {e.Message}");
+            AppLog.Warn("CloudSave", $"Push timed out / transport failure — marking unconfirmed ts={ts:O}: {e.Message}");
         }
     }
 

@@ -40,14 +40,13 @@ internal static class UGSEnvironmentResolver
             if (!_warnedMultipleEnvironments)
             {
                 _warnedMultipleEnvironments = true;
-                Debug.LogWarning(
-                    "[SDK] Multiple UGS environment symbols are defined. " +
+                AppLog.Warn("SDK", "Multiple UGS environment symbols are defined. " +
                     "Priority is UGS_ENV_PRODUCTION > UGS_ENV_STAGING > UGS_ENV_DEVELOPMENT. " +
                     "Using deterministic priority to resolve the environment.");
             }
         }
 
-        Debug.Log($"[SDK] Resolved UGS environment: {environmentName}");
+        AppLog.Info("SDK", $"Resolved UGS environment: {environmentName}");
         return environmentName;
     }
 }

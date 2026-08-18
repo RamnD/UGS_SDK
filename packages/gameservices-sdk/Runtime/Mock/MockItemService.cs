@@ -16,7 +16,7 @@ public sealed class MockItemService<TItem> : IItemService<TItem>
     public void GiveItem(TItem id)
     {
         _owned.Add(id);
-        Debug.Log($"[Mock Items] GiveItem: {id}");
+        AppLog.DebugLog("MockItems", $"GiveItem: {id}");
     }
 
     /// <inheritdoc/>
@@ -26,14 +26,14 @@ public sealed class MockItemService<TItem> : IItemService<TItem>
     public void ClearLocalCache()
     {
         _owned.Clear();
-        Debug.Log("[Mock Items] ClearLocalCache.");
+        AppLog.DebugLog("MockItems", "ClearLocalCache.");
     }
 
     /// <inheritdoc/>
     public Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Debug.Log("[Mock Items] Refresh (mock).");
+        AppLog.DebugLog("MockItems", "Refresh (mock).");
         return Task.CompletedTask;
     }
 
@@ -43,12 +43,12 @@ public sealed class MockItemService<TItem> : IItemService<TItem>
         cancellationToken.ThrowIfCancellationRequested();
         if (_owned.Contains(id))
         {
-            Debug.Log($"[Mock Items] TryPurchase {id}: already owned.");
+            AppLog.DebugLog("MockItems", $"TryPurchase {id}: already owned.");
             return Task.FromResult(false);
         }
 
         _owned.Add(id);
-        Debug.Log($"[Mock Items] TryPurchase {id}: success (mock; currency not deducted).");
+        AppLog.DebugLog("MockItems", $"TryPurchase {id}: success (mock; currency not deducted).");
         return Task.FromResult(true);
     }
 }

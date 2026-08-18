@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.1] - 2026-08-18
+
+### Changed
+- **Logging:** SDK runtime logs go through `AppLog` (`com.ramnd.core-logging`) instead of raw `Debug.Log*`. Production (`UGS_ENV_PRODUCTION`) keeps Info/Verbose off; call `AppLog.ConfigureFromEnvironment()` at game bootstrap.
+
+### Fixed
+- **Auth:** `AuthSessionEnsure` compiles without a missing `UnityEngine.Debug` import (CS0103 on 2.1.0 / 2.0.4).
+
 ## [2.1.0] - 2026-08-18
 
 ### Added

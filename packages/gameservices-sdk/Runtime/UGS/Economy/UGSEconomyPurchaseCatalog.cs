@@ -26,11 +26,11 @@ public sealed class UGSEconomyPurchaseCatalog : IEconomyPurchaseCatalog
         {
             if (_isSynced)
             {
-                Debug.LogWarning("[SDK][PurchaseCatalog] Offline — using last cached catalog.");
+                AppLog.Warn("SDK.PurchaseCatalog", "Offline — using last cached catalog.");
                 return;
             }
 
-            Debug.LogWarning("[SDK][PurchaseCatalog] Offline and catalog was never synced.");
+            AppLog.Warn("SDK.PurchaseCatalog", "Offline and catalog was never synced.");
             return;
         }
 
@@ -42,13 +42,12 @@ public sealed class UGSEconomyPurchaseCatalog : IEconomyPurchaseCatalog
         {
             if (_isSynced)
             {
-                Debug.LogWarning(
-                    $"[SDK][PurchaseCatalog] Config sync failed — keeping last cached catalog: {ex.Message}");
+                AppLog.Warn("SDK.PurchaseCatalog", $"Config sync failed — keeping last cached catalog: {ex.Message}");
                 return;
             }
 
             NetworkStatus.ReportFailure();
-            Debug.LogError($"[SDK][PurchaseCatalog] Config sync failed: {ex}");
+            AppLog.Error("SDK.PurchaseCatalog", $"Config sync failed: {ex}");
             throw;
         }
 
@@ -116,7 +115,7 @@ public sealed class UGSEconomyPurchaseCatalog : IEconomyPurchaseCatalog
         _entries = entries;
         _byId = byId;
         _isSynced = true;
-        Debug.Log($"[SDK][PurchaseCatalog] Cached {entries.Count} purchase definition(s).");
+        AppLog.Info("SDK.PurchaseCatalog", $"Cached {entries.Count} purchase definition(s).");
     }
 
     static PurchaseCatalogEntry MapVirtualPurchase(VirtualPurchaseDefinition definition)
@@ -183,7 +182,7 @@ public sealed class UGSEconomyPurchaseCatalog : IEconomyPurchaseCatalog
         }
         catch (Exception ex)
         {
-            Debug.LogWarning($"[SDK][PurchaseCatalog] Failed to read CustomData for '{definition?.Id}': {ex.Message}");
+            AppLog.Warn("SDK.PurchaseCatalog", $"Failed to read CustomData for '{definition?.Id}': {ex.Message}");
             return string.Empty;
         }
     }

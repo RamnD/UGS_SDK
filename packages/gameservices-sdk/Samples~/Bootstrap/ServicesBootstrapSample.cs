@@ -12,6 +12,7 @@ public sealed class ServicesBootstrapSample : MonoBehaviour
 
     private async void Start()
     {
+        AppLog.ConfigureFromEnvironment();
         await new UGSServicesBuilder()
             .WithForceAnonymous(_forceAnonymous)
             .WithAds(string.IsNullOrWhiteSpace(_levelPlayAppKey)

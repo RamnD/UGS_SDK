@@ -2,7 +2,7 @@
 
 Portable façade over **Unity Gaming Services (UGS)** and test **mocks**. Your game code talks to **interfaces** in `Runtime/Core` and swaps **UGS** vs **Mock** at bootstrap.
 
-**Runtime logs** from this package are in **English** (searchable, tooling-friendly). XML doc comments and documentation are also in English.
+**Runtime logs** from this package go through **`AppLog`** (`com.ramnd.core-logging`, pulled in automatically). Call `AppLog.ConfigureFromEnvironment()` once at game bootstrap. XML doc comments and documentation are in English.
 
 ---
 

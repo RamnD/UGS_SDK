@@ -82,7 +82,7 @@ public static class NetworkStatus
         }
         catch (Exception ex)
         {
-            Debug.LogException(ex);
+            AppLog.Error("Network", ex);
         }
     }
 
@@ -98,7 +98,7 @@ public static class NetworkStatus
         if (_cooldownUntilRealtime > 0f)
         {
             _cooldownUntilRealtime = 0f;
-            Debug.Log("[SDK][Network] Soft-offline cleared after successful request.");
+            AppLog.Info("SDK.Network", "Soft-offline cleared after successful request.");
         }
 
         Tick();
@@ -132,8 +132,7 @@ public static class NetworkStatus
 
         if (_consecutiveFailures < FailureThreshold)
         {
-            Debug.LogWarning(
-                $"[SDK][Network] Transport failure {_consecutiveFailures}/{FailureThreshold} " +
+            AppLog.Warn("SDK.Network", $"Transport failure {_consecutiveFailures}/{FailureThreshold} " +
                 $"(window {FailureWindowSeconds:0}s).");
             Tick();
             return;
@@ -142,8 +141,7 @@ public static class NetworkStatus
         _consecutiveFailures = 0;
         _firstFailureRealtime = 0f;
         _cooldownUntilRealtime = now + _currentCooldownSeconds;
-        Debug.LogWarning(
-            $"[SDK][Network] Soft-offline for {_currentCooldownSeconds:0}s after repeated UGS failures " +
+        AppLog.Warn("SDK.Network", $"Soft-offline for {_currentCooldownSeconds:0}s after repeated UGS failures " +
             "(timeouts / DPI / poor link). Services will use local cache.");
         _currentCooldownSeconds = Mathf.Min(MaxCooldownSeconds, _currentCooldownSeconds * 2f);
         Tick();
@@ -155,7 +153,7 @@ public static class NetworkStatus
         if (_cooldownUntilRealtime > 0f)
         {
             _cooldownUntilRealtime = 0f;
-            Debug.Log("[SDK][Network] Soft-offline cleared on application resume.");
+            AppLog.Info("SDK.Network", "Soft-offline cleared on application resume.");
         }
 
         Tick();
