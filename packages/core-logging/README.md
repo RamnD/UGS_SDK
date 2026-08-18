@@ -12,7 +12,7 @@ Tagged logging façade for Unity games.
 ## Installation
 
 ```json
-"com.ramnd.core-logging": "https://github.com/RamnD/UGS_SDK.git?path=packages/core-logging#v2.0.0"
+"com.ramnd.core-logging": "https://github.com/RamnD/UGS_SDK.git?path=packages/core-logging#v2.0.4"
 ```
 
 ## Quick start

@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.4] - 2026-08-18
+
+### Added
+- **`com.ramnd.gameservices-sdk`:** `AuthSessionEnsure` for soft anonymous auth restore, plus built-in platform auth bridges: `AppleGameCenterCredentialsProvider`, `AppleSignInIdentityTokenProvider`, and `GooglePlayGamesProfileProvider`.
+- **`com.ramnd.gameservices-servicefault`:** new headless bridge package with `ServiceFaultInventoryReporter` to map `gameservices-sdk` economy/network failures into `service-fault`.
+
+### Changed
+- **Docs / roadmap:** auth integration docs now describe the built-in provider bridges and `AuthSessionEnsure`; SDK roadmap includes later extraction waves for reset/conflict/account-link orchestration.
+
 ## [2.0.3] - 2026-08-17
 
 ### Changed

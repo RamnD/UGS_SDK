@@ -1,6 +1,6 @@
 {
   "name": "com.ramnd.gameservices-sdk",
-  "version": "2.0.2",
+  "version": "2.0.4",
   "displayName": "RamnD Game Services SDK",
   "description": "Portable game services layer: Auth, Economy, Items, Analytics, Ads, CloudSave, Leaderboards, Achievements, Remote Config. Includes UGS (Unity Gaming Services) backend. Extend with your own backend by implementing the Core interfaces.",
   "unity": "2022.3",
@@ -23,6 +23,7 @@
     "name": "RamnD"
   },
   "dependencies": {
+    "com.cysharp.unitask": "https://github.com/Cysharp/UniTask.git?path=src/UniTask/Assets/Plugins/UniTask",
     "com.unity.nuget.newtonsoft-json": "3.2.1",
     "com.unity.services.core": "1.16.0",
     "com.unity.services.authentication": "3.6.1",

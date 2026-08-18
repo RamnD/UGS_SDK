@@ -7,7 +7,54 @@ Versioned **product epics**. Each epic ships as a **minor** release: `1.N.0`.
 | Hotfixes / correctness bugs | [bug-reports/](./bug-reports/README.md) | Patch on current minor |
 | Planned features / architecture | **this file** | Minor `1.N.0` |
 
-Current package: **2.0.0** (monorepo under `packages/`). Shipped **1.11.0** (Economy Purchase Catalog) + **1.11.1–1.11.2** hardening. Next planned server epic is **1.12.0** Cloud Code — now continued on the **2.x** monorepo line.
+Current package: **2.0.4** (monorepo under `packages/`). Shipped **1.11.0** (Economy Purchase Catalog) + **1.11.1–1.11.2** hardening. Next planned server epic is **1.12.0** Cloud Code — now continued on the **2.x** monorepo line.
+
+---
+
+## 2.x shared-foundation waves
+
+These are extraction waves for reusable headless layers that sit above the low-level SDK but below game-specific UI / progression.
+
+### Wave 1 — auth helpers + service-fault bridge
+
+**Status:** in progress in `2.0.4`
+
+Scope:
+- `AuthSessionEnsure`
+- built-in platform auth bridges:
+  - `AppleGameCenterCredentialsProvider`
+  - `AppleSignInIdentityTokenProvider`
+  - `GooglePlayGamesProfileProvider`
+- `com.ramnd.gameservices-servicefault` with `ServiceFaultInventoryReporter`
+
+### Wave 2 — reset / clear orchestration
+
+**Goal:** extract a clean, headless account reset pipeline from game code.
+
+Planned scope:
+- generic core based on Maze `ProgressClearCoordinator`
+- signed-in wipe ordering for Cloud Save / Economy / local caches
+- callback/hooks surface for game-specific reset steps
+
+Out of scope:
+- game UI confirmation flows
+- progression-specific local wipe rules
+
+### Wave 3 — conflict + account-link orchestration
+
+**Goal:** extract reusable recover/link plumbing without dragging project UI and profile rules into the SDK.
+
+Planned scope:
+- headless conflict coordinator core derived from Maze `SaveConflictCoordinator`
+- generic account-link recovery orchestration derived from Maze `ProfilePlatformAuthService`
+- clear game callback boundaries for:
+  - conflict choice UI
+  - local profile merge/import
+  - post-recover refresh hooks
+
+Out of scope:
+- game-specific profile naming/avatar policies
+- project-specific save merge heuristics
 
 ---
 

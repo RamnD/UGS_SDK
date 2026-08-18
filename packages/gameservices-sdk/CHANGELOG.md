@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.0.4] - 2026-08-18
+
+### Added
+- `AuthSessionEnsure` for soft anonymous auth restore when a session unexpectedly drops but the network is still healthy.
+- Built-in auth provider bridges: `AppleGameCenterCredentialsProvider`, `AppleSignInIdentityTokenProvider`, and `GooglePlayGamesProfileProvider`.
+
 ## [2.0.2] - 2026-08-17
 
 ### Added

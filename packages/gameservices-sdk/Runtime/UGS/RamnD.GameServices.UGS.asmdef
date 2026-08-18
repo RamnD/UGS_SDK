@@ -3,6 +3,7 @@
   "rootNamespace": "",
   "references": [
     "RamnD.GameServices.Core",
+    "UniTask",
     "Unity.Services.Core",
     "Unity.Services.Authentication",
     "Unity.Services.Economy",
@@ -32,6 +33,11 @@
       "name": "com.google.ads.mobile",
       "expression": "1.0.0",
       "define": "RAMND_HAS_GOOGLE_MOBILE_ADS"
+    },
+    {
+      "name": "com.lupidan.apple-signin-unity",
+      "expression": "1.0.0",
+      "define": "RAMND_HAS_APPLE_SIGNIN"
     }
   ],
   "noEngineReferences": false

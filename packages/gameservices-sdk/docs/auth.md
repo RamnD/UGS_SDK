@@ -35,16 +35,27 @@ The UGS auth layer wraps platform-specific SDKs that are **not in the UPM regist
 })
 ```
 
-Requires Apple.Core + Apple.GameKit (build tarballs from [apple/unityplugins](https://github.com/apple/unityplugins)) and UGS Dashboard → Apple Game Center (Bundle ID).
+Requires Apple.Core + Apple.GameKit (build tarballs from [apple/unityplugins](https://github.com/apple/unityplugins)) and UGS Dashboard → Apple Game Center (Bundle ID). The SDK now includes `AppleGameCenterCredentialsProvider` and `TryGetAuthenticatedDisplayName` / `TryLoadAuthenticatedPhotoAsync` helpers for game-side profile import.
 
 **Sign in with Apple (optional):**
 ```csharp
 .WithAuthProviderCredentials(new GameServicesAuthProviderConfig
 {
     AppleServicesId = "com.yourcompany.yourgame",
-    RequestAppleIdentityTokenAsync = ct => YourAppleTokenBridge.RequestAsync(ct),
+    RequestAppleIdentityTokenAsync = ct => AppleSignInIdentityTokenProvider.RequestAsync(ct),
 })
 ```
+
+The built-in `AppleSignInIdentityTokenProvider` requires `com.lupidan.apple-signin-unity`. If your project already has another SIWA implementation, you can still pass your own `RequestAppleIdentityTokenAsync`.
+
+### Built-in auth helpers
+
+The SDK includes a few reusable auth helpers so consuming games do not need to re-copy the same glue:
+
+- `AuthSessionEnsure.EnsureSignedInAsync(context, ct)` — soft anonymous restore when Auth is unexpectedly signed out but the network is still healthy
+- `AppleGameCenterCredentialsProvider` — GameKit -> UGS Apple Game Center credentials
+- `AppleSignInIdentityTokenProvider` — Sign in with Apple JWT bridge
+- `GooglePlayGamesProfileProvider` — post-auth display name / avatar URL reader for GPGS profile import
 
 ---
 

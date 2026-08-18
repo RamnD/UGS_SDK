@@ -1,14 +1,17 @@
 {
-  "name": "RamnD.GameServices.Core",
+  "name": "RamnD.GameServices.ServiceFaultBridge",
   "rootNamespace": "",
   "references": [
-    "Unity.Purchasing",
-    "UniTask"
+    "RamnD.GameServices.Core",
+    "RamnD.ServiceFault"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,
   "overrideReferences": false,
+  "precompiledReferences": [],
   "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
   "noEngineReferences": false
 }

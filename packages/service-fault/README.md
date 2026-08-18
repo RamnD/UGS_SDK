@@ -14,9 +14,9 @@ Reporter → ServiceFaultPool.Report()
 ## Installation
 
 ```json
-"com.ramnd.core-logging": "https://github.com/RamnD/UGS_SDK.git?path=packages/core-logging#v2.0.0",
-"com.ramnd.service-fault": "https://github.com/RamnD/UGS_SDK.git?path=packages/service-fault#v2.0.0",
-"com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git?path=packages/gameservices-sdk#v2.0.0"
+"com.ramnd.core-logging": "https://github.com/RamnD/UGS_SDK.git?path=packages/core-logging#v2.0.4",
+"com.ramnd.service-fault": "https://github.com/RamnD/UGS_SDK.git?path=packages/service-fault#v2.0.4",
+"com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git?path=packages/gameservices-sdk#v2.0.4"
 ```
 
 ## Quick start

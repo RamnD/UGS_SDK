@@ -13,7 +13,7 @@ Add to your project's `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git?path=packages/gameservices-sdk#v2.0.0"
+    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git?path=packages/gameservices-sdk#v2.0.4"
   }
 }
 ```
@@ -39,6 +39,7 @@ Optional sample: **Package Manager → RamnD Game Services SDK → Samples → I
 | Initialization & bootstrap | [docs/bootstrap.md](docs/bootstrap.md) |
 | Auth & player name | [docs/auth.md](docs/auth.md) |
 | Auth identities (game services vs cloud / OIDC) | [docs/auth-identities.md](docs/auth-identities.md) |
+| Auth helper flows (`AuthSessionEnsure`, provider bridges) | [docs/auth.md](docs/auth.md) |
 | Economy (currency & items) | [docs/economy.md](docs/economy.md) |
 | Purchase catalog (dynamic shop definitions) | [docs/purchase-catalog.md](docs/purchase-catalog.md) |
 | Virtual purchases (soft-currency / free bundles) | [docs/virtual-purchases.md](docs/virtual-purchases.md) |
@@ -124,8 +125,8 @@ Keep credential ScriptableObjects local, or load IDs from environment variables 
 |----------|-------------------|
 | Anonymous UGS | Supported |
 | Google Play Games → UGS (Android) | Supported (requires [GPGS plugin](#android--google-play-games-plugin-for-unity) in the host project) |
-| Sign in with Apple → UGS (iOS) | **Supported (optional)** — `RequestAppleIdentityTokenAsync`. |
-| Apple Game Center → UGS (iOS) | **Supported (recommended for games)** — `RequestAppleGameCenterCredentialsAsync` + GameKit. |
+| Sign in with Apple → UGS (iOS) | **Supported (optional)** — built-in `AppleSignInIdentityTokenProvider` bridge or your own token fetcher. |
+| Apple Game Center → UGS (iOS) | **Supported (recommended for games)** — built-in `AppleGameCenterCredentialsProvider` + GameKit. |
 
 ### Disclaimer
 

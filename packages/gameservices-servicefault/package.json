@@ -1,0 +1,22 @@
+{
+  "name": "com.ramnd.gameservices-servicefault",
+  "version": "2.0.4",
+  "displayName": "RamnD GameServices ServiceFault Bridge",
+  "description": "Headless bridge from RamnD GameServices economy/network failures into the RamnD Service Fault pipeline.",
+  "unity": "2022.3",
+  "unityRelease": "0f1",
+  "keywords": [
+    "ugs",
+    "economy",
+    "cloud-save",
+    "fault",
+    "bridge"
+  ],
+  "author": {
+    "name": "RamnD"
+  },
+  "dependencies": {
+    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git?path=packages/gameservices-sdk#v2.0.4",
+    "com.ramnd.service-fault": "https://github.com/RamnD/UGS_SDK.git?path=packages/service-fault#v2.0.4"
+  }
+}
