@@ -10,7 +10,7 @@ Before `LevelPlay.Init`, run the shared privacy pipeline:
 
 1. **ATT** (iOS) — App Tracking Transparency  
 2. **UMP** — Google User Messaging Platform (EEA/UK consent form)  
-3. **COPPA / GDPR flags** on LevelPlay (`SetCOPPA`, `SetGDPRConsent`)
+3. **COPPA / GDPR flags** on LevelPlay (`SetCOPPA`; GDPR via `SetGDPRConsent` on LevelPlay 9.5+, or `LevelPlay.SetConsent` on 9.4.x)
 
 Age-gate UI stays in the game. Pass `IsChildDirected` into the pipeline.
 
@@ -69,7 +69,7 @@ When `IsChildDirected == true`:
 
 - ATT is skipped  
 - UMP form is not shown (`TagForUnderAgeOfConsent`)  
-- `LevelPlayPrivacySettings.SetCOPPA(true)` and `SetGDPRConsent(false)`
+- `LevelPlayPrivacySettings.SetCOPPA(true)` and GDPR consent false (9.5 `SetGDPRConsent`, 9.4 `LevelPlay.SetConsent`)
 
 ## Testing
 

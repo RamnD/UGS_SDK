@@ -39,6 +39,11 @@
       "name": "com.lupidan.apple-signin-unity",
       "expression": "1.0.0",
       "define": "RAMND_HAS_APPLE_SIGNIN"
+    },
+    {
+      "name": "com.unity.services.levelplay",
+      "expression": "9.5.0",
+      "define": "RAMND_LEVELPLAY_GDPR_BOOL"
     }
   ],
   "noEngineReferences": false

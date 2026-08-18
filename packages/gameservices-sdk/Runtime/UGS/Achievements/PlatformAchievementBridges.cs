@@ -431,9 +431,12 @@ internal sealed class PlatformAchievementSyncState
         lock (_sync)
         {
             State state = LoadUnlocked();
-            return state.pendingUnlocks.Count == 0
-                ? Array.Empty<string>()
-                : state.pendingUnlocks.ToArray();
+            if (state.pendingUnlocks.Count == 0)
+                return Array.Empty<string>();
+
+            var pending = new string[state.pendingUnlocks.Count];
+            state.pendingUnlocks.CopyTo(pending);
+            return pending;
         }
     }
 

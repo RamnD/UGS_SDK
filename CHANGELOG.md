@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.1.2] - 2026-08-18
+
+### Fixed
+- **`com.ramnd.gameservices-sdk`:** compile against LevelPlay 9.4.x (`SetGDPRConsent` is 9.5+) and drop `HashSet.ToArray` in platform achievement bridges.
+
 ## [2.1.1] - 2026-08-18
 
 ### Changed

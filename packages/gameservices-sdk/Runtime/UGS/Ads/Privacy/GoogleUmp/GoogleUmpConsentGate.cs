@@ -2,7 +2,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using GoogleMobileAds.Ump.Api;
 using RamnD.GameServices.Ads.Privacy;
-using Unity.Services.LevelPlay;
 using UnityEngine;
 
 namespace RamnD.GameServices.Ads.Privacy.GoogleUmp
@@ -22,7 +21,7 @@ namespace RamnD.GameServices.Ads.Privacy.GoogleUmp
                 AppLog.Info("AdsPrivacy.UMP", "Child-directed — skipping consent form (TagForUnderAgeOfConsent).");
                 await UpdateConsentInfoAsync(options, tagForUnderAge: true, cancellationToken)
                     .ConfigureAwait(true);
-                LevelPlayPrivacySettings.SetGDPRConsent(false);
+                AdsPrivacyPipeline.SetLevelPlayGdprConsent(false);
                 return;
             }
 
@@ -123,7 +122,7 @@ namespace RamnD.GameServices.Ads.Privacy.GoogleUmp
                 status == ConsentStatus.Obtained
                 || status == ConsentStatus.NotRequired;
 
-            LevelPlayPrivacySettings.SetGDPRConsent(consent);
+            AdsPrivacyPipeline.SetLevelPlayGdprConsent(consent);
             AppLog.Info("AdsPrivacy.UMP", $"LevelPlay GDPR consent={consent} (UMP status={status}, " +
                 $"CanRequestAds={ConsentInformation.CanRequestAds()})");
         }

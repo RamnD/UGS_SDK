@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.1.2] - 2026-08-18
+
+### Fixed
+- **Achievements:** pending unlock ids copy with `HashSet.CopyTo` so Core compiles without `System.Linq` (`ToArray`).
+- **Ads privacy:** GDPR flag uses `SetGDPRConsent` on LevelPlay 9.5+ and `LevelPlay.SetConsent` on 9.4.x (`SetGDPRConsent` does not exist in 9.4.1).
+
 ## [2.1.1] - 2026-08-18
 
 ### Changed

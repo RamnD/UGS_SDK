@@ -135,9 +135,21 @@ namespace RamnD.GameServices.Ads.Privacy
             // set GDPR false for children; for adults leave consent from UMP gate if it set it,
             // otherwise default false only when child.
             if (isChildDirected)
-                LevelPlayPrivacySettings.SetGDPRConsent(false);
+                SetLevelPlayGdprConsent(false);
 
             AppLog.Info("AdsPrivacy", $"LevelPlay COPPA={isChildDirected}");
+        }
+
+        /// <summary>
+        /// GDPR flag for LevelPlay. 9.5+ uses <c>SetGDPRConsent(bool)</c>; 9.4.x uses global <c>LevelPlay.SetConsent</c>.
+        /// </summary>
+        public static void SetLevelPlayGdprConsent(bool consent)
+        {
+#if RAMND_LEVELPLAY_GDPR_BOOL
+            LevelPlayPrivacySettings.SetGDPRConsent(consent);
+#else
+            LevelPlay.SetConsent(consent);
+#endif
         }
     }
 }
