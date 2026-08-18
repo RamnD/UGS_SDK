@@ -3,7 +3,8 @@
   "rootNamespace": "",
   "references": [
     "RamnD.GameServices.Core",
-    "RamnD.GameServices.UGS"
+    "RamnD.GameServices.UGS",
+    "RamnD.Core.Logging"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

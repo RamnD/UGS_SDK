@@ -4,10 +4,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using UnityEngine;
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_ANDROID && !UNITY_EDITOR && RAMND_HAS_GOOGLE_PLAY_GAMES
 using GooglePlayGames;
 #endif
-#if UNITY_IOS && !UNITY_EDITOR && APPLE_GAMEKIT
+#if UNITY_IOS && !UNITY_EDITOR && RAMND_HAS_APPLE_GAMEKIT
 using Apple.GameKit;
 #endif
 
@@ -18,10 +18,10 @@ internal static class PlatformAchievementBridgeFactory
         if (options?.Mapper == null)
             return new NullPlatformAchievementBridge();
 
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_ANDROID && !UNITY_EDITOR && RAMND_HAS_GOOGLE_PLAY_GAMES
         if (options.UseGooglePlayGames)
             return new GooglePlayGamesAchievementBridge(options.Mapper);
-#elif UNITY_IOS && !UNITY_EDITOR
+#elif UNITY_IOS && !UNITY_EDITOR && RAMND_HAS_APPLE_GAMEKIT
         if (options.UseAppleGameCenter)
             return new AppleGameCenterAchievementBridge(options.Mapper, options.ShowAppleCompletionBanner);
 #endif
@@ -191,7 +191,7 @@ internal sealed class GooglePlayGamesAchievementBridge : PlatformAchievementBrid
 
     protected override bool CanReportNow()
     {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_ANDROID && !UNITY_EDITOR && RAMND_HAS_GOOGLE_PLAY_GAMES
         try
         {
             PlayGamesPlatform.Activate();
@@ -212,7 +212,7 @@ internal sealed class GooglePlayGamesAchievementBridge : PlatformAchievementBrid
         double normalizedProgress,
         CancellationToken cancellationToken)
     {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_ANDROID && !UNITY_EDITOR && RAMND_HAS_GOOGLE_PLAY_GAMES
         cancellationToken.ThrowIfCancellationRequested();
 
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -279,7 +279,7 @@ internal sealed class AppleGameCenterAchievementBridge : PlatformAchievementBrid
 
     protected override bool CanReportNow()
     {
-#if UNITY_IOS && !UNITY_EDITOR && APPLE_GAMEKIT
+#if UNITY_IOS && !UNITY_EDITOR && RAMND_HAS_APPLE_GAMEKIT
         try
         {
             return GKLocalPlayer.Local != null && GKLocalPlayer.Local.IsAuthenticated;
@@ -299,7 +299,7 @@ internal sealed class AppleGameCenterAchievementBridge : PlatformAchievementBrid
         double normalizedProgress,
         CancellationToken cancellationToken)
     {
-#if UNITY_IOS && !UNITY_EDITOR && APPLE_GAMEKIT
+#if UNITY_IOS && !UNITY_EDITOR && RAMND_HAS_APPLE_GAMEKIT
         try
         {
             cancellationToken.ThrowIfCancellationRequested();

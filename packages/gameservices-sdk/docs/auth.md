@@ -35,7 +35,7 @@ The UGS auth layer wraps platform-specific SDKs that are **not in the UPM regist
 })
 ```
 
-Requires Apple.Core + Apple.GameKit (build tarballs from [apple/unityplugins](https://github.com/apple/unityplugins)) and UGS Dashboard → Apple Game Center (Bundle ID). The SDK now includes `AppleGameCenterCredentialsProvider` and `TryGetAuthenticatedDisplayName` / `TryLoadAuthenticatedPhotoAsync` helpers for game-side profile import.
+Requires Apple.Core + Apple.GameKit (`com.apple.unityplugin.gamekit`; SDK sets `RAMND_HAS_APPLE_GAMEKIT`) and UGS Dashboard → Apple Game Center (Bundle ID). The SDK now includes `AppleGameCenterCredentialsProvider` and `TryGetAuthenticatedDisplayName` / `TryLoadAuthenticatedPhotoAsync` helpers for game-side profile import.
 
 **Sign in with Apple (optional):**
 ```csharp

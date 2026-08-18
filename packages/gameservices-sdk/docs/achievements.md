@@ -197,7 +197,7 @@ if (justUnlocked)
 ### Platform requirements
 
 - **Android / Google Play Games:** requires the `Google.Play.Games` plugin in the consuming project and an authenticated GPGS session.
-- **iOS / Apple Game Center:** requires Apple GameKit packages with the `APPLE_GAMEKIT` define and an authenticated `GKLocalPlayer`.
+- **iOS / Apple Game Center:** requires Apple GameKit (`com.apple.unityplugin.gamekit`) and an authenticated `GKLocalPlayer`. The SDK sets `RAMND_HAS_APPLE_GAMEKIT` from the package.
 
 If these prerequisites are missing, the bridge keeps pending reports locally and retries later without affecting the game-owned achievement state.
 

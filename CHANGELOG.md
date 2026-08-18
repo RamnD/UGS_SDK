@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.1.3] - 2026-08-18
+
+### Fixed
+- **`com.ramnd.gameservices-sdk`:** optional GPGS / GameKit / UMP APIs are version-defined so consumers without those plugins compile.
+
 ## [2.1.2] - 2026-08-18
 
 ### Fixed

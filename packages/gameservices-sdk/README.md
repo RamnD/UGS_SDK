@@ -166,7 +166,7 @@ These plugins are **not available in the Unity Package Manager registry** and mu
 1. Build Apple.Core + Apple.GameKit tarballs from [apple/unityplugins](https://github.com/apple/unityplugins) (`python3 build.py`).
 2. Add both packages via Package Manager → Add from tarball.
 3. Enable **Apple Game Center** in UGS Dashboard (Bundle ID).
-4. Add scripting define `APPLE_GAMEKIT` for iOS.
+4. The SDK sets `RAMND_HAS_APPLE_GAMEKIT` from the GameKit package — no extra scripting define.
 5. Pass credentials bridge:
 ```csharp
 .WithAuthProviderCredentials(new GameServicesAuthProviderConfig
@@ -186,7 +186,7 @@ These plugins are **not available in the Unity Package Manager registry** and mu
 |------|------|----------|
 | Contracts, exceptions, locator | `Runtime/Core` | `RamnD.GameServices.Core` (`.asmdef`) |
 | Mocks | `Runtime/Mock` | `RamnD.GameServices.Mock` (references Core + Newtonsoft.Json) |
-| UGS implementations | `Runtime/UGS` | `RamnD.GameServices.UGS` (references Core, UGS packages, LevelPlay, `Google.Play.Games`) |
+| UGS implementations | `Runtime/UGS` | `RamnD.GameServices.UGS` (references Core, UGS packages, LevelPlay; GPGS/GameKit via versionDefines) |
 
 **Note:** `Google.Play.Games` must be present in the consuming project for Android auth (see below). Legacy Unity Ads (`UnityAdsManager`) compiles only with scripting define `RAMND_LEGACY_UNITY_ADS` plus `com.unity.ads` in the host project.
 

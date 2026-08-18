@@ -1,5 +1,5 @@
 using UnityEngine;
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_ANDROID && !UNITY_EDITOR && RAMND_HAS_GOOGLE_PLAY_GAMES
 using GooglePlayGames;
 #endif
 
@@ -12,7 +12,7 @@ public static class GooglePlayGamesProfileProvider
     {
         get
         {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_ANDROID && !UNITY_EDITOR && RAMND_HAS_GOOGLE_PLAY_GAMES
             return true;
 #else
             return false;
@@ -22,7 +22,7 @@ public static class GooglePlayGamesProfileProvider
 
     public static string TryGetAuthenticatedDisplayName()
     {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_ANDROID && !UNITY_EDITOR && RAMND_HAS_GOOGLE_PLAY_GAMES
         try
         {
             if (!PlayGamesPlatform.Instance.IsAuthenticated())
@@ -41,7 +41,7 @@ public static class GooglePlayGamesProfileProvider
 
     public static string TryGetAuthenticatedAvatarUrl()
     {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_ANDROID && !UNITY_EDITOR && RAMND_HAS_GOOGLE_PLAY_GAMES
         try
         {
             if (!PlayGamesPlatform.Instance.IsAuthenticated())

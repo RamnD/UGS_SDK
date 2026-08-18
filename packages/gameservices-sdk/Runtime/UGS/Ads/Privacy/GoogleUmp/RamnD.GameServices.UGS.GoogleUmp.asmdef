@@ -20,8 +20,13 @@
   "versionDefines": [
     {
       "name": "com.google.ads.mobile",
-      "expression": "1.0.0",
+      "expression": "8.5.0",
       "define": "RAMND_HAS_GOOGLE_MOBILE_ADS"
+    },
+    {
+      "name": "com.google.ads.mobile",
+      "expression": "9.4.0",
+      "define": "RAMND_GMA_GEOGRAPHY_OTHER"
     }
   ],
   "noEngineReferences": false

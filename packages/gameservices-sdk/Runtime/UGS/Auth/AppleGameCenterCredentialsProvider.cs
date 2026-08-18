@@ -3,13 +3,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
-#if UNITY_IOS && !UNITY_EDITOR && APPLE_GAMEKIT
+#if UNITY_IOS && !UNITY_EDITOR && RAMND_HAS_APPLE_GAMEKIT
 using Apple.GameKit;
 #endif
 
 /// <summary>
 /// GameKit -> UGS Apple Game Center credentials.
-/// Requires Apple.Core + Apple.GameKit packages and scripting define <c>APPLE_GAMEKIT</c>.
+/// Requires Apple.Core + Apple.GameKit (`com.apple.unityplugin.gamekit`).
 /// </summary>
 public static class AppleGameCenterCredentialsProvider
 {
@@ -19,7 +19,7 @@ public static class AppleGameCenterCredentialsProvider
     {
         get
         {
-#if UNITY_IOS && !UNITY_EDITOR && APPLE_GAMEKIT
+#if UNITY_IOS && !UNITY_EDITOR && RAMND_HAS_APPLE_GAMEKIT
             return true;
 #else
             return false;
@@ -29,7 +29,7 @@ public static class AppleGameCenterCredentialsProvider
 
     public static string TryGetAuthenticatedDisplayName()
     {
-#if UNITY_IOS && !UNITY_EDITOR && APPLE_GAMEKIT
+#if UNITY_IOS && !UNITY_EDITOR && RAMND_HAS_APPLE_GAMEKIT
         try
         {
             var localPlayer = GKLocalPlayer.Local;
@@ -53,7 +53,7 @@ public static class AppleGameCenterCredentialsProvider
     public static async UniTask<Texture2D> TryLoadAuthenticatedPhotoAsync(
         CancellationToken cancellationToken = default)
     {
-#if UNITY_IOS && !UNITY_EDITOR && APPLE_GAMEKIT
+#if UNITY_IOS && !UNITY_EDITOR && RAMND_HAS_APPLE_GAMEKIT
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -81,7 +81,7 @@ public static class AppleGameCenterCredentialsProvider
     public static async UniTask<AppleGameCenterCredentials> RequestAsync(
         CancellationToken cancellationToken = default)
     {
-#if UNITY_IOS && !UNITY_EDITOR && APPLE_GAMEKIT
+#if UNITY_IOS && !UNITY_EDITOR && RAMND_HAS_APPLE_GAMEKIT
         if (Interlocked.CompareExchange(ref _requestInFlight, 1, 0) != 0)
         {
             AppLog.Warn("Auth", "Apple Game Center auth already in progress.");
@@ -152,8 +152,8 @@ public static class AppleGameCenterCredentialsProvider
             Interlocked.Exchange(ref _requestInFlight, 0);
         }
 #else
-        AppLog.Warn("Auth", "Apple Game Center requires iOS device build + Apple.GameKit packages " +
-            "and scripting define APPLE_GAMEKIT.");
+        AppLog.Warn("Auth", "Apple Game Center requires iOS device build + Apple.GameKit " +
+            "(com.apple.unityplugin.gamekit).");
         await UniTask.CompletedTask;
         cancellationToken.ThrowIfCancellationRequested();
         return null;
@@ -164,7 +164,7 @@ public static class AppleGameCenterCredentialsProvider
         CancellationToken cancellationToken = default) =>
         await RequestAsync(cancellationToken);
 
-#if UNITY_IOS && !UNITY_EDITOR && APPLE_GAMEKIT
+#if UNITY_IOS && !UNITY_EDITOR && RAMND_HAS_APPLE_GAMEKIT
     static ulong ConvertTimestamp(object timestamp)
     {
         switch (timestamp)

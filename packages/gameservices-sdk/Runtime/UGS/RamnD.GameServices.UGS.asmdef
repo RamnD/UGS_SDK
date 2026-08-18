@@ -13,7 +13,7 @@
     "Unity.Services.Leaderboards",
     "Unity.Services.RemoteConfig",
     "Unity.LevelPlay",
-    "Google.Play.Games",
+    "Newtonsoft.Json",
     "Unity.Purchasing",
     "Unity.Advertisement.IosSupport"
   ],
@@ -32,8 +32,28 @@
     },
     {
       "name": "com.google.ads.mobile",
-      "expression": "1.0.0",
+      "expression": "8.5.0",
       "define": "RAMND_HAS_GOOGLE_MOBILE_ADS"
+    },
+    {
+      "name": "com.google.play.games",
+      "expression": "1.0.0",
+      "define": "RAMND_HAS_GOOGLE_PLAY_GAMES"
+    },
+    {
+      "name": "Google.Play.Games",
+      "expression": "0.0.0",
+      "define": "RAMND_HAS_GOOGLE_PLAY_GAMES"
+    },
+    {
+      "name": "com.apple.unityplugin.gamekit",
+      "expression": "1.0.0",
+      "define": "RAMND_HAS_APPLE_GAMEKIT"
+    },
+    {
+      "name": "Apple.GameKit",
+      "expression": "0.0.0",
+      "define": "RAMND_HAS_APPLE_GAMEKIT"
     },
     {
       "name": "com.lupidan.apple-signin-unity",

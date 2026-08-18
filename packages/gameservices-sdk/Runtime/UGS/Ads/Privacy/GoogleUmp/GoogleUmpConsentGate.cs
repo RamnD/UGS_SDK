@@ -131,7 +131,11 @@ namespace RamnD.GameServices.Ads.Privacy.GoogleUmp
             geography switch
             {
                 AdsPrivacyDebugGeography.Eea => DebugGeography.EEA,
+#if RAMND_GMA_GEOGRAPHY_OTHER
+                AdsPrivacyDebugGeography.NotEea => DebugGeography.Other,
+#else
                 AdsPrivacyDebugGeography.NotEea => DebugGeography.NotEEA,
+#endif
                 _ => DebugGeography.Disabled,
             };
     }

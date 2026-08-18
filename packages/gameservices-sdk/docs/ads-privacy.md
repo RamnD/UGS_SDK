@@ -59,7 +59,7 @@ Add OpenUPM scope `com.google` and dependency, e.g.:
 "com.google.ads.mobile": "11.3.0"
 ```
 
-When the package is present, optional assembly `RamnD.GameServices.UGS.GoogleUmp` enables define `RAMND_HAS_GOOGLE_MOBILE_ADS` via its own `versionDefines` (must be on that asmdef — Unity does not inherit parent asmdef defines into `defineConstraints`) and registers the real UMP gate.
+When GMA **8.5.0+** is present, optional assembly `RamnD.GameServices.UGS.GoogleUmp` sets `RAMND_HAS_GOOGLE_MOBILE_ADS` (must be on that asmdef — Unity does not inherit parent asmdef defines into `defineConstraints`) and registers the real UMP gate. Older GMA is skipped (fail-open) instead of failing to compile.
 
 Without GMA: ATT + COPPA still run; UMP is a logged no-op (fail-open).
 

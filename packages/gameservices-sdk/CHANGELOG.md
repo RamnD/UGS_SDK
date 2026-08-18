@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.1.3] - 2026-08-18
+
+### Fixed
+- **Optional plugins:** Google Play Games, Apple GameKit, and Google UMP compile only when the matching package/assembly is present (`RAMND_HAS_GOOGLE_PLAY_GAMES`, `RAMND_HAS_APPLE_GAMEKIT`, GMA 8.5+). UGS no longer hard-references `Google.Play.Games`.
+- **UMP:** `DebugGeography.NotEEA` maps to `Other` on GMA 9.4+.
+
 ## [2.1.2] - 2026-08-18
 
 ### Fixed

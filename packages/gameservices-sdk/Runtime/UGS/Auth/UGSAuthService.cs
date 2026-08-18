@@ -12,7 +12,7 @@ using Unity.Services.Authentication;
 using Unity.Services.CloudSave;
 using Unity.Services.Economy;
 using UnityEngine;
-#if UNITY_ANDROID
+#if UNITY_ANDROID && RAMND_HAS_GOOGLE_PLAY_GAMES
 using GooglePlayGames;
 using GooglePlayGames.BasicApi;
 #endif
@@ -825,7 +825,7 @@ public class UGSAuthService : IAuthService
                 NetworkRequest.AuthTimeoutMs)
         };
 
-#if UNITY_ANDROID
+#if UNITY_ANDROID && RAMND_HAS_GOOGLE_PLAY_GAMES
     private async Task SignInWithGooglePlayGamesAsync(CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_providerConfig.GooglePlayGamesOAuthWebClientId))
@@ -942,14 +942,21 @@ public class UGSAuthService : IAuthService
     private Task SignInWithGooglePlayGamesAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        throw new PlatformNotSupportedException("Google Play Games is only available on Android.");
+        throw new PlatformNotSupportedException(GooglePlayGamesUnavailableMessage());
     }
 
     private Task LinkWithGooglePlayGamesAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        throw new PlatformNotSupportedException("Google Play Games is only available on Android.");
+        throw new PlatformNotSupportedException(GooglePlayGamesUnavailableMessage());
     }
+
+    static string GooglePlayGamesUnavailableMessage() =>
+#if UNITY_ANDROID
+        "Google Play Games plugin is missing. Import Google.Play.Games / com.google.play.games.";
+#else
+        "Google Play Games is only available on Android.";
+#endif
 #endif
 
 #if UNITY_IOS
