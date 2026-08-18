@@ -45,6 +45,14 @@ public interface IGameServices
     /// </summary>
     IAchievementService Achievements { get; }
 
+    /// <summary>
+    /// Native platform achievement mirror (Google Play Games / Apple Game Center).
+    /// Null if not enabled or auth failed. When enabled on an unsupported runtime
+    /// platform, the builder may supply a no-op implementation.
+    /// After registration, use <c>Services.PlatformAchievements</c>.
+    /// </summary>
+    IPlatformAchievementBridge PlatformAchievements { get; }
+
     /// <summary>True if auth succeeded.</summary>
     bool IsAuthenticated { get; }
 }

@@ -11,6 +11,9 @@ public enum GameServiceId
     /// <summary>Achievement Cloud Save / local cache reload.</summary>
     Achievements,
 
+    /// <summary>Platform achievement pending-report flush (Google Play Games / Game Center).</summary>
+    PlatformAchievements,
+
     /// <summary>Analytics offline-queue drain.</summary>
     Analytics,
 

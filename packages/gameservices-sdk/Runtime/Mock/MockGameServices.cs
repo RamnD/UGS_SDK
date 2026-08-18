@@ -22,6 +22,9 @@ public sealed class MockGameServices : IGameServices
     public IAchievementService Achievements { get; }
 
     /// <inheritdoc/>
+    public IPlatformAchievementBridge PlatformAchievements { get; }
+
+    /// <inheritdoc/>
     public bool IsAuthenticated => Auth.IsSignedIn;
 
     /// <summary>
@@ -34,7 +37,8 @@ public sealed class MockGameServices : IGameServices
         IAdsManager           ads          = null,
         ILeaderboardService   leaderboards = null,
         IRemoteConfigService  remoteConfig = null,
-        IAchievementService   achievements = null)
+        IAchievementService   achievements = null,
+        IPlatformAchievementBridge platformAchievements = null)
     {
         Auth         = auth         ?? new MockAuthService();
         Analytics    = analytics    ?? new MockAnalyticsSystem();
@@ -42,6 +46,7 @@ public sealed class MockGameServices : IGameServices
         Leaderboards = leaderboards ?? new MockLeaderboardService();
         RemoteConfig = remoteConfig ?? new MockRemoteConfigService();
         Achievements = achievements ?? new MockAchievementService();
+        PlatformAchievements = platformAchievements ?? new NullPlatformAchievementBridge();
     }
 
     /// <summary>

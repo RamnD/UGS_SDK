@@ -25,6 +25,9 @@ public sealed class UGSGameServices : IGameServices
     public IAchievementService Achievements { get; }
 
     /// <inheritdoc/>
+    public IPlatformAchievementBridge PlatformAchievements { get; }
+
+    /// <inheritdoc/>
     public bool IsAuthenticated => Auth?.IsSignedIn ?? false;
 
     internal UGSGameServices(
@@ -33,7 +36,8 @@ public sealed class UGSGameServices : IGameServices
         IAdsManager           ads,
         ILeaderboardService   leaderboards,
         IRemoteConfigService  remoteConfig = null,
-        IAchievementService   achievements = null)
+        IAchievementService   achievements = null,
+        IPlatformAchievementBridge platformAchievements = null)
     {
         Auth            = auth          ?? throw new ArgumentNullException(nameof(auth));
         Analytics       = analytics;     // null allowed (not authenticated)
@@ -41,5 +45,6 @@ public sealed class UGSGameServices : IGameServices
         Leaderboards    = leaderboards;  // null allowed (not authenticated)
         RemoteConfig    = remoteConfig;  // null allowed (not enabled / not authenticated)
         Achievements    = achievements;  // null allowed (not enabled / not authenticated)
+        PlatformAchievements = platformAchievements; // null allowed (not enabled / unsupported / not authenticated)
     }
 }

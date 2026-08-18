@@ -13,7 +13,7 @@ Add to your project's `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git?path=packages/gameservices-sdk#v2.0.4"
+    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git?path=packages/gameservices-sdk#v2.1.0"
   }
 }
 ```
@@ -212,6 +212,7 @@ Use:
 - Leaderboards: `Services.Leaderboards` (null if not authenticated)
 - Remote Config: `Services.RemoteConfig` (null if not enabled or not authenticated)
 - Achievements: `Services.Achievements` (null if not enabled or not authenticated)
+- Platform achievements: `Services.PlatformAchievements` (null if not enabled or not authenticated; may be a no-op bridge on unsupported runtimes)
 
 Generic services (economy, items, cloud save, virtual / real-money purchases) stay **outside** the façade: inject `IInventoryService<T>`, `IItemService<T>`, `ICloudSaveService<TKey>`, `IVirtualPurchaseService`, `IRealMoneyPurchaseService` from your own bootstrap (see UGS example below).
 
@@ -238,6 +239,7 @@ private async void Start()
         })
         .WithAds(new LevelPlayAdsManager("your-app-key")) // or TestAdsManager / UnityAdsManager (Pangle via LevelPlay optional)
         .WithAchievements() // optional portable achievements backed by UGS Cloud Save
+        .WithPlatformAchievements(new MyAchievementPlatformMapper()) // optional Google Play Games / Game Center mirror
         .OnAuthenticated(async auth =>
         {
             // Create UGSEconomyService<T>, UGSItemService<,>, UGSCloudSaveService<TKey>, wire to your MonoBehaviour bridges

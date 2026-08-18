@@ -25,6 +25,7 @@ public sealed class UGSServicesBuilder
     private bool                                      _useCachedAnalytics;
     private bool                                      _useRemoteConfig;
     private bool                                      _useAchievements;
+    private PlatformAchievementsOptions               _platformAchievements;
 
     /// <summary>
     /// Force anonymous sign-in on all platforms.
@@ -128,6 +129,26 @@ public sealed class UGSServicesBuilder
     }
 
     /// <summary>
+    /// Enables native platform achievement reporting (Google Play Games / Apple Game Center).
+    /// The game supplies the portable-to-platform id mapping; the SDK chooses the
+    /// active bridge for the current runtime platform.
+    /// </summary>
+    public UGSServicesBuilder WithPlatformAchievements(
+        IAchievementPlatformMapper mapper,
+        bool enabled = true,
+        bool showAppleCompletionBanner = true)
+    {
+        _platformAchievements = enabled && mapper != null
+            ? new PlatformAchievementsOptions
+            {
+                Mapper = mapper,
+                ShowAppleCompletionBanner = showAppleCompletionBanner,
+            }
+            : null;
+        return this;
+    }
+
+    /// <summary>
     /// Runs full initialization in this order:
     /// <list type="number">
     /// <item>UnityServices.InitializeAsync()</item>
@@ -167,7 +188,8 @@ public sealed class UGSServicesBuilder
                 _adsManager ?? new TestAdsManager(),
                 leaderboards: null,
                 remoteConfig: null,
-                achievements: null));
+                achievements: null,
+                platformAchievements: null));
         }
 
         bool signedIn = await auth.SignInAsync(platform, cancellationToken);
@@ -193,6 +215,7 @@ public sealed class UGSServicesBuilder
         ILeaderboardService leaderboards = null;
         IRemoteConfigService remoteConfig = null;
         IAchievementService achievements = null;
+        IPlatformAchievementBridge platformAchievements = null;
         if (signedIn)
         {
             leaderboards = new UGSLeaderboardService();
@@ -235,6 +258,15 @@ public sealed class UGSServicesBuilder
                     achievements = ugsAchievements;
                 }
             }
+
+            if (_platformAchievements?.Mapper != null)
+            {
+                platformAchievements = PlatformAchievementBridgeFactory.Create(_platformAchievements);
+                if (platformAchievements is NullPlatformAchievementBridge)
+                    Debug.Log("[SDK] Platform Achievements disabled for the current runtime platform.");
+                else
+                    Debug.Log("[SDK] Platform Achievements initialized.");
+            }
         }
         else
         {
@@ -243,6 +275,8 @@ public sealed class UGSServicesBuilder
                 Debug.LogWarning("[SDK] Remote Config skipped — user not authenticated.");
             if (_useAchievements)
                 Debug.LogWarning("[SDK] Achievements skipped — user not authenticated.");
+            if (_platformAchievements?.Mapper != null)
+                Debug.LogWarning("[SDK] Platform Achievements skipped — user not authenticated.");
         }
 
         if (signedIn && _onAuthenticated != null)
@@ -256,9 +290,16 @@ public sealed class UGSServicesBuilder
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var services = new UGSGameServices(auth, analytics, ads, leaderboards, remoteConfig, achievements);
+        var services = new UGSGameServices(
+            auth,
+            analytics,
+            ads,
+            leaderboards,
+            remoteConfig,
+            achievements,
+            platformAchievements);
         GameServicesLocator.Set(services);
-        RegisterFacadeSyncHandlers(analytics, ads, leaderboards, remoteConfig, achievements);
+        RegisterFacadeSyncHandlers(analytics, ads, leaderboards, remoteConfig, achievements, platformAchievements);
         return services;
     }
 
@@ -267,7 +308,8 @@ public sealed class UGSServicesBuilder
         IAdsManager ads,
         ILeaderboardService leaderboards,
         IRemoteConfigService remoteConfig,
-        IAchievementService achievements)
+        IAchievementService achievements,
+        IPlatformAchievementBridge platformAchievements)
     {
         if (remoteConfig != null)
         {
@@ -288,6 +330,16 @@ public sealed class UGSServicesBuilder
         }
         else
             GameServicesSync.Unregister(GameServiceId.Achievements);
+
+        if (platformAchievements != null)
+        {
+            GameServicesSync.Register(GameServiceId.PlatformAchievements, async ct =>
+            {
+                await platformAchievements.FlushAsync(ct);
+            });
+        }
+        else
+            GameServicesSync.Unregister(GameServiceId.PlatformAchievements);
 
         if (analytics != null)
         {

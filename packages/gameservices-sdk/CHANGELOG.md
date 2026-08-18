@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.1.0] - 2026-08-18
+
+### Added
+- **Achievements:** `IPlatformAchievementBridge` + `IAchievementPlatformMapper` for best-effort native achievement mirroring without moving unlock logic out of the game.
+- **Achievements:** `UGSServicesBuilder.WithPlatformAchievements(...)` and `IGameServices.PlatformAchievements`.
+- **Achievements:** built-in Android Google Play Games and iOS Apple Game Center platform bridges with local pending/report cache and reconnect `FlushAsync`.
+- **Sync:** `GameServiceId.PlatformAchievements` registered by the UGS builder.
+
+### Changed
+- **Docs:** expand `docs/achievements.md` and README with the portable-store + native-bridge model.
+
 ## [2.0.4] - 2026-08-18
 
 ### Added
