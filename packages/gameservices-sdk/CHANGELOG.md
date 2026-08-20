@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.1.10] - 2026-08-20
+
+### Fixed
+- **InMobi Choice:** reflection now matches Choice Unity SDK `StartChoice(string, ChoiceStyle, bool)` and treats `GetTCString` as optional (reads `IABTCF_TCString` from PlayerPrefs). Gate failed to register before → Null CMP / “No CMP consent gate registered”.
+
 ## [2.1.9] - 2026-08-20
 
 ### Fixed

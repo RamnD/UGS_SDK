@@ -184,8 +184,16 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
         {
             try
             {
-                string tcString = InMobiChoiceReflection.GetTcStringMethod.Invoke(obj: null, parameters: null)
-                    as string;
+                string tcString = null;
+                if (InMobiChoiceReflection.GetTcStringMethod != null)
+                {
+                    tcString = InMobiChoiceReflection.GetTcStringMethod.Invoke(obj: null, parameters: null)
+                        as string;
+                }
+
+                if (string.IsNullOrWhiteSpace(tcString))
+                    tcString = PlayerPrefs.GetString("IABTCF_TCString", string.Empty);
+
                 if (string.IsNullOrWhiteSpace(tcString))
                 {
                     // Outside GDPR / first launch before TC string — allow restricted ads (fail-open).

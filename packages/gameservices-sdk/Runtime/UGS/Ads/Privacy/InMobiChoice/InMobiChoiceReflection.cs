@@ -23,6 +23,7 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
 
         public static MethodInfo StartChoiceMethod { get; private set; }
         public static MethodInfo ForceDisplayUiMethod { get; private set; }
+        /// <summary>Optional — newer Choice packages may omit <c>GetTCString</c>; use IAB prefs.</summary>
         public static MethodInfo GetTcStringMethod { get; private set; }
 
         public static EventInfo DidLoadEvent { get; private set; }
@@ -39,7 +40,12 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
             ChoiceCmpType = FindType("ChoiceCMP");
             ChoiceCmpManagerType = FindType("ChoiceCMPManager");
             if (ChoiceCmpType == null || ChoiceCmpManagerType == null)
+            {
+                AppLog.Warn(
+                    "AdsPrivacy.InMobi",
+                    "ChoiceCMP / ChoiceCMPManager types not found — is Assets/InMobi imported?");
                 return;
+            }
 
             StartChoiceMethod = FindStartChoiceMethod(ChoiceCmpType);
             ForceDisplayUiMethod = ChoiceCmpType.GetMethod(
@@ -68,14 +74,24 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
             _available =
                 StartChoiceMethod != null
                 && ForceDisplayUiMethod != null
-                && GetTcStringMethod != null
                 && DidLoadEvent != null
                 && DidErrorEvent != null;
+
+            if (!_available)
+            {
+                AppLog.Warn(
+                    "AdsPrivacy.InMobi",
+                    "InMobi Choice types found but API incomplete " +
+                    $"(StartChoice={StartChoiceMethod != null}, ForceDisplayUI={ForceDisplayUiMethod != null}, " +
+                    $"DidLoad={DidLoadEvent != null}, DidError={DidErrorEvent != null}).");
+            }
         }
 
         static MethodInfo FindStartChoiceMethod(Type choiceCmpType)
         {
             MethodInfo[] methods = choiceCmpType.GetMethods(BindingFlags.Public | BindingFlags.Static);
+            MethodInfo best = null;
+
             for (int i = 0; i < methods.Length; i++)
             {
                 MethodInfo method = methods[i];
@@ -83,13 +99,19 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
                     continue;
 
                 ParameterInfo[] parameters = method.GetParameters();
+                if (parameters.Length < 1 || parameters[0].ParameterType != typeof(string))
+                    continue;
+
+                // Prefer (string, ChoiceStyle, bool) / (string, bool) over odd overloads.
                 if (parameters.Length >= 2
-                    && parameters[0].ParameterType == typeof(string)
-                    && parameters[1].ParameterType == typeof(bool))
+                    && parameters[parameters.Length - 1].ParameterType == typeof(bool))
                     return method;
+
+                if (best == null)
+                    best = method;
             }
 
-            return null;
+            return best;
         }
 
         static Type FindType(string typeName)
