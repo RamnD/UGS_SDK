@@ -60,11 +60,12 @@ Without any CMP: ATT + COPPA still run; consent form is a logged no-op (fail-ope
 SDK calls (via reflection):
 
 - `ChoiceCMP.StartChoice(pCode, shouldDisplayIDFA: false)` — ATT is handled separately by the pipeline  
-- `ChoiceCMP.ForceDisplayUI()` — privacy settings entry point  
+- Waits for `CMPUIStatusChangedEvent` (**Visible** → **Dismissed** / Hidden / Disabled) so bootstrap does not continue under an open form  
+- `ChoiceCMP.ForceDisplayUI()` — privacy settings entry point (same dismiss wait)  
 - `ChoiceCMP.GetTCString()` + `IABTCF_PurposeConsents` → LevelPlay GDPR flag
 
 Android: add InMobi CMP gradle deps to `mainTemplate.gradle` (see InMobi docs).  
-iOS: add the InMobi CMP framework to the Xcode project after build.
+iOS: resolve `InMobiCMP` via CocoaPods / EDM (`InMobiCMPDependencies.xml` in the Unity Choice package) — no manual Xcode framework drop-in.
 
 ### Google UMP (optional)
 

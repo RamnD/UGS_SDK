@@ -31,6 +31,7 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
             DidLoadEvent = null;
             DidErrorEvent = null;
             DidReceiveIabVendorConsentEvent = null;
+            UiStatusChangedEvent = null;
         }
 
         public static Type ChoiceCmpType { get; private set; }
@@ -44,6 +45,8 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
         public static EventInfo DidLoadEvent { get; private set; }
         public static EventInfo DidErrorEvent { get; private set; }
         public static EventInfo DidReceiveIabVendorConsentEvent { get; private set; }
+        /// <summary>Optional — <c>CMPUIStatusChangedEvent</c> (Visible / Dismissed / …).</summary>
+        public static EventInfo UiStatusChangedEvent { get; private set; }
 
         static void EnsureProbed()
         {
@@ -84,6 +87,9 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
                 BindingFlags.Public | BindingFlags.Static);
             DidReceiveIabVendorConsentEvent = ChoiceCmpManagerType.GetEvent(
                 "CMPDidReceiveIABVendorConsentEvent",
+                BindingFlags.Public | BindingFlags.Static);
+            UiStatusChangedEvent = ChoiceCmpManagerType.GetEvent(
+                "CMPUIStatusChangedEvent",
                 BindingFlags.Public | BindingFlags.Static);
 
             _available =
