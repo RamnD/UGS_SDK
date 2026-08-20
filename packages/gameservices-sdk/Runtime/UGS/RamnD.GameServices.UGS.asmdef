@@ -18,7 +18,8 @@
     "Unity.Advertisement.IosSupport",
     "Apple.Core",
     "Apple.GameKit",
-    "AppleAuth"
+    "AppleAuth",
+    "Google.Play.Games"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

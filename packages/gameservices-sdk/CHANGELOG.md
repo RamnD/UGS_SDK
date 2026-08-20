@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.1.9] - 2026-08-20
+
+### Fixed
+- **Android player / Addressables:** reference `Google.Play.Games` in `RamnD.GameServices.UGS` (same CS0246 class of bug as Apple on iOS). Maze ships GPGS under `Assets/GooglePlayGames`, which already sets `RAMND_HAS_GOOGLE_PLAY_GAMES` via versionDefines.
+
 ## [2.1.8] - 2026-08-20
 
 ### Fixed
