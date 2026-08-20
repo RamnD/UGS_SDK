@@ -36,6 +36,8 @@ public static class AuthSessionEnsure
             if (ok && auth.IsSignedIn)
             {
                 string playerId = auth.GetPlayerId();
+                if (!string.IsNullOrWhiteSpace(playerId) && playerId != "unknown")
+                    AppLog.SetPlayerId(playerId);
                 AppLog.Info("Auth", $"{context}: anonymous SignIn OK. PlayerId={playerId}");
                 return true;
             }
