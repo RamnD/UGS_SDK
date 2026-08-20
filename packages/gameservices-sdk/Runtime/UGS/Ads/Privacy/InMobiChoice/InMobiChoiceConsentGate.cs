@@ -221,16 +221,21 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
         {
             if (eventInfo == null)
                 throw new ArgumentNullException(nameof(eventInfo));
+            if (callback == null)
+                throw new ArgumentNullException(nameof(callback));
 
             Type handlerType = eventInfo.EventHandlerType;
             MethodInfo invoke = handlerType.GetMethod("Invoke");
             ParameterInfo[] parameters = invoke.GetParameters();
 
-            if (parameters.Length == 0)
-                return Delegate.CreateDelegate(handlerType, callback);
-
             var callbackConst = Expression.Constant(callback);
-            var invokeCallback = Expression.Call(callbackConst, typeof(Action).GetMethod(nameof(Action.Invoke)));
+            var invokeCallback = Expression.Call(
+                callbackConst,
+                typeof(Action).GetMethod(nameof(Action.Invoke)));
+
+            if (parameters.Length == 0)
+                return Expression.Lambda(handlerType, invokeCallback).Compile();
+
             var paramExprs = new ParameterExpression[parameters.Length];
             for (int i = 0; i < parameters.Length; i++)
                 paramExprs[i] = Expression.Parameter(parameters[i].ParameterType, "arg" + i);

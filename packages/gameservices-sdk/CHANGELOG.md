@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.1.5] - 2026-08-20
+
+### Fixed
+- **Ads privacy / InMobi Choice:** `CreateEventHandler` no longer calls `Delegate.CreateDelegate(Type, Action)` (CS1503); handlers are built via Expression trees for both zero- and multi-arg CMP events.
+
 ## [2.1.4] - 2026-08-20
 
 ### Added
