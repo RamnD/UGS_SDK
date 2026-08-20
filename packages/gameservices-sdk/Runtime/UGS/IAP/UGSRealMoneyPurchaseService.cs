@@ -723,7 +723,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         string economyPurchaseId = definition.ProductId;
         string storeId = definition.ResolvedStoreProductId;
 
-        if (!TryDetectStore(order, product, out string storeName))
+        if (!TryDetectStore(order, out string storeName))
         {
             AppLog.Warn("SDK.IAP", $"Cannot detect store for '{economyPurchaseId}' (store id '{storeId}'); " +
                 "refusing to redeem.");
@@ -749,11 +749,11 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         string economyPurchaseId = definition.ProductId;
         string storeId = definition.ResolvedStoreProductId;
 
-        if (!TryResolveGoogleReceipt(order, product, out GoogleReceiptPayload googleReceipt))
+        if (!TryResolveGoogleReceipt(order, out GoogleReceiptPayload googleReceipt))
         {
             AppLog.Warn("SDK.IAP", $"Google Play receipt missing/invalid for '{economyPurchaseId}' " +
                 $"(store id '{storeId}'). " +
-                $"product.receipt empty={string.IsNullOrWhiteSpace(product?.receipt)}; " +
+                $"order.receipt empty={string.IsNullOrWhiteSpace(order?.Info?.Receipt)}; " +
                 $"order.tx={order?.Info?.TransactionID}.");
             _lastRedeemIndeterminate = true;
             return EconomyRedeemOutcome.Indeterminate;
@@ -791,7 +791,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         string economyPurchaseId = definition.ProductId;
         string storeId = definition.ResolvedStoreProductId;
 
-        TryResolveAppleReceipt(order, product, out string receiptBefore);
+        TryResolveAppleReceipt(order, out string receiptBefore);
 
         string payload = null;
         // Consumables: always force a fresh App Receipt. StoreKit 2 often reuses a stale
@@ -800,14 +800,13 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         {
             payload = await EnsureFreshAppleReceiptForConsumableAsync(
                 order,
-                product,
                 economyPurchaseId,
                 storeId,
                 receiptBefore);
         }
         else if (string.IsNullOrWhiteSpace(receiptBefore))
         {
-            payload = await ResolveAppleReceiptWithRetryAsync(order, product, economyPurchaseId, storeId);
+            payload = await ResolveAppleReceiptWithRetryAsync(order, economyPurchaseId, storeId);
         }
         else
         {
@@ -818,7 +817,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         {
             string jws = order?.Info?.Apple?.jwsRepresentation;
             AppLog.Warn("SDK.IAP", $"Apple App Receipt missing for '{economyPurchaseId}' (store id '{storeId}'). " +
-                $"product.receipt empty={string.IsNullOrWhiteSpace(product?.receipt)}; " +
+                $"order.receipt empty={string.IsNullOrWhiteSpace(order?.Info?.Receipt)}; " +
                 $"order.tx={order?.Info?.TransactionID}; " +
                 $"jwsPresent={!string.IsNullOrWhiteSpace(jws)}. " +
                 "Economy RedeemAppleAppStorePurchaseAsync requires StoreKit 1 App Receipt, not jwsRepresentation.");
@@ -962,7 +961,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     /// Detect store from order info / unified receipt / runtime platform.
     /// Never defaults one store to the other.
     /// </summary>
-    static bool TryDetectStore(PendingOrder order, Product product, out string storeName)
+    static bool TryDetectStore(PendingOrder order, out string storeName)
     {
         storeName = null;
 
@@ -985,13 +984,6 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             return true;
         }
 
-        if (TryExtractUnifiedPayload(product?.receipt, out string fromProduct, out _) &&
-            !string.IsNullOrWhiteSpace(fromProduct))
-        {
-            storeName = fromProduct;
-            return true;
-        }
-
 #if UNITY_ANDROID && !UNITY_EDITOR
         storeName = GooglePlay.Name;
         return true;
@@ -1004,31 +996,18 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     }
 
     /// <summary>
-    /// Google Play only: unified receipt Payload → { json, signature }.
+    /// Google Play only: IAP v5 <see cref="OrderInfo.Receipt"/> Payload → { json, signature }.
     /// No Apple App Receipt / RefreshAppReceipt / jws paths.
     /// </summary>
     static bool TryResolveGoogleReceipt(
         PendingOrder order,
-        Product product,
         out GoogleReceiptPayload googleReceipt)
     {
         googleReceipt = null;
 
-        if (TryExtractUnifiedPayload(order?.Info?.Receipt, out string storeName, out string payload) &&
-            IsGoogleStore(storeName) &&
-            TryParseGoogleReceiptPayload(payload, out googleReceipt))
-        {
-            return true;
-        }
-
-        if (TryExtractUnifiedPayload(product?.receipt, out storeName, out payload) &&
-            IsGoogleStore(storeName) &&
-            TryParseGoogleReceiptPayload(payload, out googleReceipt))
-        {
-            return true;
-        }
-
-        return false;
+        return TryExtractUnifiedPayload(order?.Info?.Receipt, out string storeName, out string payload) &&
+               IsGoogleStore(storeName) &&
+               TryParseGoogleReceiptPayload(payload, out googleReceipt);
     }
 
     static bool TryParseGoogleReceiptPayload(string payload, out GoogleReceiptPayload googleReceipt)
@@ -1054,12 +1033,12 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
 
     /// <summary>
     /// Apple only: App Receipt from order / Apple extended service / unified Payload.
+    /// Uses IAP v5 order APIs — not the obsolete <c>Product.receipt</c>.
     /// </summary>
-    bool TryResolveAppleReceipt(PendingOrder order, Product product, out string payload)
+    bool TryResolveAppleReceipt(PendingOrder order, out string payload)
     {
         payload = null;
 
-        // Prefer order info: Product.receipt on Apple returns null when transactionID is unset.
         string appReceipt = order?.Info?.Apple?.AppReceipt;
         if (!string.IsNullOrWhiteSpace(appReceipt))
         {
@@ -1082,14 +1061,6 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             return true;
         }
 
-        if (TryExtractUnifiedPayload(product?.receipt, out storeName, out unifiedPayload) &&
-            IsAppleStore(storeName) &&
-            !string.IsNullOrWhiteSpace(unifiedPayload))
-        {
-            payload = unifiedPayload;
-            return true;
-        }
-
         return false;
     }
 
@@ -1102,7 +1073,6 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     /// </summary>
     async Task<string> ResolveAppleReceiptWithRetryAsync(
         PendingOrder order,
-        Product product,
         string economyPurchaseId,
         string storeId)
     {
@@ -1112,7 +1082,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
         for (int i = 0; i < pollAttempts; i++)
         {
             await Task.Delay(pollDelayMs);
-            if (TryResolveAppleReceipt(order, product, out string payload) &&
+            if (TryResolveAppleReceipt(order, out string payload) &&
                 !string.IsNullOrWhiteSpace(payload))
             {
                 AppLog.Info("SDK.IAP", $"Apple App Receipt became available after poll #{i + 1} for '{economyPurchaseId}'.");
@@ -1120,7 +1090,7 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             }
         }
 
-        return await TryRefreshAppleAppReceiptAsync(order, product, economyPurchaseId, storeId);
+        return await TryRefreshAppleAppReceiptAsync(order, economyPurchaseId, storeId);
     }
 
     /// <summary>
@@ -1129,7 +1099,6 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
     /// </summary>
     async Task<string> EnsureFreshAppleReceiptForConsumableAsync(
         PendingOrder order,
-        Product product,
         string economyPurchaseId,
         string storeId,
         string receiptBefore)
@@ -1148,10 +1117,10 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
 
         for (int i = 0; i < attempts; i++)
         {
-            string refreshed = await TryRefreshAppleAppReceiptAsync(order, product, economyPurchaseId, storeId);
+            string refreshed = await TryRefreshAppleAppReceiptAsync(order, economyPurchaseId, storeId);
             if (!string.IsNullOrWhiteSpace(refreshed))
                 best = refreshed;
-            else if (TryResolveAppleReceipt(order, product, out string current) &&
+            else if (TryResolveAppleReceipt(order, out string current) &&
                      !string.IsNullOrWhiteSpace(current))
                 best = current;
 
@@ -1197,14 +1166,13 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
 
     async Task<string> TryRefreshAppleAppReceiptAsync(
         PendingOrder order,
-        Product product,
         string economyPurchaseId,
         string storeId)
     {
         IAppleStoreExtendedPurchaseService apple = _storeController?.AppleStoreExtendedPurchaseService;
         if (apple == null)
         {
-            if (TryResolveAppleReceipt(order, product, out string existing) &&
+            if (TryResolveAppleReceipt(order, out string existing) &&
                 !string.IsNullOrWhiteSpace(existing))
                 return existing;
             return null;
@@ -1217,14 +1185,14 @@ public sealed class UGSRealMoneyPurchaseService<TKey, TCurrency> : IRealMoneyPur
             if (!string.IsNullOrWhiteSpace(refreshed))
                 return refreshed;
 
-            if (TryResolveAppleReceipt(order, product, out string afterRefresh) &&
+            if (TryResolveAppleReceipt(order, out string afterRefresh) &&
                 !string.IsNullOrWhiteSpace(afterRefresh))
                 return afterRefresh;
         }
         catch (Exception ex)
         {
             AppLog.Warn("SDK.IAP", $"RefreshAppReceipt failed for '{economyPurchaseId}': {ex.Message}");
-            if (TryResolveAppleReceipt(order, product, out string fallback) &&
+            if (TryResolveAppleReceipt(order, out string fallback) &&
                 !string.IsNullOrWhiteSpace(fallback))
                 return fallback;
         }

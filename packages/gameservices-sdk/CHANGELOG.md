@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.1.6] - 2026-08-20
+
+### Fixed
+- **IAP:** stop using obsolete `Product.receipt` (CS0618 under Purchasing 5.x); Google/Apple redeem now resolve receipts only via IAP v5 `Order.Info` / Apple extended App Receipt APIs.
+
 ## [2.1.5] - 2026-08-20
 
 ### Fixed
