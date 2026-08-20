@@ -119,9 +119,17 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
                     });
                 if (InMobiChoiceReflection.DidReceiveIabVendorConsentEvent != null)
                 {
+                    // Agree/Reject writes IAB prefs; native UI dismiss event is unreliable on iOS.
                     consentHandler = CreateEventHandler(
                         InMobiChoiceReflection.DidReceiveIabVendorConsentEvent,
-                        () => ApplyLevelPlayGdprFromChoice());
+                        () =>
+                        {
+                            ApplyLevelPlayGdprFromChoice();
+                            AppLog.Info(
+                                "AdsPrivacy.InMobi",
+                                "CMPDidReceiveIABVendorConsent — treating consent UI as resolved.");
+                            uiTracker.MarkDismiss();
+                        });
                 }
 
                 uiHandler = TryCreateUiStatusHandler(uiTracker);
@@ -159,7 +167,10 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
                 if (!loaded)
                     return false;
 
-                await WaitForCmpUiCycleAsync(uiTracker, uiHandler != null, cancellationToken)
+                await WaitForCmpUiCycleAsync(
+                        uiTracker,
+                        uiHandler != null || consentHandler != null,
+                        cancellationToken)
                     .ConfigureAwait(true);
                 return true;
             }
@@ -187,49 +198,67 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
         {
             var uiTracker = new CmpUiCycleTracker();
             Delegate uiHandler = TryCreateUiStatusHandler(uiTracker);
+            Delegate consentHandler = null;
 
             try
             {
                 if (uiHandler != null)
                     AddHandler(InMobiChoiceReflection.UiStatusChangedEvent, uiHandler);
 
+                if (InMobiChoiceReflection.DidReceiveIabVendorConsentEvent != null)
+                {
+                    consentHandler = CreateEventHandler(
+                        InMobiChoiceReflection.DidReceiveIabVendorConsentEvent,
+                        () =>
+                        {
+                            ApplyLevelPlayGdprFromChoice();
+                            AppLog.Info(
+                                "AdsPrivacy.InMobi",
+                                "CMPDidReceiveIABVendorConsent — treating privacy options UI as resolved.");
+                            uiTracker.MarkDismiss();
+                        });
+                    AddHandler(InMobiChoiceReflection.DidReceiveIabVendorConsentEvent, consentHandler);
+                }
+
                 InMobiChoiceReflection.ForceDisplayUiMethod.Invoke(obj: null, parameters: null);
                 AppLog.Info("AdsPrivacy.InMobi", "ForceDisplayUI invoked.");
 
-                await WaitForCmpUiCycleAsync(uiTracker, uiHandler != null, cancellationToken)
+                await WaitForCmpUiCycleAsync(uiTracker, uiHandler != null || consentHandler != null, cancellationToken)
                     .ConfigureAwait(true);
             }
             finally
             {
                 if (uiHandler != null)
                     RemoveHandler(InMobiChoiceReflection.UiStatusChangedEvent, uiHandler);
+                if (consentHandler != null)
+                    RemoveHandler(InMobiChoiceReflection.DidReceiveIabVendorConsentEvent, consentHandler);
             }
         }
 
         static async Task WaitForCmpUiCycleAsync(
             CmpUiCycleTracker tracker,
-            bool hasUiEvents,
+            bool hasCompletionSignals,
             CancellationToken cancellationToken)
         {
-            if (!hasUiEvents || tracker == null)
+            if (!hasCompletionSignals || tracker == null)
             {
                 AppLog.Warn(
                     "AdsPrivacy.InMobi",
-                    "CMPUIStatusChangedEvent unavailable — brief settle wait only.");
+                    "No CMP UI/consent completion signals — brief settle wait only.");
                 await Task.Delay(800, cancellationToken).ConfigureAwait(true);
                 return;
             }
 
-            // Already dismissed (e.g. event fired before we finished load wait).
+            // Already dismissed / consent already applied.
             if (tracker.SawDismiss)
             {
-                AppLog.Info("AdsPrivacy.InMobi", "CMP UI already dismissed.");
+                AppLog.Info("AdsPrivacy.InMobi", "CMP already resolved (dismiss or consent).");
                 return;
             }
 
             if (!tracker.SawVisible)
             {
-                Task appearOrDismiss = await Task.WhenAny(
+                Task appearOrResolved = await Task.WhenAny(
                         tracker.VisibleTask,
                         tracker.DismissTask,
                         Task.Delay(UiAppearGraceMs, cancellationToken))
@@ -237,13 +266,13 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
 
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (appearOrDismiss == tracker.DismissTask || tracker.SawDismiss)
+                if (appearOrResolved == tracker.DismissTask || tracker.SawDismiss)
                 {
-                    AppLog.Info("AdsPrivacy.InMobi", "CMP UI dismissed before Visible.");
+                    AppLog.Info("AdsPrivacy.InMobi", "CMP resolved before Visible (consent or dismiss).");
                     return;
                 }
 
-                if (appearOrDismiss != tracker.VisibleTask && !tracker.SawVisible)
+                if (appearOrResolved != tracker.VisibleTask && !tracker.SawVisible)
                 {
                     AppLog.Info(
                         "AdsPrivacy.InMobi",
@@ -252,27 +281,27 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
                 }
             }
 
-            AppLog.Info("AdsPrivacy.InMobi", "CMP UI visible — waiting for dismiss.");
+            AppLog.Info("AdsPrivacy.InMobi", "CMP UI visible — waiting for dismiss or IAB consent.");
 
             if (tracker.SawDismiss)
                 return;
 
-            Task dismissed = await Task.WhenAny(
+            Task resolved = await Task.WhenAny(
                     tracker.DismissTask,
                     Task.Delay(UiDismissTimeoutMs, cancellationToken))
                 .ConfigureAwait(true);
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (dismissed != tracker.DismissTask && !tracker.SawDismiss)
+            if (resolved != tracker.DismissTask && !tracker.SawDismiss)
             {
                 AppLog.Warn(
                     "AdsPrivacy.InMobi",
-                    $"CMP UI dismiss timed out after {UiDismissTimeoutMs}ms (fail-open).");
+                    $"CMP UI resolve timed out after {UiDismissTimeoutMs}ms (fail-open).");
                 return;
             }
 
-            AppLog.Info("AdsPrivacy.InMobi", "CMP UI dismissed.");
+            AppLog.Info("AdsPrivacy.InMobi", "CMP UI resolved.");
         }
 
         static Delegate TryCreateUiStatusHandler(CmpUiCycleTracker tracker)
