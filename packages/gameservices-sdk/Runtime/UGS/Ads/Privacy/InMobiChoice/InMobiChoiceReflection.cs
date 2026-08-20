@@ -18,6 +18,21 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
             }
         }
 
+        /// <summary>Allow a fresh probe after assemblies finish loading (iOS IL2CPP / load order).</summary>
+        public static void InvalidateProbe()
+        {
+            _probed = false;
+            _available = false;
+            ChoiceCmpType = null;
+            ChoiceCmpManagerType = null;
+            StartChoiceMethod = null;
+            ForceDisplayUiMethod = null;
+            GetTcStringMethod = null;
+            DidLoadEvent = null;
+            DidErrorEvent = null;
+            DidReceiveIabVendorConsentEvent = null;
+        }
+
         public static Type ChoiceCmpType { get; private set; }
         public static Type ChoiceCmpManagerType { get; private set; }
 

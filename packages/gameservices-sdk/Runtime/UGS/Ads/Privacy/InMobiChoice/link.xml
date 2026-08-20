@@ -1,0 +1,11 @@
+<linker>
+  <!--
+    Documented for games that reference Choice via this SDK only.
+    Maze also preserves ChoiceCMP* in Assets/link.xml (Assembly-CSharp).
+  -->
+  <assembly fullname="RamnD.GameServices.UGS">
+    <type fullname="RamnD.GameServices.Ads.Privacy.InMobiChoice.InMobiChoiceConsentBootstrap" preserve="all" />
+    <type fullname="RamnD.GameServices.Ads.Privacy.InMobiChoice.InMobiChoiceConsentGate" preserve="all" />
+    <type fullname="RamnD.GameServices.Ads.Privacy.InMobiChoice.InMobiChoiceReflection" preserve="all" />
+  </assembly>
+</linker>

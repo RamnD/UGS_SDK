@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.1.11] - 2026-08-20
+
+### Fixed
+- **InMobi Choice / iOS IL2CPP:** re-probe + register gate on `AfterAssembliesLoaded` (not only `BeforeSceneLoad`); preserve InMobiChoice types in package `link.xml`. Games must also preserve `ChoiceCMP*` in their `Assembly-CSharp` `link.xml` (or keep a compile-time `typeof` anchor) — otherwise device builds keep `NullAdsUmpConsentGate` while Editor works.
+
 ## [2.1.10] - 2026-08-20
 
 ### Fixed
