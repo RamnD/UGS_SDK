@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.1.4] - 2026-08-20
+
+### Added
+- **Ads privacy / InMobi Choice:** built-in `InMobiChoiceConsentGate` (reflection over `ChoiceCMP`) with auto-registration when the InMobi CMP Unity package is imported.
+- **Ads privacy:** `AdsPrivacyOptions.InMobiChoicePCode` for InMobi Choice initialization (portal p-code without `p-` prefix).
+
+### Changed
+- **Ads privacy:** when both Google UMP and InMobi Choice are present, InMobi registers last and takes precedence.
+- **Docs:** [ads-privacy.md](docs/ads-privacy.md) documents InMobi Choice alongside Google UMP.
+
 ## [2.1.3] - 2026-08-18
 
 ### Fixed

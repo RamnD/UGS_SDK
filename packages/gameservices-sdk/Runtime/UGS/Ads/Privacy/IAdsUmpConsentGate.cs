@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 namespace RamnD.GameServices.Ads.Privacy
 {
     /// <summary>
-    /// Google UMP consent step. Default is a no-op; Google Mobile Ads package registers a real gate.
+    /// Pluggable CMP consent step (Google UMP, InMobi Choice, …). Default is a no-op until a gate registers.
     /// </summary>
     public interface IAdsUmpConsentGate
     {

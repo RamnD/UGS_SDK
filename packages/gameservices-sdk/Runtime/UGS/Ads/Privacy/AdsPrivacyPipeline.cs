@@ -43,7 +43,7 @@ namespace RamnD.GameServices.Ads.Privacy
                 _umpGate = gate;
             }
 
-            AppLog.Info("AdsPrivacy", "UMP consent gate registered.");
+            AppLog.Info("AdsPrivacy", "CMP consent gate registered.");
         }
 
         /// <summary>
@@ -104,7 +104,7 @@ namespace RamnD.GameServices.Ads.Privacy
             lock (GateLock)
                 gate = _umpGate;
 
-            AppLog.Info("AdsPrivacy", $"UMP gate: {gate.GetType().FullName}");
+            AppLog.Info("AdsPrivacy", $"CMP gate: {gate.GetType().FullName}");
 
             try
             {

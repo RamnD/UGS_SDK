@@ -1,8 +1,8 @@
 namespace RamnD.GameServices.Ads.Privacy
 {
     /// <summary>
-    /// Inputs for <see cref="AdsPrivacyPipeline"/>. App / AdMob IDs are not passed here —
-    /// native inject comes from LevelPlay AdMob settings (or Google Mobile Ads settings).
+    /// Inputs for <see cref="AdsPrivacyPipeline"/>. Ad network App IDs are not passed here —
+    /// native inject comes from LevelPlay / store settings.
     /// </summary>
     public sealed class AdsPrivacyOptions
     {
@@ -10,12 +10,18 @@ namespace RamnD.GameServices.Ads.Privacy
         public bool IsChildDirected { get; set; }
 
         /// <summary>
-        /// UMP debug geography override for device testing. Leave <see cref="AdsPrivacyDebugGeography.Disabled"/> in production.
+        /// InMobi Choice CMP p-code (portal value without the leading <c>p-</c> prefix).
+        /// Required when using InMobi Choice instead of Google UMP.
+        /// </summary>
+        public string InMobiChoicePCode { get; set; }
+
+        /// <summary>
+        /// Google UMP debug geography override for device testing. Leave <see cref="AdsPrivacyDebugGeography.Disabled"/> in production.
         /// </summary>
         public AdsPrivacyDebugGeography DebugGeography { get; set; } = AdsPrivacyDebugGeography.Disabled;
 
         /// <summary>
-        /// Optional hashed test device id for UMP debug (see AdMob UMP docs). Ignored when empty.
+        /// Optional hashed test device id for Google UMP debug (see AdMob UMP docs). Ignored when empty.
         /// </summary>
         public string DebugTestDeviceHashedId { get; set; }
     }
