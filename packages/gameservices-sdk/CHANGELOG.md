@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.1.8] - 2026-08-20
+
+### Fixed
+- **iOS Addressables / player build:** `RamnD.GameServices.UGS` now references `Apple.Core`, `Apple.GameKit`, and `AppleAuth`. Version defines alone enabled GameKit/SIWA code under `#if UNITY_IOS && !UNITY_EDITOR`, which compiled in Editor but failed player script compilation with CS0246 and surfaced as Addressables `SBP ErrorError`.
+
 ## [2.1.6] - 2026-08-20
 
 ### Fixed

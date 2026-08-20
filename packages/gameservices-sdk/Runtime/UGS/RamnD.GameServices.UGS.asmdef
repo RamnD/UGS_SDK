@@ -15,7 +15,10 @@
     "Unity.LevelPlay",
     "Newtonsoft.Json",
     "Unity.Purchasing",
-    "Unity.Advertisement.IosSupport"
+    "Unity.Advertisement.IosSupport",
+    "Apple.Core",
+    "Apple.GameKit",
+    "AppleAuth"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],
