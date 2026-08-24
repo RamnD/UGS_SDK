@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.1.15] - 2026-08-24
+
+### Fixed
+- **Auth / platform plugins:** document and Editor-guard the UPM requirement for Google Play Games, Apple GameKit, and Apple Sign-In. Assets-only plugin copies do not set `RAMND_HAS_*` versionDefines, so Android/iOS auth compiles as stubs.
+
 ## [2.1.14] - 2026-08-24
 
 ### Fixed

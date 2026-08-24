@@ -13,7 +13,7 @@ Add to your project's `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git?path=packages/gameservices-sdk#v2.1.14"
+    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git?path=packages/gameservices-sdk#v2.1.15"
   }
 }
 ```
@@ -148,11 +148,12 @@ These plugins are **not available in the Unity Package Manager registry** and mu
 |---|---|
 | **Version** | **2.1.0** |
 | **Release page** | https://github.com/playgameservices/play-games-plugin-for-unity/releases/tag/v2.1.0 |
-| **Direct download** | [`GooglePlayGamesPlugin-2.1.0.unitypackage`](https://github.com/playgameservices/play-games-plugin-for-unity/releases/download/v2.1.0/GooglePlayGamesPlugin-2.1.0.unitypackage) |
 | **UPM git URL** | `https://github.com/playgameservices/play-games-plugin-for-unity.git?path=com.google.play.games` |
 
+**Critical:** install GPGS as a **UPM package** (`Packages/com.google.play.games` or git URL). An `Assets/`-only `.unitypackage` import does **not** set `RAMND_HAS_GOOGLE_PLAY_GAMES`, so Android SignIn/Link compile as stubs (“plugin is missing”). Details: [docs/auth.md](docs/auth.md).
+
 **Setup steps:**
-1. Download the `.unitypackage` and import via **Assets → Import Package → Custom Package**.
+1. Add the UPM git URL (or embed `Packages/com.google.play.games`).
 2. In Unity: **Window → Google Play Games → Setup → Android Setup** — enter your OAuth Web Client ID.
 3. Set `GooglePlayGamesOAuthWebClientId` in `GameServicesAuthProviderConfig` (see [docs/auth.md](docs/auth.md)).
 
@@ -161,6 +162,8 @@ These plugins are **not available in the Unity Package Manager registry** and mu
 ---
 
 ### iOS — Apple Game Center (GameKit) + optional Sign in with Apple
+
+Install Apple.Core / Apple.GameKit / Apple Sign-In as **UPM packages** (tarball / git / `file:`). Loose copies under `Assets/` will not set `RAMND_HAS_APPLE_GAMEKIT` / `RAMND_HAS_APPLE_SIGNIN`.
 
 **Game Center (recommended for games):**
 1. Build Apple.Core + Apple.GameKit tarballs from [apple/unityplugins](https://github.com/apple/unityplugins) (`python3 build.py`).

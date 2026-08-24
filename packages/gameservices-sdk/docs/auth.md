@@ -10,14 +10,22 @@ The UGS auth layer wraps platform-specific SDKs that are **not in the UPM regist
 
 ### Android — Google Play Games Plugin v2.1.0
 
+GPGS auth compiles only when Unity sets `RAMND_HAS_GOOGLE_PLAY_GAMES`. That define comes from asmdef `versionDefines` and **only fires for a real UPM package** (`com.google.play.games`). Dropping the `.unitypackage` under `Assets/` is **not enough** — the SDK then builds the `#else` stubs and Android Link fails with “Google Play Games plugin is missing”.
+
 | | |
 |---|---|
+| **Preferred install** | UPM git / embedded package (see below) |
 | **Release page** | https://github.com/playgameservices/play-games-plugin-for-unity/releases/tag/v2.1.0 |
-| **Direct download** | [`GooglePlayGamesPlugin-2.1.0.unitypackage`](https://github.com/playgameservices/play-games-plugin-for-unity/releases/download/v2.1.0/GooglePlayGamesPlugin-2.1.0.unitypackage) |
+| **UPM git URL** | `https://github.com/playgameservices/play-games-plugin-for-unity.git?path=com.google.play.games` |
 
-1. Import the package via **Assets → Import Package → Custom Package**.
-2. **Window → Google Play Games → Setup → Android Setup** — paste your OAuth Web Client ID (from Google Cloud Console, type **Web application**).
-3. Pass the same ID to the builder:
+**Install (pick one):**
+1. **UPM git** — add the URL above to `Packages/manifest.json`, **or**
+2. **Embedded local** — put the plugin at `Packages/com.google.play.games/` (folder with `package.json` name `com.google.play.games`), **or**
+3. **Assets import fallback** — import the `.unitypackage`, then manually add scripting define `RAMND_HAS_GOOGLE_PLAY_GAMES` for the **Android** player (Player Settings → Scripting Define Symbols).
+
+Then:
+1. **Window → Google Play Games → Setup → Android Setup** — paste your OAuth Web Client ID (Google Cloud Console, type **Web application**).
+2. Pass the same ID to the builder:
 ```csharp
 .WithAuthProviderCredentials(new GameServicesAuthProviderConfig
 {
@@ -26,6 +34,8 @@ The UGS auth layer wraps platform-specific SDKs that are **not in the UPM regist
 ```
 
 ### iOS — Apple Game Center (recommended for games) + optional SIWA
+
+Install Apple plugins as **UPM packages** (tarball / git / `file:`). Same rule as GPGS: asmdef `versionDefines` do not see loose `Assets/` copies.
 
 **Game Center (primary):**
 ```csharp
@@ -47,6 +57,16 @@ Requires Apple.Core + Apple.GameKit (`com.apple.unityplugin.gamekit`; SDK sets `
 ```
 
 The built-in `AppleSignInIdentityTokenProvider` requires `com.lupidan.apple-signin-unity`. If your project already has another SIWA implementation, you can still pass your own `RequestAppleIdentityTokenAsync`.
+
+### Optional platform define map
+
+| Define | Set when (UPM package / assembly) | Enables |
+|--------|-----------------------------------|---------|
+| `RAMND_HAS_GOOGLE_PLAY_GAMES` | `com.google.play.games` / `Google.Play.Games` | GPGS SignIn / Link / profile / achievement bridge |
+| `RAMND_HAS_APPLE_GAMEKIT` | `com.apple.unityplugin.gamekit` / `Apple.GameKit` | Game Center credential provider + achievement bridge |
+| `RAMND_HAS_APPLE_SIGNIN` | `com.lupidan.apple-signin-unity` | Built-in SIWA identity-token provider |
+| `RAMND_HAS_GOOGLE_PLAY_APP_UPDATE` | `com.google.play.appupdate` | Play Immediate in-app update adapter |
+| `RAMND_HAS_GOOGLE_MOBILE_ADS` | `com.google.ads.mobile` 8.5+ | Google UMP consent gate |
 
 ### Built-in auth helpers
 
