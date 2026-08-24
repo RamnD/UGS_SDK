@@ -33,6 +33,16 @@ Then:
 })
 ```
 
+Call `GooglePlayGamesProfileProvider.WarmUp()` once at Android bootstrap (before the Link button).
+
+If native sign-in UI appears then returns `SignInStatus.Canceled` (~2–4s):
+
+1. Register **both** SHA-1 fingerprints as Android OAuth clients: local/upload keystore (sideload APK) **and** Play Console **App signing key** (Play-installed builds). Sideload APKs use the upload key; Play-installed builds use App Signing.
+2. Add the Google account to **Play Console → Play Games Services → Testers**.
+3. Play Games Services configuration: **Use next generation IDs = Off**.
+4. Prefer a Play **internal testing** install over a USB sideload when verifying production signing.
+5. Keep **Application Entry Point = GameActivity** if that is the project default. Switching to Activity is not required for GPGS and can hide the launcher icon (`UnityPlayerActivity` merged as `android:enabled="false"`).
+
 ### iOS — Apple Game Center (recommended for games) + optional SIWA
 
 Install Apple plugins as **UPM packages** (tarball / git / `file:`). Same rule as GPGS: asmdef `versionDefines` do not see loose `Assets/` copies.

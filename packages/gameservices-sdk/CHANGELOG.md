@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.1.16] - 2026-08-24
+
+### Fixed
+- **Auth / Google Play Games:** add `GooglePlayGamesProfileProvider.WarmUp()` for Android bootstrap; treat `SignInStatus.Canceled` as user/config cancel (SHA-1 / testers), not a missing-plugin stub.
+- **Ads privacy / InMobi Choice:** do not call `StartChoice` (no CMP window) when IAB TCF consent is already stored (`IABTCF_TCString` / `gdprApplies=0`, including Android default SharedPreferences). Privacy Options still initializes Choice and uses `ForceDisplayUI`.
+
 ## [2.1.15] - 2026-08-24
 
 ### Fixed

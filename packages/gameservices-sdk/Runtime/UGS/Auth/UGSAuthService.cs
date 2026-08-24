@@ -870,13 +870,29 @@ public class UGSAuthService : IAuthService
         }
 
         // Activate so PlayGamesPlatform.Instance is the Social implementation.
+#if !UGS_ENV_PRODUCTION
+        PlayGamesPlatform.DebugLogEnabled = true;
+#endif
         PlayGamesPlatform.Activate();
+        AppLog.Info("Auth",
+            $"GPGS auth start appId={GameInfo.ApplicationId} webClientSet={GameInfo.WebClientIdInitialized()} authenticated={PlayGamesPlatform.Instance.IsAuthenticated()}");
 
         void OnAuthComplete(SignInStatus status)
         {
             if (cancellationToken.IsCancellationRequested)
             {
                 tcs.TrySetCanceled(cancellationToken);
+                return;
+            }
+
+            if (status == SignInStatus.Canceled)
+            {
+                AppLog.Warn("Auth",
+                    "Google Play Games sign-in Canceled. If the sheet closed by itself, check: " +
+                    "Android OAuth SHA-1 (upload key for sideload APK, Play App Signing key for Play installs); " +
+                    "Play Console testers; Play Games 'Use next generation IDs' = Off. " +
+                    "Do not switch Application Entry to Activity just to debug this — that can drop the launcher icon.");
+                tcs.TrySetCanceled();
                 return;
             }
 
