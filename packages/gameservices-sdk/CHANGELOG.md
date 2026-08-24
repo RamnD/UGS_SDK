@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.1.14] - 2026-08-24
+
+### Fixed
+- **App update / Google Play:** адаптация к изменению сигнатуры `AppUpdateInfo.IsUpdateTypeAllowed` ( `AppUpdateType` vs `AppUpdateOptions`) у `com.google.play.appupdate`.
+
 ## [2.1.11] - 2026-08-20
 
 ### Fixed

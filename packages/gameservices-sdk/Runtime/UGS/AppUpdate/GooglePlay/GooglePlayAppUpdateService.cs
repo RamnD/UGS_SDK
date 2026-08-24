@@ -2,6 +2,7 @@ using System.Threading;
 using System.Threading.Tasks;
 #if UNITY_ANDROID && !UNITY_EDITOR
 using System;
+using System.Reflection;
 using Google.Play.AppUpdate;
 using Google.Play.Common;
 using UnityEngine;
@@ -45,8 +46,10 @@ namespace RamnD.GameServices.AppUpdate.GooglePlay
 
             AppUpdateInfo info = infoOp.GetResult();
             UpdateAvailability availability = info.UpdateAvailability;
+            AppUpdateOptions options = AppUpdateOptions.ImmediateAppUpdateOptions();
+            bool immediateAllowed = IsUpdateTypeAllowedCompat(info, options);
             AppLog.Info("AppUpdate", $"availability={availability} immediateAllowed=" +
-                $"{info.IsUpdateTypeAllowed(AppUpdateType.Immediate)}");
+                $"{immediateAllowed}");
 
             bool shouldStart =
                 availability == UpdateAvailability.UpdateAvailable
@@ -54,13 +57,11 @@ namespace RamnD.GameServices.AppUpdate.GooglePlay
             if (!shouldStart)
                 return;
 
-            if (!info.IsUpdateTypeAllowed(AppUpdateType.Immediate))
+            if (!immediateAllowed)
             {
                 AppLog.Info("AppUpdate", "Immediate flow not allowed — skipping.");
                 return;
             }
-
-            AppUpdateOptions options = AppUpdateOptions.ImmediateAppUpdateOptions();
             AppUpdateRequest request = manager.StartUpdate(info, options);
             await WaitUntilDoneAsync(() => request.IsDone, timeoutMs: 0, cancellationToken);
 
@@ -86,6 +87,30 @@ namespace RamnD.GameServices.AppUpdate.GooglePlay
                 waited += 50;
             }
 
+            return true;
+        }
+
+        static bool IsUpdateTypeAllowedCompat(AppUpdateInfo info, AppUpdateOptions options)
+        {
+            // Newer API: IsUpdateTypeAllowed(AppUpdateOptions)
+            MethodInfo method = typeof(AppUpdateInfo).GetMethod(
+                "IsUpdateTypeAllowed",
+                new[] { typeof(AppUpdateOptions) });
+
+            if (method != null)
+                return (bool)method.Invoke(info, new object[] { options });
+
+            // Older API: IsUpdateTypeAllowed(AppUpdateType)
+            method = typeof(AppUpdateInfo).GetMethod(
+                "IsUpdateTypeAllowed",
+                new[] { typeof(AppUpdateType) });
+
+            if (method != null)
+                return (bool)method.Invoke(info, new object[] { AppUpdateType.Immediate });
+
+            // If API shape is unknown (or reflection metadata got stripped),
+            // prefer fail-open: try to start immediate update anyway.
+            AppLog.Warn("AppUpdate", "IsUpdateTypeAllowed signature not found; assuming Immediate allowed.");
             return true;
         }
 #endif
