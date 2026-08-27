@@ -59,9 +59,10 @@ Without any CMP: ATT + COPPA still run; consent form is a logged no-op (fail-ope
 
 SDK calls (via reflection):
 
-- `ChoiceCMP.StartChoice(pCode, shouldDisplayIDFA: false)` — ATT is handled separately by the pipeline  
-- Waits for `CMPUIStatusChangedEvent` (**Visible** → **Dismissed** / Hidden / Disabled) **or** `CMPDidReceiveIABVendorConsentEvent` (Agree/Reject) so bootstrap does not stay frozen if native dismiss is missing  
-- `ChoiceCMP.ForceDisplayUI()` — privacy settings entry point (same resolve wait)  
+- `ChoiceCMP.StartChoice(pCode, shouldDisplayIDFA: false)` — only when no IAB TCF cache exists yet. ATT is handled separately by the pipeline.
+- If `IABTCF_TCString` is present, `IABTCF_gdprApplies=0`, or a previous session cached consent (Unity flag + Android default SharedPreferences), **StartChoice is skipped** so the CMP window does not reappear.
+- When StartChoice does run: waits for `CMPDidLoad` `PingResult` (`displayStatus` hidden/disabled → no UI wait) and `CMPUIStatusChangedEvent` (**Visible** → **Dismissed** / Hidden / Disabled) **or** `CMPDidReceiveIABVendorConsentEvent`.
+- `ChoiceCMP.ForceDisplayUI()` — privacy settings entry point (lazy `StartChoice` first if gather skipped the form)
 - `ChoiceCMP.GetTCString()` + `IABTCF_PurposeConsents` → LevelPlay GDPR flag
 
 Android: add InMobi CMP gradle deps to `mainTemplate.gradle` (see InMobi docs).  

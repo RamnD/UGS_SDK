@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.2.2] - 2026-08-27
+
+### Fixed
+- **InMobi Choice:** skip the CMP form on later launches when IAB TCF is already stored (`IABTCF_TCString`, `IABTCF_gdprApplies=0`, or a Unity cache flag). Read those keys from Android default SharedPreferences as well as Unity PlayerPrefs.
+- **InMobi Choice:** `CMPDidLoad` ping with `displayStatus` hidden/disabled no longer waits for a form that will never appear. Privacy Options still lazy-starts Choice if gather skipped the UI.
+
 ## [2.2.1] - 2026-08-27
 
 ### Fixed

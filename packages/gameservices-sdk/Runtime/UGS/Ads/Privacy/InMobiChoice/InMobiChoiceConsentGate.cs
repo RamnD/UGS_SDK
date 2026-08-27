@@ -16,7 +16,10 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
         /// <summary>User can sit on the form; fail-open after this so bootstrap cannot hang forever.</summary>
         const int UiDismissTimeoutMs = 300000;
 
+        const string CachedConsentPrefKey = "RamnD.AdsPrivacy.IabConsentCached";
+
         bool _started;
+        bool _choiceSdkStarted;
         string _activePCode = string.Empty;
 
         public bool IsPrivacyOptionsRequired =>
@@ -53,14 +56,30 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
             }
 
             _activePCode = pCode;
+
+            if (HasStoredIabConsent(out string cacheSource))
+            {
+                AppLog.Info(
+                    "AdsPrivacy.InMobi",
+                    $"Stored IAB consent ({cacheSource}) — skipping CMP UI.");
+                _started = true;
+                RememberIabConsentCache();
+                ApplyLevelPlayGdprFromChoice();
+                return;
+            }
+
             bool loaded = await StartChoiceAndWaitForUiAsync(
                     pCode,
                     shouldDisplayIdfa: false,
+                    waitForUi: true,
                     cancellationToken)
                 .ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
 
+            _choiceSdkStarted = loaded || _choiceSdkStarted;
             _started = loaded || _started;
+            if (HasStoredIabConsent(out _))
+                RememberIabConsentCache();
             ApplyLevelPlayGdprFromChoice();
         }
 
@@ -74,6 +93,23 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
 
             try
             {
+                if (!_choiceSdkStarted)
+                {
+                    bool loaded = await StartChoiceAndWaitForUiAsync(
+                            _activePCode,
+                            shouldDisplayIdfa: false,
+                            waitForUi: false,
+                            cancellationToken)
+                        .ConfigureAwait(true);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    _choiceSdkStarted = loaded;
+                    if (!loaded)
+                    {
+                        AppLog.Warn("AdsPrivacy.InMobi", "Privacy options skip — StartChoice did not load.");
+                        return;
+                    }
+                }
+
                 await ForceDisplayUiAndWaitForDismissAsync(cancellationToken).ConfigureAwait(true);
                 AppLog.Info("AdsPrivacy.InMobi", "ForceDisplayUI cycle finished.");
             }
@@ -92,6 +128,7 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
         static async Task<bool> StartChoiceAndWaitForUiAsync(
             string pCode,
             bool shouldDisplayIdfa,
+            bool waitForUi,
             CancellationToken cancellationToken)
         {
             var loadTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -105,9 +142,11 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
             {
                 loadHandler = CreateEventHandler(
                     InMobiChoiceReflection.DidLoadEvent,
-                    () =>
+                    payload =>
                     {
-                        AppLog.Info("AdsPrivacy.InMobi", "CMPDidLoad.");
+                        AppLog.Info("AdsPrivacy.InMobi", $"CMPDidLoad. {SummarizePing(payload)}");
+                        if (PingSaysUiNotRequired(payload))
+                            uiTracker.MarkDismiss();
                         loadTcs.TrySetResult(true);
                     });
                 errorHandler = CreateEventHandler(
@@ -124,6 +163,7 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
                         InMobiChoiceReflection.DidReceiveIabVendorConsentEvent,
                         () =>
                         {
+                            RememberIabConsentCache();
                             ApplyLevelPlayGdprFromChoice();
                             AppLog.Info(
                                 "AdsPrivacy.InMobi",
@@ -166,6 +206,12 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
 
                 if (!loaded)
                     return false;
+
+                if (!waitForUi)
+                {
+                    AppLog.Info("AdsPrivacy.InMobi", "StartChoice loaded — skipping CMP UI wait.");
+                    return true;
+                }
 
                 await WaitForCmpUiCycleAsync(
                         uiTracker,
@@ -211,6 +257,7 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
                         InMobiChoiceReflection.DidReceiveIabVendorConsentEvent,
                         () =>
                         {
+                            RememberIabConsentCache();
                             ApplyLevelPlayGdprFromChoice();
                             AppLog.Info(
                                 "AdsPrivacy.InMobi",
@@ -401,7 +448,7 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
                 }
 
                 if (string.IsNullOrWhiteSpace(tcString))
-                    tcString = PlayerPrefs.GetString("IABTCF_TCString", string.Empty);
+                    tcString = ReadIabValue("IABTCF_TCString");
 
                 if (string.IsNullOrWhiteSpace(tcString))
                 {
@@ -409,7 +456,7 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
                     return true;
                 }
 
-                string purposeConsents = PlayerPrefs.GetString("IABTCF_PurposeConsents", string.Empty);
+                string purposeConsents = ReadIabValue("IABTCF_PurposeConsents");
                 if (string.IsNullOrEmpty(purposeConsents))
                     return true;
 
@@ -419,6 +466,130 @@ namespace RamnD.GameServices.Ads.Privacy.InMobiChoice
             {
                 AppLog.Warn("AdsPrivacy.InMobi", $"GDPR read failed (fail-open): {ex.Message}");
                 return true;
+            }
+        }
+
+        static bool HasStoredIabConsent(out string source)
+        {
+            if (PlayerPrefs.GetInt(CachedConsentPrefKey, 0) == 1)
+            {
+                source = "unity-flag";
+                return true;
+            }
+
+            string gdprApplies = ReadIabValue("IABTCF_gdprApplies");
+            if (gdprApplies == "0")
+            {
+                source = "IABTCF_gdprApplies=0";
+                return true;
+            }
+
+            string tcString = ReadIabValue("IABTCF_TCString");
+            if (!string.IsNullOrWhiteSpace(tcString))
+            {
+                source = $"IABTCF_TCString len={tcString.Length}";
+                return true;
+            }
+
+            source = string.Empty;
+            return false;
+        }
+
+        static void RememberIabConsentCache()
+        {
+            PlayerPrefs.SetInt(CachedConsentPrefKey, 1);
+            PlayerPrefs.Save();
+        }
+
+        static string ReadIabValue(string key)
+        {
+            string fromUnity = PlayerPrefs.GetString(key, string.Empty);
+            if (!string.IsNullOrWhiteSpace(fromUnity))
+                return fromUnity;
+
+            return ReadAndroidDefaultPrefsString(key);
+        }
+
+        static string ReadAndroidDefaultPrefsString(string key)
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            try
+            {
+                using var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
+                using AndroidJavaObject activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity");
+                if (activity == null)
+                    return string.Empty;
+
+                using AndroidJavaObject context = activity.Call<AndroidJavaObject>("getApplicationContext");
+                using var prefMgr = new AndroidJavaClass("android.preference.PreferenceManager");
+                using AndroidJavaObject prefs = prefMgr.CallStatic<AndroidJavaObject>(
+                    "getDefaultSharedPreferences",
+                    context);
+                if (prefs == null || !prefs.Call<bool>("contains", key))
+                    return string.Empty;
+
+                try
+                {
+                    return prefs.Call<string>("getString", key, string.Empty) ?? string.Empty;
+                }
+                catch (Exception)
+                {
+                    return prefs.Call<int>("getInt", key, -1).ToString();
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("AdsPrivacy.InMobi", $"Android IAB prefs read failed: {ex.Message}");
+                return string.Empty;
+            }
+#else
+            return string.Empty;
+#endif
+        }
+
+        static bool PingSaysUiNotRequired(object payload)
+        {
+            if (payload == null)
+                return false;
+
+            try
+            {
+                Type type = payload.GetType();
+                FieldInfo gdprField = type.GetField("gdprApplies", BindingFlags.Public | BindingFlags.Instance);
+                if (gdprField != null && gdprField.FieldType == typeof(bool) && !(bool)gdprField.GetValue(payload))
+                    return true;
+
+                string displayStatus = type.GetField("displayStatus", BindingFlags.Public | BindingFlags.Instance)
+                    ?.GetValue(payload)
+                    ?.ToString();
+                return !string.IsNullOrEmpty(displayStatus)
+                    && (displayStatus.Equals("hidden", StringComparison.OrdinalIgnoreCase)
+                        || displayStatus.Equals("disabled", StringComparison.OrdinalIgnoreCase));
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("AdsPrivacy.InMobi", $"PingResult read failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        static string SummarizePing(object payload)
+        {
+            if (payload == null)
+                return "ping=null";
+
+            try
+            {
+                Type type = payload.GetType();
+                object gdpr = type.GetField("gdprApplies", BindingFlags.Public | BindingFlags.Instance)?.GetValue(payload);
+                object cmpStatus = type.GetField("cmpStatus", BindingFlags.Public | BindingFlags.Instance)?.GetValue(payload);
+                object displayStatus = type.GetField("displayStatus", BindingFlags.Public | BindingFlags.Instance)
+                    ?.GetValue(payload);
+                return $"gdprApplies={gdpr} cmpStatus={cmpStatus} displayStatus={displayStatus}";
+            }
+            catch (Exception)
+            {
+                return "ping=unreadable";
             }
         }
 
