@@ -36,6 +36,23 @@ Default `DeferInitUntilPrivacy = false` keeps 2.1.x behavior: `UGSServicesBuilde
 
 `GameServicesSync` reloads preloaded units on reconnect when the ads manager is `ILevelPlayAdsController`.
 
+### Timeouts and stuck sessions
+
+| Option | Default | Covers |
+| --- | --- | --- |
+| `LoadThenShowTimeoutMs` | 10000 | `ShowRewardedAd` / `ShowInterstitial` on a cold unit: `LoadAd` never resolves → `onFailed`. |
+| `DeferredShowTimeoutMs` | 15000 | Show requested while `LevelPlay.Init` is still running → `onFailed` instead of an unexpected fullscreen after a late `OnInitSuccess`. |
+| `LateRewardGraceMs` | 5000 | Wait after `OnAdClosed` for a late `OnAdRewarded`. |
+
+When the game's own watchdog gives up on a native session that never reported display or close, release it so later shows are not rejected as "already in progress":
+
+```csharp
+levelPlay.AbortRewardedShow(adUnitId, "watchdog");     // resolves grant if earned / qualifying watch
+levelPlay.AbortInterstitialShow(adUnitId, "watchdog"); // always a fail, never a grant
+```
+
+Both also drop a show still queued behind init, so the caller cannot be surprised later.
+
 Placement names and analytics stay in the game. `IAdsManager.ShowRewardedAd` / `ShowInterstitial` still take LevelPlay **ad unit ids**.
 
 ---

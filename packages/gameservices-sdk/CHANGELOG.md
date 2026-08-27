@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.2.1] - 2026-08-27
+
+### Fixed
+- **`LevelPlayAdsManager` deferred shows:** a show requested while `LevelPlay.Init` is still running now expires after `LevelPlayAdsOptions.DeferredShowTimeoutMs` (default 15s) instead of waiting for init forever. `CancelPendingRewardedShow` / `AbortRewardedShow` drop a matching queued show, so a late `OnInitSuccess` can no longer open a fullscreen with dead callbacks.
+- **`LevelPlayAdsManager` cancel path:** `CancelPendingRewardedShow` now goes through `ResetCallbacks`, freeing the in-flight load slot — the next preload on a fresh instance is no longer skipped as a duplicate after `DestroyAd`.
+
+### Added
+- **`ILevelPlayAdsController.AbortInterstitialShow(adUnitId, reason)`:** releases a hung interstitial session (no display/close callback) so later shows are not rejected as "already in progress"; mirrors `AbortRewardedShow`.
+- **`LevelPlayAdsOptions.DeferredShowTimeoutMs`:** cap for shows queued before SDK init completes.
+
 ## [2.2.0] - 2026-08-27
 
 ### Added

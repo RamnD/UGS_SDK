@@ -60,6 +60,13 @@ public interface ILevelPlayAdsController : IAdsManager
     bool AbortRewardedShow(string adUnitId, string reason);
 
     /// <summary>
+    /// Release a hung interstitial session (no close/display callback ever arrived)
+    /// so later shows are not rejected as "already in progress". Invokes <c>onFailed</c>.
+    /// </summary>
+    /// <returns><c>true</c> if a session for this unit was released.</returns>
+    bool AbortInterstitialShow(string adUnitId, string reason);
+
+    /// <summary>
     /// Resume after Store / multitask during a live rewarded session.
     /// Finalizes a close that arrived while backgrounded.
     /// </summary>

@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.2.1] - 2026-08-27
+
+### Fixed
+- **`com.ramnd.gameservices-sdk`:** deferred-show timeout + drop-on-abort for LevelPlay shows queued before init; `AbortInterstitialShow` for hung interstitial sessions.
+
 ## [2.2.0] - 2026-08-27
 
 ### Added

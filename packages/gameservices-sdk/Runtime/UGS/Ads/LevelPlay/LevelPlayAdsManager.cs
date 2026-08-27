@@ -46,6 +46,7 @@ public sealed class LevelPlayAdsManager : ILevelPlayAdsController
     private readonly int _qualifyingWatchMs;
     private readonly int _lateRewardGraceMs;
     private readonly int _loadThenShowTimeoutMs;
+    private readonly int _deferredShowTimeoutMs;
     private InitState _initState = InitState.NotStarted;
 
     private readonly Dictionary<string, LevelPlayRewardedAd> _rewardedAds = new();
@@ -85,6 +86,8 @@ public sealed class LevelPlayAdsManager : ILevelPlayAdsController
 
     private PendingRewardedShow _deferredRewardedShow;
     private PendingInterstitialShow _deferredInterstitialShow;
+    private int _deferredRewardedGeneration;
+    private int _deferredInterstitialGeneration;
 
     struct PendingRewardedShow
     {
@@ -109,6 +112,7 @@ public sealed class LevelPlayAdsManager : ILevelPlayAdsController
         _qualifyingWatchMs = Math.Max(0, _options.QualifyingWatchMs);
         _lateRewardGraceMs = Math.Max(0, _options.LateRewardGraceMs);
         _loadThenShowTimeoutMs = Math.Max(1, _options.LoadThenShowTimeoutMs);
+        _deferredShowTimeoutMs = Math.Max(1, _options.DeferredShowTimeoutMs);
     }
 
     bool ShouldBypassAsSuccess()
@@ -521,6 +525,7 @@ public sealed class LevelPlayAdsManager : ILevelPlayAdsController
                 OnSuccess = onSuccess,
                 OnFailed = onFailed,
             };
+            DeferredRewardedShowTimeoutAsync(placementId, ++_deferredRewardedGeneration);
             return;
         }
 
@@ -581,24 +586,20 @@ public sealed class LevelPlayAdsManager : ILevelPlayAdsController
         if (string.IsNullOrWhiteSpace(adUnitId))
             return;
 
+        if (TryDropDeferredRewardedShow(adUnitId, "cancel", out Action deferredFailed))
+        {
+            deferredFailed?.Invoke();
+            return;
+        }
+
         if (_activeRewardedUnitId != adUnitId && _loadThenShowUnitId != adUnitId)
             return;
 
         AppLog.Info("LevelPlay", $"CancelPendingRewardedShow: {adUnitId}");
         bool destroyNative = _rewardedShowIssued || _rewardedDisplayed;
-        ClearLoadThenShowWait();
-        _rewardedGeneration++;
-        _pendingSuccess = null;
-        _pendingFailed = null;
-        _activeRewardedUnitId = null;
-        _rewardEarned = false;
-        _rewardedClosed = false;
-        _rewardedShowIssued = false;
-        _rewardedDisplayed = false;
-        _rewardedDisplayRealtimeStart = 0f;
-        _rewardedSessionActivity = 0;
-        _closeDeferredForStoreLeave = false;
-        _rewardedHadClick = false;
+        // ResetCallbacks also frees the in-flight load slot, so the next
+        // PreloadRewarded on a fresh instance is not skipped as duplicate.
+        ResetCallbacks();
 
         if (destroyNative)
             DestroyRewardedInstance(adUnitId);
@@ -611,6 +612,12 @@ public sealed class LevelPlayAdsManager : ILevelPlayAdsController
     {
         if (string.IsNullOrWhiteSpace(adUnitId))
             return false;
+
+        if (TryDropDeferredRewardedShow(adUnitId, reason, out Action deferredFailed))
+        {
+            deferredFailed?.Invoke();
+            return false;
+        }
 
         if (_activeRewardedUnitId != adUnitId && _loadThenShowUnitId != adUnitId)
             return false;
@@ -638,6 +645,40 @@ public sealed class LevelPlayAdsManager : ILevelPlayAdsController
 
         PreloadRewarded(adUnitId);
         return grant;
+    }
+
+    /// <inheritdoc/>
+    public bool AbortInterstitialShow(string adUnitId, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(adUnitId))
+            return false;
+
+        if (TryDropDeferredInterstitialShow(adUnitId, reason, out Action deferredFailed))
+        {
+            deferredFailed?.Invoke();
+            return true;
+        }
+
+        if (_activeInterstitialUnitId != adUnitId && _interstitialLoadThenShowUnitId != adUnitId)
+            return false;
+
+        bool destroyNative = _interstitialShowIssued || _interstitialDisplayed;
+        AppLog.Warn(
+            "LevelPlay",
+            $"Abort interstitial ({reason}): {adUnitId} issued={_interstitialShowIssued} displayed={_interstitialDisplayed}");
+
+        Action failed = _pendingInterstitialFailed;
+        ResetInterstitialCallbacks();
+
+        if (destroyNative)
+            DestroyInterstitialInstance(adUnitId);
+
+        failed?.Invoke();
+
+        if (_preloadInterstitialUnitIds.Contains(adUnitId))
+            PreloadInterstitial(adUnitId);
+
+        return true;
     }
 
     /// <inheritdoc/>
@@ -675,6 +716,7 @@ public sealed class LevelPlayAdsManager : ILevelPlayAdsController
                 OnClosed = onClosed,
                 OnFailed = onFailed,
             };
+            DeferredInterstitialShowTimeoutAsync(placementId, ++_deferredInterstitialGeneration);
             return;
         }
 
@@ -738,10 +780,12 @@ public sealed class LevelPlayAdsManager : ILevelPlayAdsController
 
         PendingRewardedShow deferredRewarded = _deferredRewardedShow;
         _deferredRewardedShow = default;
+        _deferredRewardedGeneration++;
         deferredRewarded.OnFailed?.Invoke();
 
         PendingInterstitialShow deferredInterstitial = _deferredInterstitialShow;
         _deferredInterstitialShow = default;
+        _deferredInterstitialGeneration++;
         deferredInterstitial.OnFailed?.Invoke();
 
         _pendingPreloadUnitIds.Clear();
@@ -754,6 +798,7 @@ public sealed class LevelPlayAdsManager : ILevelPlayAdsController
         if (!string.IsNullOrWhiteSpace(deferredRewarded.PlacementId))
         {
             _deferredRewardedShow = default;
+            _deferredRewardedGeneration++;
             ShowRewardedAd(deferredRewarded.PlacementId, deferredRewarded.OnSuccess, deferredRewarded.OnFailed);
         }
 
@@ -761,11 +806,90 @@ public sealed class LevelPlayAdsManager : ILevelPlayAdsController
         if (!string.IsNullOrWhiteSpace(deferredInterstitial.PlacementId))
         {
             _deferredInterstitialShow = default;
+            _deferredInterstitialGeneration++;
             ShowInterstitial(
                 deferredInterstitial.PlacementId,
                 deferredInterstitial.OnClosed,
                 deferredInterstitial.OnFailed);
         }
+    }
+
+    /// <summary>
+    /// Drops a queued show for this unit so a late <c>OnInitSuccess</c> cannot open a
+    /// fullscreen after the caller already gave up.
+    /// </summary>
+    bool TryDropDeferredRewardedShow(string adUnitId, string reason, out Action onFailed)
+    {
+        onFailed = null;
+        if (_deferredRewardedShow.PlacementId != adUnitId ||
+            string.IsNullOrWhiteSpace(adUnitId))
+            return false;
+
+        onFailed = _deferredRewardedShow.OnFailed;
+        _deferredRewardedShow = default;
+        _deferredRewardedGeneration++;
+        AppLog.Warn("LevelPlay", $"Deferred rewarded show dropped ({reason}): {adUnitId}");
+        return true;
+    }
+
+    bool TryDropDeferredInterstitialShow(string adUnitId, string reason, out Action onFailed)
+    {
+        onFailed = null;
+        if (_deferredInterstitialShow.PlacementId != adUnitId ||
+            string.IsNullOrWhiteSpace(adUnitId))
+            return false;
+
+        onFailed = _deferredInterstitialShow.OnFailed;
+        _deferredInterstitialShow = default;
+        _deferredInterstitialGeneration++;
+        AppLog.Warn("LevelPlay", $"Deferred interstitial show dropped ({reason}): {adUnitId}");
+        return true;
+    }
+
+    async void DeferredRewardedShowTimeoutAsync(string adUnitId, int generation)
+    {
+        try
+        {
+            await Task.Delay(_deferredShowTimeoutMs);
+        }
+        catch (Exception)
+        {
+            return;
+        }
+
+        if (generation != _deferredRewardedGeneration)
+            return;
+
+        if (!TryDropDeferredRewardedShow(
+                adUnitId,
+                $"init-wait-timeout:{_deferredShowTimeoutMs}ms",
+                out Action onFailed))
+            return;
+
+        onFailed?.Invoke();
+    }
+
+    async void DeferredInterstitialShowTimeoutAsync(string adUnitId, int generation)
+    {
+        try
+        {
+            await Task.Delay(_deferredShowTimeoutMs);
+        }
+        catch (Exception)
+        {
+            return;
+        }
+
+        if (generation != _deferredInterstitialGeneration)
+            return;
+
+        if (!TryDropDeferredInterstitialShow(
+                adUnitId,
+                $"init-wait-timeout:{_deferredShowTimeoutMs}ms",
+                out Action onFailed))
+            return;
+
+        onFailed?.Invoke();
     }
 
     void FlushPendingPreloads()
@@ -1312,6 +1436,22 @@ public sealed class LevelPlayAdsManager : ILevelPlayAdsController
         }
     }
 
+    void DestroyInterstitialInstance(string adUnitId)
+    {
+        if (!_interstitials.TryGetValue(adUnitId, out LevelPlayInterstitialAd ad))
+            return;
+
+        _interstitials.Remove(adUnitId);
+        try
+        {
+            ad.DestroyAd();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Warn("LevelPlay", $"Interstitial DestroyAd failed ({adUnitId}): {ex.Message}");
+        }
+    }
+
     void InvokeFailedAndReset()
     {
         Action callback = _pendingFailed;
@@ -1350,17 +1490,8 @@ public sealed class LevelPlayAdsManager : ILevelPlayAdsController
         AppLog.Warn("LevelPlay", $"Editor interstitial auto-closed after {fallbackMs}ms " +
             $"(mock OnAdClosed fallback): {adUnitId}");
 
-        DismissEditorInterstitialVisual(adUnitId);
+        DestroyInterstitialInstance(adUnitId);
         OnInterstitialClosed(adUnitId);
-    }
-
-    void DismissEditorInterstitialVisual(string adUnitId)
-    {
-        if (!_interstitials.TryGetValue(adUnitId, out LevelPlayInterstitialAd ad))
-            return;
-
-        ad.DestroyAd();
-        _interstitials.Remove(adUnitId);
     }
 #endif
 }

@@ -40,4 +40,11 @@ public sealed class LevelPlayAdsOptions
 
     /// <summary>Max wait for LoadAd before failing a load-then-show attempt.</summary>
     public int LoadThenShowTimeoutMs { get; set; } = 10000;
+
+    /// <summary>
+    /// Max wait for <c>LevelPlay.Init</c> when a show arrives before the SDK is up
+    /// (privacy pipeline still running). On expiry the queued show fails instead of
+    /// opening a fullscreen minutes later with dead callbacks.
+    /// </summary>
+    public int DeferredShowTimeoutMs { get; set; } = 15000;
 }
