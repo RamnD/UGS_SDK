@@ -14,6 +14,30 @@ For new projects the recommended path is `LevelPlayAdsManager`, which wraps **Un
 
 **Privacy / EU consent:** run [Ads privacy (ATT → UMP → COPPA)](ads-privacy.md) before `LevelPlay.Init`.
 
+Cast `GameServicesLocator.Services.Ads` to `ILevelPlayAdsController` for preload, ready checks, and privacy-deferred init. Mock / `TestAdsManager` do not implement this interface.
+
+```csharp
+var ads = new LevelPlayAdsManager("YOUR_APP_KEY", new LevelPlayAdsOptions
+{
+    // After ATT/CMP/COPPA — then call BeginSdkInitialization().
+    DeferInitUntilPrivacy = true,
+    ShouldBypassAsSuccess = () => playerHasNoAds,
+    QualifyingWatchMs = 30_000, // 0 = grant only on OnAdRewarded
+    IsUnityBackgrounded = () => yourPauseProbe,
+});
+
+await new UGSServicesBuilder().WithAds(ads).BuildAsync();
+await AdsPrivacyPipeline.EnsureCompletedAsync(options);
+ads.BeginSdkInitialization();
+ads.PreloadRewardedUnits("hint-unit-id", "chest-unit-id");
+```
+
+Default `DeferInitUntilPrivacy = false` keeps 2.1.x behavior: `UGSServicesBuilder` calls `Initialize()` which starts `LevelPlay.Init` immediately.
+
+`GameServicesSync` reloads preloaded units on reconnect when the ads manager is `ILevelPlayAdsController`.
+
+Placement names and analytics stay in the game. `IAdsManager.ShowRewardedAd` / `ShowInterstitial` still take LevelPlay **ad unit ids**.
+
 ---
 ## Pangle support (optional) via LevelPlay mediation
 

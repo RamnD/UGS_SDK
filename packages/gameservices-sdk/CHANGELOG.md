@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.2.0] - 2026-08-27
+
+### Added
+- **`ILevelPlayAdsController`:** LevelPlay-specific surface (privacy-deferred init, preload, ready / show-in-progress, abort/cancel, last network).
+- **`LevelPlayAdsOptions`:** game-injected no-ads bypass, background probe, qualifying-watch ms, privacy-deferred init.
+
+### Changed
+- **`LevelPlayAdsManager`:** Maze session machine is now the SDK implementation — warm preload, skip `LoadAd` while shown (error 629), in-flight load guard, load-then-show timeout, interstitial offline/no-ads gates. `GameServicesSync` registers Ads refresh when the manager implements `ILevelPlayAdsController`.
+- **Docs:** [ads.md](docs/ads.md) covers the controller, options, and `BeginSdkInitialization`.
+
+### Migration
+- Games that run ATT/CMP/COPPA before `LevelPlay.Init` must set `LevelPlayAdsOptions.DeferInitUntilPrivacy = true` and call `BeginSdkInitialization()` after the privacy pipeline. Default remains 2.1.x (init from `UGSServicesBuilder.Initialize`).
+- Placement ids, analytics, and IAP no-ads stay in the game. Pass `ShouldBypassAsSuccess` / `QualifyingWatchMs` from the game.
+
 ## [2.1.16] - 2026-08-24
 
 ### Fixed

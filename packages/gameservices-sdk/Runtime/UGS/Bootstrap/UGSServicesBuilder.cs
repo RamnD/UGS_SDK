@@ -352,9 +352,16 @@ public sealed class UGSServicesBuilder
         else
             GameServicesSync.Unregister(GameServiceId.Analytics);
 
-        // Ads preload is game-specific (e.g. PreloadingLevelPlayAdsManager) — register from the game.
-        GameServicesSync.Unregister(GameServiceId.Ads);
-        _ = ads;
+        if (ads is ILevelPlayAdsController levelPlay)
+        {
+            GameServicesSync.Register(GameServiceId.Ads, _ =>
+            {
+                levelPlay.EnsurePreloadedUnitsReady();
+                return Task.CompletedTask;
+            });
+        }
+        else
+            GameServicesSync.Unregister(GameServiceId.Ads);
 
         // Leaderboards have no durable local cache to refresh on reconnect.
         GameServicesSync.Unregister(GameServiceId.Leaderboards);

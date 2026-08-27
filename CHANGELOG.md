@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.2.0] - 2026-08-27
+
+### Added
+- **`com.ramnd.gameservices-sdk`:** `ILevelPlayAdsController` + `LevelPlayAdsOptions`; `LevelPlayAdsManager` now owns preload, 629 skip-while-shown, and privacy-deferred init.
+
 ## [2.1.3] - 2026-08-18
 
 ### Fixed
