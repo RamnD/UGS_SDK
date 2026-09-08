@@ -40,6 +40,9 @@ public sealed class CachedAnalyticsSystem : IAnalyticsSystem
 
     public void LogEvent<T>(T eventPayload) where T : struct, IAnalyticsEvent
     {
+        if (UGSAnalyticSystem.IsEditorProductionCollectionDisabled)
+            return;
+
         if (CanSendImmediately())
         {
             if (TrySendImmediate(eventPayload))
@@ -89,6 +92,12 @@ public sealed class CachedAnalyticsSystem : IAnalyticsSystem
 
     void DrainQueue()
     {
+        if (UGSAnalyticSystem.IsEditorProductionCollectionDisabled)
+        {
+            _queue.Clear();
+            return;
+        }
+
         if (_inner == null || _sdk == null || !NetworkStatus.IsOnline)
             return;
 

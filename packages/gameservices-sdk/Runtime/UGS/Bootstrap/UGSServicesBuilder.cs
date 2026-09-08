@@ -177,8 +177,27 @@ public sealed class UGSServicesBuilder
 
         CachedAnalyticsSystem cachedAnalytics = null;
         IAnalyticsSystem analytics = null;
+        bool disableEditorProductionAnalytics = IsEditorProductionAnalyticsDisabled();
 
-        if (_useCachedAnalytics)
+        if (disableEditorProductionAnalytics)
+        {
+            // Never call StartDataCollection / never attach the UGS backend.
+            // No-op keeps GameServicesLocator.Analytics non-null so games do not stall waiting for init.
+            new PendingAnalyticsQueue().Clear();
+            analytics = new DisabledAnalyticsSystem();
+            AppLog.Warn(
+                "SDK",
+                "Editor Play + UGS_ENV_PRODUCTION: UGS Analytics is disabled. Events are discarded.");
+            GameServicesLocator.Set(new UGSGameServices(
+                auth,
+                analytics,
+                _adsManager ?? new TestAdsManager(),
+                leaderboards: null,
+                remoteConfig: null,
+                achievements: null,
+                platformAchievements: null));
+        }
+        else if (_useCachedAnalytics)
         {
             cachedAnalytics = CachedAnalyticsSystem.CreatePreAuth();
             analytics = cachedAnalytics;
@@ -201,15 +220,18 @@ public sealed class UGSServicesBuilder
             cancellationToken.ThrowIfCancellationRequested();
             await AuthenticationSdkReadiness.WaitForPlayerSessionStableAsync(cancellationToken);
 
-            // TODO(analytics-consent): UGS Analytics v6 — migrate from deprecated StartDataCollection to EndUserConsent / store policies.
-            var ugsAnalytics = new UGSAnalyticSystem(
-                auth.GetPlayerId(),
-                Unity.Services.Analytics.AnalyticsService.Instance);
+            if (!disableEditorProductionAnalytics)
+            {
+                // TODO(analytics-consent): UGS Analytics v6 — migrate from deprecated StartDataCollection to EndUserConsent / store policies.
+                var ugsAnalytics = new UGSAnalyticSystem(
+                    auth.GetPlayerId(),
+                    Unity.Services.Analytics.AnalyticsService.Instance);
 
-            if (cachedAnalytics != null)
-                cachedAnalytics.AttachInner(ugsAnalytics, Unity.Services.Analytics.AnalyticsService.Instance);
-            else
-                analytics = ugsAnalytics;
+                if (cachedAnalytics != null)
+                    cachedAnalytics.AttachInner(ugsAnalytics, Unity.Services.Analytics.AnalyticsService.Instance);
+                else
+                    analytics = ugsAnalytics;
+            }
         }
 
         ILeaderboardService leaderboards = null;
@@ -370,6 +392,20 @@ public sealed class UGSServicesBuilder
 
     private NameValidatorConfig ResolveNameValidator() =>
         _nameValidator ?? new NameValidatorConfig(_profanityWords, _profanityPattern);
+
+    /// <summary>
+    /// Play Mode against a production Build Profile must never call
+    /// <c>AnalyticsService.StartDataCollection</c> — people forget to switch profiles.
+    /// Device / player production builds are unaffected.
+    /// </summary>
+    static bool IsEditorProductionAnalyticsDisabled()
+    {
+#if UNITY_EDITOR && UGS_ENV_PRODUCTION
+        return true;
+#else
+        return false;
+#endif
+    }
 
     private AuthPlatform ResolvePlatform()
     {

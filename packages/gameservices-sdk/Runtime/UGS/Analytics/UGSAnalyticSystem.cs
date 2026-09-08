@@ -21,14 +21,27 @@ public class UGSAnalyticSystem : IAnalyticsSystem
     /// <param name="sdk">SDK injected from outside for testability. Pass Unity.Services.Analytics.AnalyticsService.Instance.</param>
     public UGSAnalyticSystem(string playerId, IAnalyticsService sdk)
     {
+        _playerId = playerId;
+        _sdk = sdk;
+        if (IsEditorProductionCollectionDisabled)
+        {
+            AppLog.Warn("Analytics", "Editor + production: StartDataCollection skipped.");
+            return;
+        }
+
         // SDK v6+: enable data collection. Without this, RecordEvent is silently ignored.
         // TODO(analytics-consent): StartDataCollection is deprecated — migrate to EndUserConsent / store policy (see UGS Analytics 6+ docs).
 #pragma warning disable CS0618
         sdk.StartDataCollection();
 #pragma warning restore CS0618
-        _playerId = playerId;
-        _sdk = sdk;
     }
+
+    internal static bool IsEditorProductionCollectionDisabled =>
+#if UNITY_EDITOR && UGS_ENV_PRODUCTION
+        true;
+#else
+        false;
+#endif
 
     internal string PlayerId => _playerId;
 
@@ -56,6 +69,9 @@ public class UGSAnalyticSystem : IAnalyticsSystem
 
     void RecordEventCore<T>(T eventPayload) where T : struct, IAnalyticsEvent
     {
+        if (IsEditorProductionCollectionDisabled || _sdk == null)
+            return;
+
         var customEvent = eventPayload.ToCustomEvent();
         AnalyticsCustomEventEnricher.ApplyUgsPlayerId(customEvent, _playerId);
         _sdk.RecordEvent(customEvent);
@@ -65,6 +81,9 @@ public class UGSAnalyticSystem : IAnalyticsSystem
     /// <inheritdoc/>
     public void Flush()
     {
+        if (IsEditorProductionCollectionDisabled || _sdk == null)
+            return;
+
         try { _sdk.Flush(); }
         catch (System.Exception ex) { AppLog.Error("Analytics", $"Flush error: {ex.Message}"); }
     }

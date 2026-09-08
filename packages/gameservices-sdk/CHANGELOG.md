@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.2.3] - 2026-09-08
+
+### Added
+- **Editor + production:** Play Mode with `UGS_ENV_PRODUCTION` does not call `StartDataCollection`. Locator gets a no-op analytics system so games do not stall waiting for init. Device/player production builds are unchanged.
+
 ## [2.2.2] - 2026-08-27
 
 ### Fixed

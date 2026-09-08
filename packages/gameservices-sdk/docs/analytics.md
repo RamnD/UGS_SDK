@@ -112,6 +112,10 @@ await new UGSServicesBuilder()
 
 With `WithCachedAnalytics()`, analytics is registered in `GameServicesLocator` **before** auth completes. Events emitted during sign-in are queued and replayed after `AttachInner` connects the UGS backend.
 
+### Editor Play + production
+
+If the game is compiled with `UGS_ENV_PRODUCTION` **and** running in the Unity Editor, `UGSServicesBuilder` does **not** construct `UGSAnalyticSystem` and never calls `StartDataCollection`. Locator analytics is a no-op so session waits do not stall. Device and player production builds collect as usual.
+
 ### `ugs_player_id` on custom events
 
 UGS Analytics adds top-level `unityPlayerID` only to **standard** events (`gameStarted`, `clientDevice`, …). **Custom** events (`RecordEvent(CustomEvent)`) use a different SDK code path and do not get that field automatically.
