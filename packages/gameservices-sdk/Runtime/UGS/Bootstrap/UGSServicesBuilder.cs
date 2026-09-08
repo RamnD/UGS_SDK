@@ -187,7 +187,7 @@ public sealed class UGSServicesBuilder
             analytics = new DisabledAnalyticsSystem();
             AppLog.Warn(
                 "SDK",
-                "Editor Play + UGS_ENV_PRODUCTION: UGS Analytics is disabled. Events are discarded.");
+                "Editor/desktop build + UGS_ENV_PRODUCTION: UGS Analytics is disabled. Events are discarded.");
             GameServicesLocator.Set(new UGSGameServices(
                 auth,
                 analytics,
@@ -396,11 +396,13 @@ public sealed class UGSServicesBuilder
     /// <summary>
     /// Play Mode against a production Build Profile must never call
     /// <c>AnalyticsService.StartDataCollection</c> — people forget to switch profiles.
-    /// Device / player production builds are unaffected.
+    /// Desktop / WebGL production builds are blocked for the same reason: they are dev or QA
+    /// machines, and they land in the production dataset as PC_CLIENT / LINUX_CLIENT.
+    /// Mobile player builds are unaffected.
     /// </summary>
     static bool IsEditorProductionAnalyticsDisabled()
     {
-#if UNITY_EDITOR && UGS_ENV_PRODUCTION
+#if UGS_ENV_PRODUCTION && (UNITY_EDITOR || UNITY_STANDALONE || UNITY_WEBGL)
         return true;
 #else
         return false;

@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.2.4] - 2026-09-08
+
+### Fixed
+- **Pending analytics queue leaked across environments.** The disk-backed queue had no environment stamp, and UGS uploads buffered events to whatever environment the *current* session initialized with. A run on the staging profile followed by a run on the production profile flushed staging events — with their baked-in `build_version` — into the production dataset. The queue is now stamped with the resolved environment and is dropped (with a warning) instead of cross-uploaded when the profile changes.
+
+### Changed
+- **Production analytics guard widened beyond the Editor.** `UGS_ENV_PRODUCTION` now also blocks data collection on `UNITY_STANDALONE` and `UNITY_WEBGL`, not just `UNITY_EDITOR`. Those builds are dev/QA machines and showed up in the production dataset as `PC_CLIENT` / `LINUX_CLIENT` sessions. Mobile player builds are unchanged.
+
+### Added
+- `UGSEnvironmentResolver.Current` — cached environment name without the log line, for hot paths.
+
 ## [2.2.3] - 2026-09-08
 
 ### Added

@@ -112,9 +112,15 @@ await new UGSServicesBuilder()
 
 With `WithCachedAnalytics()`, analytics is registered in `GameServicesLocator` **before** auth completes. Events emitted during sign-in are queued and replayed after `AttachInner` connects the UGS backend.
 
-### Editor Play + production
+### Non-player builds + production
 
-If the game is compiled with `UGS_ENV_PRODUCTION` **and** running in the Unity Editor, `UGSServicesBuilder` does **not** construct `UGSAnalyticSystem` and never calls `StartDataCollection`. Locator analytics is a no-op so session waits do not stall. Device and player production builds collect as usual.
+If the game is compiled with `UGS_ENV_PRODUCTION` **and** running in the Unity Editor, a Standalone build, or WebGL, `UGSServicesBuilder` does **not** construct `UGSAnalyticSystem` and never calls `StartDataCollection`. Locator analytics is a no-op so session waits do not stall. Mobile player builds collect as usual.
+
+The guard covers desktop because those builds are dev/QA machines: before it existed they landed in the production dataset as `PC_CLIENT` / `LINUX_CLIENT` sessions and skewed every per-user KPI.
+
+### Environment isolation of the offline queue
+
+UGS uploads buffered events to whatever environment the **current** session initialized with — events do not remember the environment they were recorded against. The disk-backed `PendingAnalyticsQueue` is therefore stamped with the resolved environment name. On load, a queue written under a different environment is dropped with a warning rather than replayed, so switching Build Profiles between runs cannot flush staging events into production.
 
 ### `ugs_player_id` on custom events
 

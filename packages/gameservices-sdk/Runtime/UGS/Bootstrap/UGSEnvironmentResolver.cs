@@ -8,6 +8,13 @@ using UnityEngine;
 internal static class UGSEnvironmentResolver
 {
     static bool _warnedMultipleEnvironments;
+    static string _cached;
+
+    /// <summary>
+    /// Same value as <see cref="Resolve"/> without the log line — for hot paths
+    /// such as stamping the pending analytics queue.
+    /// </summary>
+    public static string Current => _cached ??= Resolve();
 
     public static string Resolve()
     {
@@ -47,6 +54,7 @@ internal static class UGSEnvironmentResolver
         }
 
         AppLog.Info("SDK", $"Resolved UGS environment: {environmentName}");
+        _cached = environmentName;
         return environmentName;
     }
 }

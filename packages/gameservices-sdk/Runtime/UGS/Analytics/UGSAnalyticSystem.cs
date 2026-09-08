@@ -25,7 +25,7 @@ public class UGSAnalyticSystem : IAnalyticsSystem
         _sdk = sdk;
         if (IsEditorProductionCollectionDisabled)
         {
-            AppLog.Warn("Analytics", "Editor + production: StartDataCollection skipped.");
+            AppLog.Warn("Analytics", "Non-player build + production: StartDataCollection skipped.");
             return;
         }
 
@@ -36,8 +36,13 @@ public class UGSAnalyticSystem : IAnalyticsSystem
 #pragma warning restore CS0618
     }
 
+    /// <summary>
+    /// True when UGS collection must not start at all. Covers Editor Play on production
+    /// and desktop player builds on production — neither is a real player, and both showed up
+    /// in the production dataset as <c>PC_CLIENT</c> / <c>LINUX_CLIENT</c> sessions.
+    /// </summary>
     internal static bool IsEditorProductionCollectionDisabled =>
-#if UNITY_EDITOR && UGS_ENV_PRODUCTION
+#if UGS_ENV_PRODUCTION && (UNITY_EDITOR || UNITY_STANDALONE || UNITY_WEBGL)
         true;
 #else
         false;

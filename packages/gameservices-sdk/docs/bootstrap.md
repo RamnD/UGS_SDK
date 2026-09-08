@@ -85,7 +85,7 @@ private async void Start()
 | `WithProfanityFilter(string[])` | Banned words list only |
 | `WithProfanityFilter(Regex)` | Banned pattern only |
 | `WithAds(IAdsManager)` | Ads manager (LevelPlay, TestAds, optional Unity Ads; Pangle via LevelPlay mediation) |
-| `WithCachedAnalytics(bool)` | Disk-backed offline analytics queue. Ignored in Editor Play when `UGS_ENV_PRODUCTION` is set (analytics is mocked, collection never starts). |
+| `WithCachedAnalytics(bool)` | Disk-backed offline analytics queue, stamped with the resolved environment so a profile switch drops it instead of cross-uploading. Ignored in Editor / Standalone / WebGL when `UGS_ENV_PRODUCTION` is set (analytics is a no-op, collection never starts). |
 | `WithRemoteConfig(bool)` | UGS Remote Config fetch after auth + PlayerPrefs cache |
 | `WithAchievements(bool)` | Portable achievement module backed by UGS Cloud Save |
 | `OnAuthenticated(Func<IAuthService, Task>)` | Callback after successful sign-in |

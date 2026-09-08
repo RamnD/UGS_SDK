@@ -127,13 +127,38 @@ internal sealed class PendingAnalyticsQueue
     {
         string json = PlayerPrefs.GetString(PrefsKey, string.Empty);
         if (string.IsNullOrEmpty(json))
-            return new PendingAnalyticsQueueData();
+            return NewQueue();
 
-        return JsonUtility.FromJson<PendingAnalyticsQueueData>(json) ?? new PendingAnalyticsQueueData();
+        var queue = JsonUtility.FromJson<PendingAnalyticsQueueData>(json);
+        if (queue == null)
+            return NewQueue();
+
+        string environment = UGSEnvironmentResolver.Current;
+        if (!string.Equals(queue.environment, environment, StringComparison.Ordinal))
+        {
+            int dropped = queue.items?.Length ?? 0;
+            if (dropped > 0)
+            {
+                AppLog.Warn(
+                    "Analytics",
+                    $"Pending queue was written for environment '{queue.environment}' but this session is " +
+                    $"'{environment}' — dropping {dropped} event(s) instead of cross-uploading them.");
+            }
+
+            PlayerPrefs.DeleteKey(PrefsKey);
+            PlayerPrefs.Save();
+            return NewQueue();
+        }
+
+        return queue;
     }
+
+    static PendingAnalyticsQueueData NewQueue() =>
+        new PendingAnalyticsQueueData { environment = UGSEnvironmentResolver.Current };
 
     static void PersistUnlocked(PendingAnalyticsQueueData queue)
     {
+        queue.environment = UGSEnvironmentResolver.Current;
         PlayerPrefs.SetString(PrefsKey, JsonUtility.ToJson(queue));
         PlayerPrefs.Save();
     }
