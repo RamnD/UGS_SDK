@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.2.5] - 2026-09-09
+
+### Fixed
+- **Critical: Unity Services environment was never applied.** `SetEnvironmentName` is an extension method on `InitializationOptions`, but bootstrap looked it up via instance reflection and never found it. Init then fell back to the baked `UnityServicesProjectConfiguration.json` value from the Editor Environment Selector — almost always `production`. Staging/dev builds (profile string correct via `UGS_ENV_*`) still uploaded Analytics into the production dataset. Bootstrap now calls `InitializationOptions.SetEnvironmentName` directly and asserts the active `IEnvironments.Current` after init. On mismatch, Analytics stays a no-op instead of polluting the wrong environment.
+
 ## [2.2.4] - 2026-09-08
 
 ### Fixed

@@ -187,7 +187,9 @@ Also see [README — Threading / PlayerPrefs](../README.md#threading--playerpref
 
 ## Environments
 
-`UGSServicesBuilder` resolves the UGS environment name through `UGSEnvironmentResolver`.
+`UGSServicesBuilder` resolves the UGS environment name through `UGSEnvironmentResolver` and applies it with `InitializationOptions.SetEnvironmentName` before `UnityServices.InitializeAsync`. After init it reads `IEnvironments.Current`; if that does not match the build symbol, Analytics is left as a no-op so events cannot land in the wrong dataset.
+
+Without `SetEnvironmentName`, Core falls back to the baked Editor Environment Selector value in `UnityServicesProjectConfiguration.json` (usually `production`) — that is how staging builds previously polluted production Analytics.
 
 Priority:
 

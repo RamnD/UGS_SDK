@@ -1,7 +1,9 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Unity.Services.Core;
-using UnityEngine;
+using Unity.Services.Core.Environments;
+using Unity.Services.Core.Environments.Internal;
+using Unity.Services.Core.Internal;
 
 /// <summary>
 /// Shared Unity Services initialization with the same environment resolution as
@@ -18,28 +20,43 @@ internal static class UGSUnityServicesInitializer
     /// </summary>
     public static async Task EnsureInitializedAsync(CancellationToken cancellationToken = default)
     {
+        string expectedEnvironment = UGSEnvironmentResolver.Resolve();
+
         if (UnityServices.State != ServicesInitializationState.Uninitialized)
+        {
+            AssertActiveEnvironment(expectedEnvironment, alreadyInitialized: true);
             return;
+        }
 
         Task init;
         lock (Gate)
         {
             if (UnityServices.State != ServicesInitializationState.Uninitialized)
-                return;
-
-            if (_initTask != null && !_initTask.IsCompleted)
+            {
+                init = null;
+            }
+            else if (_initTask != null && !_initTask.IsCompleted)
+            {
                 init = _initTask;
+            }
             else
             {
-                init = InitializeCoreAsync(cancellationToken);
+                init = InitializeCoreAsync(expectedEnvironment, cancellationToken);
                 _initTask = init;
             }
+        }
+
+        if (init == null)
+        {
+            AssertActiveEnvironment(expectedEnvironment, alreadyInitialized: true);
+            return;
         }
 
         try
         {
             await init;
             cancellationToken.ThrowIfCancellationRequested();
+            AssertActiveEnvironment(expectedEnvironment, alreadyInitialized: false);
         }
         finally
         {
@@ -51,73 +68,104 @@ internal static class UGSUnityServicesInitializer
         }
     }
 
-    static async Task InitializeCoreAsync(CancellationToken cancellationToken)
+    static async Task InitializeCoreAsync(string environmentName, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        string environmentName = UGSEnvironmentResolver.Resolve();
-        var initOptions = new InitializationOptions();
-        TrySetEnvironmentName(initOptions, environmentName);
+
+        // SetEnvironmentName is an extension method — do not use reflection on
+        // InitializationOptions (that never finds it). Without this option, Core falls
+        // back to the baked UnityServicesProjectConfiguration.json value, which is
+        // whatever Environment Selector last wrote — almost always "production".
+        var initOptions = new InitializationOptions().SetEnvironmentName(environmentName);
 
         AppLog.Info("SDK", $"Initializing Unity Services. Environment={environmentName}");
         await UnityServices.InitializeAsync(initOptions);
     }
 
-    static void TrySetEnvironmentName(InitializationOptions initOptions, string environmentName)
+    /// <summary>
+    /// True when Core reports an active environment that differs from
+    /// <see cref="UGSEnvironmentResolver"/>. False when they match or the active
+    /// environment cannot be read yet — unread must not disable Analytics.
+    /// </summary>
+    public static bool TryConfirmEnvironmentMismatch(out string expected, out string actual)
     {
-        var t = initOptions.GetType();
-
-        var setMethod = t.GetMethod(
-            "SetEnvironmentName",
-            System.Reflection.BindingFlags.Instance |
-            System.Reflection.BindingFlags.Public |
-            System.Reflection.BindingFlags.NonPublic,
-            binder: null,
-            types: new[] { typeof(string) },
-            modifiers: null);
-
-        if (setMethod != null)
+        expected = UGSEnvironmentResolver.Current;
+        if (!TryGetActiveEnvironment(out actual))
         {
-            setMethod.Invoke(initOptions, new object[] { environmentName });
+            actual = null;
+            return false;
+        }
+
+        return !string.Equals(actual, expected, System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    static void AssertActiveEnvironment(string expectedEnvironment, bool alreadyInitialized)
+    {
+        if (!TryGetActiveEnvironment(out string actualEnvironment))
+        {
+            AppLog.Warn(
+                "SDK",
+                alreadyInitialized
+                    ? $"Unity Services already initialized; could not read active environment " +
+                      $"(expected '{expectedEnvironment}')."
+                    : $"Unity Services initialized but IEnvironments is unavailable " +
+                      $"(expected '{expectedEnvironment}').");
             return;
         }
 
-        var envProp =
-            t.GetProperty(
-                "EnvironmentName",
-                System.Reflection.BindingFlags.Instance |
-                System.Reflection.BindingFlags.Public |
-                System.Reflection.BindingFlags.NonPublic)
-            ?? t.GetProperty(
-                "environmentName",
-                System.Reflection.BindingFlags.Instance |
-                System.Reflection.BindingFlags.Public |
-                System.Reflection.BindingFlags.NonPublic);
-
-        if (envProp != null && envProp.CanWrite)
+        if (string.Equals(actualEnvironment, expectedEnvironment, System.StringComparison.OrdinalIgnoreCase))
         {
-            envProp.SetValue(initOptions, environmentName);
+            if (alreadyInitialized)
+            {
+                AppLog.Info(
+                    "SDK",
+                    $"Unity Services already initialized. Active environment='{actualEnvironment}'.");
+            }
+            else
+            {
+                AppLog.Info(
+                    "SDK",
+                    $"Unity Services active environment confirmed: '{actualEnvironment}'.");
+            }
+
             return;
         }
 
-        var setOptionMethod = t.GetMethod(
-            "SetOption",
-            System.Reflection.BindingFlags.Instance |
-            System.Reflection.BindingFlags.Public |
-            System.Reflection.BindingFlags.NonPublic,
-            binder: null,
-            types: new[] { typeof(string), typeof(string) },
-            modifiers: null);
+        AppLog.Error(
+            "SDK",
+            alreadyInitialized
+                ? $"Unity Services was already initialized in environment '{actualEnvironment}', " +
+                  $"but this build expects '{expectedEnvironment}'. Analytics and other UGS calls " +
+                  $"will hit the wrong environment — restart the player after switching Build Profile, " +
+                  $"and ensure nothing calls UnityServices.InitializeAsync() before UGSServicesBuilder."
+                : $"Unity Services initialized with environment '{actualEnvironment}', " +
+                  $"but this build expects '{expectedEnvironment}'. " +
+                  $"Check that a UGS environment named '{expectedEnvironment}' exists in the dashboard " +
+                  $"and that InitializationOptions.SetEnvironmentName is applied.");
+    }
 
-        if (setOptionMethod != null)
+    static bool TryGetActiveEnvironment(out string environmentName)
+    {
+        environmentName = null;
+        try
         {
-            setOptionMethod.Invoke(
-                initOptions,
-                new object[] { "com.unity.services.core.environment-name", environmentName });
-            AppLog.Info("SDK", $"Applied Unity Services environment via SetOption: {environmentName}");
-            return;
-        }
+            if (CoreRegistry.Instance == null)
+                return false;
 
-        AppLog.Warn("SDK", "Unity Services environment was not set via InitializationOptions API " +
-            "(SetEnvironmentName/EnvironmentName/SetOption not found). Falling back to default Unity environment.");
+            if (!CoreRegistry.Instance.TryGetServiceComponent(out IEnvironments environments) ||
+                environments == null ||
+                string.IsNullOrEmpty(environments.Current))
+            {
+                return false;
+            }
+
+            environmentName = environments.Current;
+            return true;
+        }
+        catch (System.Exception ex)
+        {
+            AppLog.Warn("SDK", $"Failed to read active UGS environment: {ex.Message}");
+            return false;
+        }
     }
 }

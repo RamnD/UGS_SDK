@@ -178,16 +178,30 @@ public sealed class UGSServicesBuilder
         CachedAnalyticsSystem cachedAnalytics = null;
         IAnalyticsSystem analytics = null;
         bool disableEditorProductionAnalytics = IsEditorProductionAnalyticsDisabled();
+        bool environmentMismatch = !disableEditorProductionAnalytics
+            && UGSUnityServicesInitializer.TryConfirmEnvironmentMismatch(out _, out _);
+        bool disableAnalytics = disableEditorProductionAnalytics || environmentMismatch;
 
-        if (disableEditorProductionAnalytics)
+        if (disableAnalytics)
         {
             // Never call StartDataCollection / never attach the UGS backend.
             // No-op keeps GameServicesLocator.Analytics non-null so games do not stall waiting for init.
             new PendingAnalyticsQueue().Clear();
             analytics = new DisabledAnalyticsSystem();
-            AppLog.Warn(
-                "SDK",
-                "Editor/desktop build + UGS_ENV_PRODUCTION: UGS Analytics is disabled. Events are discarded.");
+            if (environmentMismatch)
+            {
+                AppLog.Error(
+                    "SDK",
+                    "UGS Analytics disabled: active Unity Services environment does not match " +
+                    $"build symbol env '{UGSEnvironmentResolver.Current}'. Events would have gone to the wrong dataset.");
+            }
+            else
+            {
+                AppLog.Warn(
+                    "SDK",
+                    "Editor/desktop build + UGS_ENV_PRODUCTION: UGS Analytics is disabled. Events are discarded.");
+            }
+
             GameServicesLocator.Set(new UGSGameServices(
                 auth,
                 analytics,
@@ -220,7 +234,7 @@ public sealed class UGSServicesBuilder
             cancellationToken.ThrowIfCancellationRequested();
             await AuthenticationSdkReadiness.WaitForPlayerSessionStableAsync(cancellationToken);
 
-            if (!disableEditorProductionAnalytics)
+            if (!disableAnalytics)
             {
                 // TODO(analytics-consent): UGS Analytics v6 — migrate from deprecated StartDataCollection to EndUserConsent / store policies.
                 var ugsAnalytics = new UGSAnalyticSystem(
