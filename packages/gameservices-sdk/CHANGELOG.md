@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.2.6] - 2026-09-15
+
+### Fixed
+- **Auth recover after `AccountAlreadyLinked` reused spent credentials.** Link stored the Google Play Games auth code (and other IdP tokens) and recover `SignInWith*` replayed the same value. OAuth auth codes / JWTs are single-use and already consumed by the failed `LinkWith*` call, so clear-data / reinstall → Link failed instead of restoring the existing player. Recover now always requests **fresh** platform credentials; GPGS uses `RequestServerSideAccess(forceRefreshToken: true)`.
+
 ## [2.2.5] - 2026-09-09
 
 ### Fixed

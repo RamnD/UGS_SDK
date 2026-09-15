@@ -36,18 +36,6 @@ public class UGSAuthService : IAuthService
     private readonly NameValidatorConfig            _validatorConfig;
     private readonly GameServicesAuthProviderConfig _providerConfig;
 
-#if UNITY_ANDROID
-    /// <summary>GPGS auth code from the Link attempt — reused for recover SignIn (avoid second native prompt).</summary>
-    string _recoverGooglePlayAuthCode;
-#endif
-    string _recoverAppleIdentityToken;
-    string _recoverGoogleIdToken;
-    string _recoverFacebookAccessToken;
-    string _recoverOpenIdConnectIdToken;
-#if UNITY_IOS
-    AppleGameCenterCredentials _recoverGameCenterCredentials;
-#endif
-
     /// <param name="config">
     /// Profanity-filter configuration. Passed from <see cref="UGSServicesBuilder"/>.
     /// Null is equivalent to <see cref="NameValidatorConfig.Empty"/>.
@@ -326,43 +314,29 @@ public class UGSAuthService : IAuthService
             }
 
             SaveLastMethod(platform);
-            ClearRecoverCredentials();
             AppLog.Info("Auth", $"Account linked: {platform}. PlayerId={GetPlayerId()}");
             return AccountLinkResult.Linked;
         }
         catch (OperationCanceledException)
         {
-            ClearRecoverCredentials();
             AppLog.Warn("Auth", "Account link cancelled.");
             return AccountLinkResult.Cancelled;
         }
         catch (AuthenticationException e) when (e.ErrorCode == AuthenticationErrorCodes.AccountAlreadyLinked)
         {
             // Unity AuthenticationExceptionHandler already logged the 409 stack — that is expected.
+            // Do NOT reuse credentials from the Link attempt: OAuth auth codes / JWTs are
+            // single-use and were already sent to LinkWith* even when UGS returned 409.
+            // Recover must request fresh platform credentials for SignInWith*.
             AppLog.Warn("Auth", $"External ID already linked to another player ({platform}) — " +
-                "recover: leave current session then SignIn existing (not ForceLink).");
+                "recover: leave current session then SignIn existing with fresh credentials (not ForceLink).");
             return await SignIntoExistingAfterAlreadyLinkedAsync(platform, cancellationToken);
         }
         catch (Exception e)
         {
-            ClearRecoverCredentials();
             AppLog.Error("Auth", $"Account link failed ({platform}): {e.Message}");
             return AccountLinkResult.Failed;
         }
-    }
-
-    void ClearRecoverCredentials()
-    {
-#if UNITY_ANDROID
-        _recoverGooglePlayAuthCode = null;
-#endif
-        _recoverAppleIdentityToken = null;
-        _recoverGoogleIdToken = null;
-        _recoverFacebookAccessToken = null;
-        _recoverOpenIdConnectIdToken = null;
-#if UNITY_IOS
-        _recoverGameCenterCredentials = null;
-#endif
     }
 
     /// <inheritdoc/>
@@ -493,27 +467,23 @@ public class UGSAuthService : IAuthService
 
             if (!IsSignedIn)
             {
-                ClearRecoverCredentials();
                 AppLog.Error("Auth", $"Recover SignIn failed — still not signed in ({platform}).");
                 await EnsureAnonymousFallbackAsync(cancellationToken);
                 return AccountLinkResult.Failed;
             }
 
             SaveLastMethod(platform);
-            ClearRecoverCredentials();
             AppLog.Info("Auth", $"Signed into existing account via {platform}. PlayerId={GetPlayerId()}");
             return AccountLinkResult.SignedIntoExisting;
         }
         catch (OperationCanceledException)
         {
-            ClearRecoverCredentials();
             AppLog.Warn("Auth", "Recover SignIn cancelled.");
             await EnsureAnonymousFallbackAsync(CancellationToken.None);
             return AccountLinkResult.Cancelled;
         }
         catch (Exception e)
         {
-            ClearRecoverCredentials();
             AppLog.Error("Auth", $"Recover SignIn failed ({platform}): {e.Message}");
             await EnsureAnonymousFallbackAsync(cancellationToken);
             return AccountLinkResult.Failed;
@@ -833,13 +803,12 @@ public class UGSAuthService : IAuthService
             AppLog.Warn("Auth", "TODO(GPGS→UGS): GooglePlayGamesOAuthWebClientId not set; pass WithAuthProviderCredentials if auth fails.");
         }
 
+        // Always request a fresh auth code. Codes are single-use — never reuse one from a
+        // prior LinkWithGooglePlayGamesAsync call (AccountAlreadyLinked recover path).
         cancellationToken.ThrowIfCancellationRequested();
-        string serverAuthCode = _recoverGooglePlayAuthCode;
-        _recoverGooglePlayAuthCode = null;
-        if (string.IsNullOrWhiteSpace(serverAuthCode))
-            serverAuthCode = await GetGoogleServerAuthCodeAsync(cancellationToken);
-        else
-            AppLog.Info("Auth", "Recover: reusing Google Play Games auth code from Link attempt.");
+        string serverAuthCode = await GetGoogleServerAuthCodeAsync(
+            cancellationToken,
+            forceRefreshToken: true);
 
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
@@ -851,8 +820,9 @@ public class UGSAuthService : IAuthService
     private async Task LinkWithGooglePlayGamesAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        string serverAuthCode = await GetGoogleServerAuthCodeAsync(cancellationToken);
-        _recoverGooglePlayAuthCode = serverAuthCode;
+        string serverAuthCode = await GetGoogleServerAuthCodeAsync(
+            cancellationToken,
+            forceRefreshToken: false);
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
             AuthenticationService.Instance.LinkWithGooglePlayGamesAsync(serverAuthCode),
@@ -860,7 +830,9 @@ public class UGSAuthService : IAuthService
             NetworkRequest.AuthTimeoutMs);
     }
 
-    private Task<string> GetGoogleServerAuthCodeAsync(CancellationToken cancellationToken)
+    private Task<string> GetGoogleServerAuthCodeAsync(
+        CancellationToken cancellationToken,
+        bool forceRefreshToken)
     {
         var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         CancellationTokenRegistration ctr = default;
@@ -875,7 +847,8 @@ public class UGSAuthService : IAuthService
 #endif
         PlayGamesPlatform.Activate();
         AppLog.Info("Auth",
-            $"GPGS auth start appId={GameInfo.ApplicationId} webClientSet={GameInfo.WebClientIdInitialized()} authenticated={PlayGamesPlatform.Instance.IsAuthenticated()}");
+            $"GPGS auth start appId={GameInfo.ApplicationId} webClientSet={GameInfo.WebClientIdInitialized()} " +
+            $"authenticated={PlayGamesPlatform.Instance.IsAuthenticated()} forceRefreshToken={forceRefreshToken}");
 
         void OnAuthComplete(SignInStatus status)
         {
@@ -903,8 +876,9 @@ public class UGSAuthService : IAuthService
                 return;
             }
 
-            AppLog.Info("Auth", "Google Play Games authenticated — requesting server auth code.");
-            PlayGamesPlatform.Instance.RequestServerSideAccess(forceRefreshToken: false, authCode =>
+            AppLog.Info("Auth",
+                $"Google Play Games authenticated — requesting server auth code (forceRefreshToken={forceRefreshToken}).");
+            PlayGamesPlatform.Instance.RequestServerSideAccess(forceRefreshToken, authCode =>
             {
                 if (cancellationToken.IsCancellationRequested)
                 {
@@ -978,13 +952,11 @@ public class UGSAuthService : IAuthService
 #if UNITY_IOS
     private async Task SignInWithAppleGameCenterAsync(CancellationToken cancellationToken)
     {
+        // Always fetch fresh credentials. Signatures from a prior LinkWith* call must not be
+        // reused after AccountAlreadyLinked — UGS already consumed that payload.
         cancellationToken.ThrowIfCancellationRequested();
-        AppleGameCenterCredentials credentials = _recoverGameCenterCredentials;
-        _recoverGameCenterCredentials = null;
-        if (credentials == null || !credentials.IsValid)
-            credentials = await RequestAppleGameCenterCredentialsAsync(cancellationToken);
-        else
-            AppLog.Info("Auth", "Recover: reusing Game Center credentials from Link attempt.");
+        AppleGameCenterCredentials credentials =
+            await RequestAppleGameCenterCredentialsAsync(cancellationToken);
 
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
@@ -1001,8 +973,8 @@ public class UGSAuthService : IAuthService
     private async Task LinkWithAppleGameCenterAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        AppleGameCenterCredentials credentials = await RequestAppleGameCenterCredentialsAsync(cancellationToken);
-        _recoverGameCenterCredentials = credentials;
+        AppleGameCenterCredentials credentials =
+            await RequestAppleGameCenterCredentialsAsync(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
             AuthenticationService.Instance.LinkWithAppleGameCenterAsync(
@@ -1059,12 +1031,8 @@ public class UGSAuthService : IAuthService
             AppLog.Warn("Auth", "AppleServicesId is empty — ensure UGS Dashboard Apple provider + game config are set.");
         }
 
-        string identityToken = _recoverAppleIdentityToken;
-        _recoverAppleIdentityToken = null;
-        if (string.IsNullOrWhiteSpace(identityToken))
-            identityToken = await RequestAppleIdentityTokenAsync(cancellationToken);
-        else
-            AppLog.Info("Auth", "Recover: reusing Apple identity token from Link attempt.");
+        // Fresh identity token — JWTs from a prior Link attempt are single-use.
+        string identityToken = await RequestAppleIdentityTokenAsync(cancellationToken);
 
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
@@ -1083,7 +1051,6 @@ public class UGSAuthService : IAuthService
         }
 
         string identityToken = await RequestAppleIdentityTokenAsync(cancellationToken);
-        _recoverAppleIdentityToken = identityToken;
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
             AuthenticationService.Instance.LinkWithAppleAsync(identityToken),
@@ -1112,12 +1079,8 @@ public class UGSAuthService : IAuthService
     private async Task SignInWithGoogleOpenIdAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        string idToken = _recoverGoogleIdToken;
-        _recoverGoogleIdToken = null;
-        if (string.IsNullOrWhiteSpace(idToken))
-            idToken = await RequestGoogleIdTokenAsync(cancellationToken);
-        else
-            AppLog.Info("Auth", "Recover: reusing Google OpenID id_token from Link attempt.");
+        // Fresh id_token — tokens from a prior Link attempt are single-use.
+        string idToken = await RequestGoogleIdTokenAsync(cancellationToken);
 
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
@@ -1130,7 +1093,6 @@ public class UGSAuthService : IAuthService
     {
         cancellationToken.ThrowIfCancellationRequested();
         string idToken = await RequestGoogleIdTokenAsync(cancellationToken);
-        _recoverGoogleIdToken = idToken;
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
             AuthenticationService.Instance.LinkWithGoogleAsync(idToken),
@@ -1159,12 +1121,7 @@ public class UGSAuthService : IAuthService
     private async Task SignInWithFacebookAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        string accessToken = _recoverFacebookAccessToken;
-        _recoverFacebookAccessToken = null;
-        if (string.IsNullOrWhiteSpace(accessToken))
-            accessToken = await RequestFacebookAccessTokenAsync(cancellationToken);
-        else
-            AppLog.Info("Auth", "Recover: reusing Facebook access token from Link attempt.");
+        string accessToken = await RequestFacebookAccessTokenAsync(cancellationToken);
 
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
@@ -1177,7 +1134,6 @@ public class UGSAuthService : IAuthService
     {
         cancellationToken.ThrowIfCancellationRequested();
         string accessToken = await RequestFacebookAccessTokenAsync(cancellationToken);
-        _recoverFacebookAccessToken = accessToken;
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
             AuthenticationService.Instance.LinkWithFacebookAsync(accessToken),
@@ -1207,12 +1163,8 @@ public class UGSAuthService : IAuthService
     {
         cancellationToken.ThrowIfCancellationRequested();
         string idProviderName = RequireOpenIdConnectIdProviderName();
-        string idToken = _recoverOpenIdConnectIdToken;
-        _recoverOpenIdConnectIdToken = null;
-        if (string.IsNullOrWhiteSpace(idToken))
-            idToken = await RequestOpenIdConnectIdTokenAsync(cancellationToken);
-        else
-            AppLog.Info("Auth", "Recover: reusing OpenID Connect id_token from Link attempt.");
+        // Fresh id_token — tokens from a prior Link attempt are single-use.
+        string idToken = await RequestOpenIdConnectIdTokenAsync(cancellationToken);
 
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
@@ -1226,7 +1178,6 @@ public class UGSAuthService : IAuthService
         cancellationToken.ThrowIfCancellationRequested();
         string idProviderName = RequireOpenIdConnectIdProviderName();
         string idToken = await RequestOpenIdConnectIdTokenAsync(cancellationToken);
-        _recoverOpenIdConnectIdToken = idToken;
         cancellationToken.ThrowIfCancellationRequested();
         await NetworkRequest.WithTimeout(
             AuthenticationService.Instance.LinkWithOpenIdConnectAsync(idProviderName, idToken),
