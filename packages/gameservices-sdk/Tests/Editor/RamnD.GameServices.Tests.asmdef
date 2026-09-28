@@ -1,0 +1,28 @@
+{
+    "name": "RamnD.GameServices.Tests",
+    "rootNamespace": "",
+    "references": [
+        "RamnD.GameServices.Core",
+        "RamnD.GameServices.UGS",
+        "RamnD.Core.Logging",
+        "Newtonsoft.Json",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false,
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ]
+}

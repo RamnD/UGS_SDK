@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Reflection;
 using Unity.Services.Analytics;
 
 /// <summary>
@@ -15,7 +14,7 @@ public static class AnalyticsExtensions
     public static CustomEvent ToCustomEvent<T>(this T dataObject) where T : struct, IAnalyticsEvent
     {
         var customEvent = new CustomEvent(dataObject.EventName);
-        var dict = dataObject.ToAnalyticsDict();
+        var dict = AnalyticsEventParams.ToDictionary(dataObject);
         foreach (var kv in dict)
         {
             switch (kv.Value)
@@ -30,30 +29,5 @@ public static class AnalyticsExtensions
             }
         }
         return customEvent;
-    }
-
-    /// <summary>
-    /// Collects all public fields with <see cref="AnalyticsKeyAttribute"/> into a key → value dictionary.
-    /// </summary>
-    private static Dictionary<string, object> ToAnalyticsDict<T>(this T dataObject) where T : struct
-    {
-        var dict   = new Dictionary<string, object>();
-        var fields = typeof(T).GetFields(BindingFlags.Public | BindingFlags.Instance);
-
-        foreach (var field in fields)
-        {
-            var attr = field.GetCustomAttribute<AnalyticsKeyAttribute>();
-            if (attr == null) continue;
-
-            object value = field.GetValue(dataObject);
-            if (value == null) continue;
-
-            if (field.FieldType.IsEnum)
-                value = value.ToString();
-
-            dict.Add(attr.Key, value);
-        }
-
-        return dict;
     }
 }

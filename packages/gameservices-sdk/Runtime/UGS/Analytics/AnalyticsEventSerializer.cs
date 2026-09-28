@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Reflection;
 using Unity.Services.Analytics;
 
 internal static class AnalyticsEventSerializer
@@ -53,26 +52,7 @@ internal static class AnalyticsEventSerializer
 
     static Dictionary<string, object> ToAnalyticsDict<T>(T dataObject) where T : struct
     {
-        var dict = new Dictionary<string, object>();
-        FieldInfo[] fields = typeof(T).GetFields(BindingFlags.Public | BindingFlags.Instance);
-
-        foreach (FieldInfo field in fields)
-        {
-            var attr = field.GetCustomAttribute<AnalyticsKeyAttribute>();
-            if (attr == null)
-                continue;
-
-            object value = field.GetValue(dataObject);
-            if (value == null)
-                continue;
-
-            if (field.FieldType.IsEnum)
-                value = value.ToString();
-
-            dict.Add(attr.Key, value);
-        }
-
-        return dict;
+        return AnalyticsEventParams.ToDictionary(dataObject);
     }
 
     static string ConvertToString(object value)

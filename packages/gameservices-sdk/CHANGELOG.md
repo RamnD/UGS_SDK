@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0] - 2026-09-28
+
+### Added
+- **Dual analytics backend:** `AnalyticsBackendMode` (`Ugs` / `Ramnd` / `Both`), `RamndAnalyticsConfig`, `RamndAnalyticSystem` (HTTP → game-services gateway), and `CompositeAnalyticsSystem`.
+- `UGSServicesBuilder.WithAnalyticsBackend(mode, ramndConfig)` — default remains UGS-only.
+- Editor tests for envelope mapping, composite fan-out, and 207-as-success ingest.
+
 ## [2.2.6] - 2026-09-15
 
 ### Fixed

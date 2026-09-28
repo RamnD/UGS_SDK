@@ -26,6 +26,8 @@ public sealed class UGSServicesBuilder
     private bool                                      _useRemoteConfig;
     private bool                                      _useAchievements;
     private PlatformAchievementsOptions               _platformAchievements;
+    private AnalyticsBackendMode                      _analyticsBackendMode = AnalyticsBackendMode.Ugs;
+    private RamndAnalyticsConfig                      _ramndAnalyticsConfig;
 
     /// <summary>
     /// Force anonymous sign-in on all platforms.
@@ -103,10 +105,31 @@ public sealed class UGSServicesBuilder
 
     /// <summary>
     /// Wraps analytics with a disk-backed offline queue (opt-in).
+    /// Applies to the UGS leg only; RamnD gateway queue is in-memory for now.
     /// </summary>
     public UGSServicesBuilder WithCachedAnalytics(bool enabled = true)
     {
         _useCachedAnalytics = enabled;
+        return this;
+    }
+
+    /// <summary>
+    /// Selects analytics backends. Default is <see cref="AnalyticsBackendMode.Ugs"/> (unchanged behaviour).
+    /// For <see cref="AnalyticsBackendMode.Ramnd"/> or <see cref="AnalyticsBackendMode.Both"/>,
+    /// pass a non-null <paramref name="ramnd"/> config (gateway base URL + API key).
+    /// </summary>
+    public UGSServicesBuilder WithAnalyticsBackend(
+        AnalyticsBackendMode mode,
+        RamndAnalyticsConfig ramnd = null)
+    {
+        if (mode == AnalyticsBackendMode.Ramnd || mode == AnalyticsBackendMode.Both)
+        {
+            if (ramnd == null)
+                throw new ArgumentNullException(nameof(ramnd), "RamndAnalyticsConfig is required for Ramnd/Both modes.");
+        }
+
+        _analyticsBackendMode = mode;
+        _ramndAnalyticsConfig = ramnd;
         return this;
     }
 
@@ -176,18 +199,30 @@ public sealed class UGSServicesBuilder
         var platform   = ResolvePlatform();
 
         CachedAnalyticsSystem cachedAnalytics = null;
+        RamndAnalyticSystem ramndAnalytics = null;
         IAnalyticsSystem analytics = null;
+        bool useUgsLeg = _analyticsBackendMode == AnalyticsBackendMode.Ugs
+            || _analyticsBackendMode == AnalyticsBackendMode.Both;
+        bool useRamndLeg = _analyticsBackendMode == AnalyticsBackendMode.Ramnd
+            || _analyticsBackendMode == AnalyticsBackendMode.Both;
+
+        if (useRamndLeg)
+        {
+            ramndAnalytics = new RamndAnalyticSystem(_ramndAnalyticsConfig);
+        }
+
         bool disableEditorProductionAnalytics = IsEditorProductionAnalyticsDisabled();
         bool environmentMismatch = !disableEditorProductionAnalytics
             && UGSUnityServicesInitializer.TryConfirmEnvironmentMismatch(out _, out _);
-        bool disableAnalytics = disableEditorProductionAnalytics || environmentMismatch;
+        bool disableUgsAnalytics = useUgsLeg
+            && (disableEditorProductionAnalytics || environmentMismatch);
 
-        if (disableAnalytics)
+        if (useUgsLeg && disableUgsAnalytics)
         {
             // Never call StartDataCollection / never attach the UGS backend.
             // No-op keeps GameServicesLocator.Analytics non-null so games do not stall waiting for init.
             new PendingAnalyticsQueue().Clear();
-            analytics = new DisabledAnalyticsSystem();
+            IAnalyticsSystem ugsDisabled = new DisabledAnalyticsSystem();
             if (environmentMismatch)
             {
                 AppLog.Error(
@@ -202,6 +237,7 @@ public sealed class UGSServicesBuilder
                     "Editor/desktop build + UGS_ENV_PRODUCTION: UGS Analytics is disabled. Events are discarded.");
             }
 
+            analytics = ComposeAnalytics(ugsDisabled, ramndAnalytics);
             GameServicesLocator.Set(new UGSGameServices(
                 auth,
                 analytics,
@@ -211,10 +247,22 @@ public sealed class UGSServicesBuilder
                 achievements: null,
                 platformAchievements: null));
         }
-        else if (_useCachedAnalytics)
+        else if (useUgsLeg && _useCachedAnalytics)
         {
             cachedAnalytics = CachedAnalyticsSystem.CreatePreAuth();
-            analytics = cachedAnalytics;
+            analytics = ComposeAnalytics(cachedAnalytics, ramndAnalytics);
+            GameServicesLocator.Set(new UGSGameServices(
+                auth,
+                analytics,
+                _adsManager ?? new TestAdsManager(),
+                leaderboards: null,
+                remoteConfig: null,
+                achievements: null,
+                platformAchievements: null));
+        }
+        else if (useRamndLeg && !useUgsLeg)
+        {
+            analytics = ramndAnalytics;
             GameServicesLocator.Set(new UGSGameServices(
                 auth,
                 analytics,
@@ -234,18 +282,29 @@ public sealed class UGSServicesBuilder
             cancellationToken.ThrowIfCancellationRequested();
             await AuthenticationSdkReadiness.WaitForPlayerSessionStableAsync(cancellationToken);
 
-            if (!disableAnalytics)
+            string playerId = auth.GetPlayerId();
+            ramndAnalytics?.SetPlayerId(playerId);
+
+            if (useUgsLeg && !disableUgsAnalytics)
             {
                 // TODO(analytics-consent): UGS Analytics v6 — migrate from deprecated StartDataCollection to EndUserConsent / store policies.
                 var ugsAnalytics = new UGSAnalyticSystem(
-                    auth.GetPlayerId(),
+                    playerId,
                     Unity.Services.Analytics.AnalyticsService.Instance);
 
                 if (cachedAnalytics != null)
                     cachedAnalytics.AttachInner(ugsAnalytics, Unity.Services.Analytics.AnalyticsService.Instance);
                 else
-                    analytics = ugsAnalytics;
+                    analytics = ComposeAnalytics(ugsAnalytics, ramndAnalytics);
             }
+            else if (useRamndLeg && analytics == null)
+            {
+                analytics = ramndAnalytics;
+            }
+        }
+        else if (analytics == null && useRamndLeg)
+        {
+            analytics = ramndAnalytics;
         }
 
         ILeaderboardService leaderboards = null;
@@ -406,6 +465,21 @@ public sealed class UGSServicesBuilder
 
     private NameValidatorConfig ResolveNameValidator() =>
         _nameValidator ?? new NameValidatorConfig(_profanityWords, _profanityPattern);
+
+    IAnalyticsSystem ComposeAnalytics(IAnalyticsSystem ugsLeg, RamndAnalyticSystem ramndLeg)
+    {
+        switch (_analyticsBackendMode)
+        {
+            case AnalyticsBackendMode.Ugs:
+                return ugsLeg;
+            case AnalyticsBackendMode.Ramnd:
+                return ramndLeg;
+            case AnalyticsBackendMode.Both:
+                return new CompositeAnalyticsSystem(AnalyticsBackendMode.Both, ugsLeg, ramndLeg);
+            default:
+                throw new InvalidOperationException($"Unknown analytics mode {_analyticsBackendMode}");
+        }
+    }
 
     /// <summary>
     /// Play Mode against a production Build Profile must never call

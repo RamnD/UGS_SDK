@@ -79,6 +79,32 @@ analytics?.LogEvent(new SkinSelectedEvent
 
 ---
 
+## Dual backend (UGS + RamnD game-services)
+
+From SDK **2.3.0** you can send the same typed events to Unity Analytics, to a self-hosted [game-services](https://github.com/RamnD/game-services) gateway, or both.
+
+```csharp
+await new UGSServicesBuilder()
+    .WithAnalyticsBackend(
+        AnalyticsBackendMode.Both,
+        new RamndAnalyticsConfig(
+            baseUrl: "http://localhost:3000",
+            apiKey: "dev-maze-key"))
+    .BuildAsync();
+```
+
+| Mode | Behaviour |
+|------|-----------|
+| `Ugs` (default) | Current behaviour — Unity Analytics only |
+| `Ramnd` | Gateway only (`POST /v1/analytics/events` with `X-Api-Key`) |
+| `Both` | Fan-out; failures are independent |
+
+RamnD events include envelope fields (`event_id`, `event_timestamp`, `user_id`, `platform`, optional `player_id`) plus `[AnalyticsKey]` parameters. `user_id` is a stable install Guid in PlayerPrefs. HTTP **200** and **207** count as success. Call `Flush()` on pause/quit so the in-memory RamnD batch is posted.
+
+`WithCachedAnalytics()` still applies only to the UGS leg.
+
+---
+
 ## Flushing events
 
 UGS Analytics auto-flushes periodically. Call `Flush()` explicitly on app pause / quit so events aren't lost:
