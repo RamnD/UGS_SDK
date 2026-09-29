@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.3.5] - 2026-09-29
+
+### Fixed
+- Revert Editor-only flush-on-every-`LogEvent` from 2.3.4. Ramnd keeps the normal batch + `Flush()` flow; ingest visibility belongs on the gateway/analytics-api logs.
+
 ## [2.3.4] - 2026-09-29
 
 ### Fixed
