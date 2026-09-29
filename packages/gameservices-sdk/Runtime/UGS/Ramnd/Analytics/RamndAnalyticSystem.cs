@@ -63,8 +63,14 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
             lock (_gate)
             {
                 _queue.Add(row);
+                // Editor: post promptly so dual-write is visible without waiting for pause/quit.
+                // Player builds keep batching until MaxBatchSize or explicit Flush().
+#if UNITY_EDITOR
+                StartFlushUnlocked();
+#else
                 if (_queue.Count >= _config.MaxBatchSize)
                     StartFlushUnlocked();
+#endif
             }
         }
         catch (Exception ex)

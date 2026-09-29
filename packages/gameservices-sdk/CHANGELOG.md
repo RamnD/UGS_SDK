@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.3.4] - 2026-09-29
+
+### Fixed
+- **Editor Ramnd flush lag.** `LogEvent` only queued until `Flush` (pause/quit) or 500 events, so dual-write looked “dead” in Docker while UGS still logged `[Analytics] event_name`. In Editor, each `LogEvent` now starts a drain immediately; player builds keep batching.
+
 ## [2.3.3] - 2026-09-29
 
 ### Fixed
