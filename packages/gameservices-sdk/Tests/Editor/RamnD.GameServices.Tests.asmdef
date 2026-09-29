@@ -5,9 +5,7 @@
         "RamnD.GameServices.Core",
         "RamnD.GameServices.UGS",
         "RamnD.Core.Logging",
-        "Newtonsoft.Json",
-        "UnityEngine.TestRunner",
-        "UnityEditor.TestRunner"
+        "Newtonsoft.Json"
     ],
     "includePlatforms": [
         "Editor"

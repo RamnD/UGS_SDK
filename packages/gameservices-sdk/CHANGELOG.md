@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.3.2] - 2026-09-29
+
+### Fixed
+- **Test asmdef duplicate TestRunner refs.** `RamnD.GameServices.Tests` listed `UnityEngine.TestRunner` / `UnityEditor.TestRunner` and also `optionalUnityReferences: TestAssemblies`, which Unity rejects and can push the Editor into Safe Mode (cascading plugin load failures such as Facebook → missing `UnityEngine.UI`).
+
 ## [2.3.1] - 2026-09-29
 
 ### Fixed
