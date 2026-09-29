@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.3.1] - 2026-09-29
+
+### Fixed
+- **Missing `.meta` for dual-analytics scripts.** New Core/UGS files shipped without Unity metas, so Package Manager never compiled them into `RamnD.GameServices.Core` — games saw `CS0246: AnalyticsBackendMode could not be found`. Metas added for all 2.3.0 assets; `InternalsVisibleTo` for UGS/Tests so shared `AnalyticsEventParams` stays internal.
+
 ## [2.3.0] - 2026-09-28
 
 ### Added
