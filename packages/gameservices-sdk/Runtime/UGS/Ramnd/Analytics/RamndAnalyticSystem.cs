@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using UnityEngine;
 
 /// <summary>
 /// <see cref="IAnalyticsSystem"/> that batches events and POSTs them to the RamnD game-services gateway.
@@ -15,8 +16,10 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
     readonly string _platform;
     readonly object _gate = new object();
     readonly List<Dictionary<string, object>> _queue = new List<Dictionary<string, object>>();
+    readonly CancellationTokenSource _lifetime = new CancellationTokenSource();
     string _playerId;
     Task _flushTask = Task.CompletedTask;
+    bool _disposed;
 
     public RamndAnalyticSystem(
         RamndAnalyticsConfig config,
@@ -34,6 +37,11 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
             ? RamndAnalyticsEnvelopeBuilder.ResolvePlatformLabel()
             : platform;
         _playerId = playerId;
+
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+#endif
+        Application.quitting += OnQuitting;
     }
 
     /// <summary>Updates authenticated player id after UGS sign-in (nullable clears).</summary>
@@ -42,6 +50,9 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
     /// <inheritdoc/>
     public void LogEvent<T>(T eventPayload) where T : struct, IAnalyticsEvent
     {
+        if (_disposed)
+            return;
+
         try
         {
             var row = RamndAnalyticsEnvelopeBuilder.BuildEventObject(
@@ -65,6 +76,9 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
     /// <inheritdoc/>
     public void Flush()
     {
+        if (_disposed)
+            return;
+
         try
         {
             _ = FlushAsync();
@@ -78,14 +92,47 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
     /// <summary>Awaitable flush for tests and orderly shutdown.</summary>
     public Task FlushAsync()
     {
+        if (_disposed)
+            return Task.CompletedTask;
+
         lock (_gate)
             StartFlushUnlocked();
         return _flushTask;
     }
 
+    /// <summary>
+    /// Stops background drain (Play Mode exit / quit). Queued events are dropped —
+    /// in-memory only; do not rely on process death to finish HTTP retries.
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        _disposed = true;
+
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+#endif
+        Application.quitting -= OnQuitting;
+
+        try
+        {
+            _lifetime.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // already torn down
+        }
+
+        lock (_gate)
+            _queue.Clear();
+
+        _lifetime.Dispose();
+    }
+
     void StartFlushUnlocked()
     {
-        if (_queue.Count == 0)
+        if (_disposed || _queue.Count == 0)
             return;
         if (!_flushTask.IsCompleted)
             return;
@@ -100,15 +147,18 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
 
     async Task DrainLoopAsync(List<Dictionary<string, object>> batch, string json)
     {
-        await PostBatchAsync(batch, json);
+        // On failure: requeue once and stop this drain. Do NOT immediately re-take the same
+        // batch — that caused a tight retry loop that survived Play Mode exit.
+        if (!await TryPostBatchAsync(batch, json))
+            return;
 
-        while (true)
+        while (!_disposed && !_lifetime.IsCancellationRequested)
         {
             List<Dictionary<string, object>> nextBatch;
             string nextJson;
             lock (_gate)
             {
-                if (_queue.Count == 0)
+                if (_disposed || _queue.Count == 0)
                     return;
                 nextBatch = TakeBatchUnlocked();
                 if (nextBatch.Count == 0)
@@ -117,31 +167,44 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
                     new Dictionary<string, object> { ["events"] = nextBatch });
             }
 
-            await PostBatchAsync(nextBatch, nextJson);
+            if (!await TryPostBatchAsync(nextBatch, nextJson))
+                return;
         }
     }
 
-    async Task PostBatchAsync(List<Dictionary<string, object>> batch, string json)
+    async Task<bool> TryPostBatchAsync(List<Dictionary<string, object>> batch, string json)
     {
+        if (_disposed || _lifetime.IsCancellationRequested)
+        {
+            RequeueFront(batch);
+            return false;
+        }
+
         try
         {
-            RamndIngestResult result = await _transport.PostEventsAsync(json, CancellationToken.None);
+            RamndIngestResult result = await _transport.PostEventsAsync(json, _lifetime.Token);
             if (!result.IsSuccess)
             {
                 AppLog.Warn(
                     "Analytics",
                     $"Ramnd ingest HTTP {result.StatusCode}: {TrimBody(result.Body)}");
                 RequeueFront(batch);
+                return false;
             }
-            else
-            {
-                AppLog.Info("Analytics", $"Ramnd ingest ok ({batch.Count} events, HTTP {result.StatusCode})");
-            }
+
+            AppLog.Info("Analytics", $"Ramnd ingest ok ({batch.Count} events, HTTP {result.StatusCode})");
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            RequeueFront(batch);
+            return false;
         }
         catch (Exception ex)
         {
             AppLog.Error("Analytics", $"Ramnd ingest failed: {ex.Message}");
             RequeueFront(batch);
+            return false;
         }
     }
 
@@ -157,14 +220,29 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
 
     void RequeueFront(List<Dictionary<string, object>> batch)
     {
+        if (_disposed)
+            return;
+
         lock (_gate)
         {
+            if (_disposed)
+                return;
             _queue.InsertRange(0, batch);
             int cap = _config.MaxBatchSize * 2;
             if (_queue.Count > cap)
                 _queue.RemoveRange(cap, _queue.Count - cap);
         }
     }
+
+#if UNITY_EDITOR
+    void OnPlayModeStateChanged(UnityEditor.PlayModeStateChange state)
+    {
+        if (state == UnityEditor.PlayModeStateChange.ExitingPlayMode)
+            Dispose();
+    }
+#endif
+
+    void OnQuitting() => Dispose();
 
     static string TrimBody(string body)
     {

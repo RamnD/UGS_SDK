@@ -25,6 +25,8 @@ public sealed class UnityWebRequestRamndTransport : IRamndAnalyticsTransport
         string jsonBody,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonBody ?? "{}");
 
         using var request = new UnityWebRequest(_ingestUrl, UnityWebRequest.kHttpVerbPOST);
@@ -34,12 +36,27 @@ public sealed class UnityWebRequestRamndTransport : IRamndAnalyticsTransport
         request.SetRequestHeader("X-Api-Key", _apiKey);
         request.timeout = 30;
 
-        UnityWebRequestAsyncOperation op = request.SendWebRequest();
-        while (!op.isDone)
+        using (cancellationToken.Register(() =>
+               {
+                   if (request != null && !request.isDone)
+                       request.Abort();
+               }))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            await Task.Yield();
+            UnityWebRequestAsyncOperation op = request.SendWebRequest();
+            while (!op.isDone)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!Application.isPlaying)
+                {
+                    request.Abort();
+                    throw new OperationCanceledException("Play Mode ended during Ramnd ingest.");
+                }
+
+                await Task.Yield();
+            }
         }
+
+        cancellationToken.ThrowIfCancellationRequested();
 
 #if UNITY_2020_1_OR_NEWER
         bool networkError = request.result == UnityWebRequest.Result.ConnectionError
@@ -47,6 +64,10 @@ public sealed class UnityWebRequestRamndTransport : IRamndAnalyticsTransport
 #else
         bool networkError = request.isNetworkError;
 #endif
+        // Abort after cancel surfaces as a connection error — prefer cancellation.
+        if (cancellationToken.IsCancellationRequested)
+            throw new OperationCanceledException(cancellationToken);
+
         if (networkError)
             throw new InvalidOperationException($"Ramnd analytics transport error: {request.error}");
 

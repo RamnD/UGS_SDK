@@ -107,6 +107,26 @@ public class RamndAnalyticsTests
     }
 
     [Test]
+    public async Task Flush_OnTransportFailure_DoesNotSpinRetryLoop()
+    {
+        var transport = new FakeTransport { StatusCode = 503 };
+        var config = new RamndAnalyticsConfig("http://localhost:3000", "dev-maze-key");
+        var system = new RamndAnalyticSystem(
+            config,
+            transport,
+            userId: "install-test",
+            platform: "EDITOR",
+            playerId: "p1");
+
+        system.LogEvent(new SampleEvent("1.2.3", true));
+        await system.FlushAsync();
+        await system.FlushAsync();
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(2), "One attempt per Flush; no tight retry loop");
+        system.Dispose();
+    }
+
+    [Test]
     public void IngestResult_207_IsSuccess()
     {
         Assert.That(new RamndIngestResult(207, "{}").IsSuccess, Is.True);

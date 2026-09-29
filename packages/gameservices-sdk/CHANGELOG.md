@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.3.3] - 2026-09-29
+
+### Fixed
+- **Ramnd ingest retry storm.** Failed posts were requeued and immediately drained again in the same loop, so a dead gateway kept HTTP attempts going after Play Mode exit. Drain now stops after one failure; `Dispose` on ExitingPlayMode / quit cancels in-flight `UnityWebRequest`.
+
 ## [2.3.2] - 2026-09-29
 
 ### Fixed
