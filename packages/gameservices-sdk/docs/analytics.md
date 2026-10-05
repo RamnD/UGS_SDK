@@ -99,9 +99,11 @@ await new UGSServicesBuilder()
 | `Ramnd` | Gateway only (`POST /v1/analytics/events` with `X-Api-Key`) |
 | `Both` | Fan-out; failures are independent |
 
-RamnD events include envelope fields (`event_id`, `event_timestamp`, `user_id`, `platform`, optional `player_id`) plus `[AnalyticsKey]` parameters. `user_id` is a stable install Guid in PlayerPrefs. HTTP **200** and **207** count as success. Call `Flush()` on pause/quit so the in-memory RamnD batch is posted.
+RamnD events include envelope fields (`event_id`, `event_timestamp`, `user_id`, `platform`, optional `player_id`) plus `[AnalyticsKey]` parameters. `user_id` is a stable install Guid in PlayerPrefs. `event_id` and `event_timestamp` are fixed when the event is queued. HTTP **200** and **207** remove the batch from the client queue. The gateway dedupes a replayed `event_id`.
 
-`WithCachedAnalytics()` still applies only to the UGS leg.
+Pending RamnD envelopes are stored in `ramnd-analytics-queue.json` under `Application.persistentDataPath`, stamped with the gateway base URL. A file written for a different gateway is not sent. The queue survives process exit, so an offline session or a dead gateway is retried on the next launch, when `NetworkStatus` comes back online, and on `Flush()` (pause / quit). One failed attempt ends that drain; there is no tight retry loop. The cap is 500 events; older events past the cap are dropped. HTTP **400** with a `rejected` list drops those envelopes. A **400** without that list (unknown app, bad body), **401**, **429**, and **5xx** stay queued.
+
+`WithCachedAnalytics()` still applies only to the UGS leg. It is not replayed into RamnD.
 
 ---
 
