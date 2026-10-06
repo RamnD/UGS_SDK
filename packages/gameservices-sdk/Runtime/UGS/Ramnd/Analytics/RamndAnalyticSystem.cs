@@ -3,19 +3,27 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
 
 /// <summary>
 /// <see cref="IAnalyticsSystem"/> that batches events and POSTs them to the RamnD game-services gateway.
+/// Envelopes are frozen at <see cref="LogEvent{T}"/> and kept on disk until the gateway accepts them,
+/// so an offline session is replayed on the next launch, <see cref="Flush"/>, or network return.
 /// </summary>
 public sealed class RamndAnalyticSystem : IAnalyticsSystem
 {
+    /// <summary>Oldest events past this cap are dropped. Matches the gateway batch limit.</summary>
+    internal const int DiskQueueCap = 500;
+
     readonly RamndAnalyticsConfig _config;
     readonly IRamndAnalyticsTransport _transport;
+    readonly IRamndAnalyticsQueueStore _store;
     readonly string _userId;
     readonly string _platform;
     readonly object _gate = new object();
     readonly List<Dictionary<string, object>> _queue = new List<Dictionary<string, object>>();
+    readonly HashSet<string> _inflight = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     readonly CancellationTokenSource _lifetime = new CancellationTokenSource();
     string _playerId;
     Task _flushTask = Task.CompletedTask;
@@ -27,9 +35,21 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
         string userId = null,
         string platform = null,
         string playerId = null)
+        : this(config, transport, userId, platform, playerId, store: null)
+    {
+    }
+
+    internal RamndAnalyticSystem(
+        RamndAnalyticsConfig config,
+        IRamndAnalyticsTransport transport,
+        string userId,
+        string platform,
+        string playerId,
+        IRamndAnalyticsQueueStore store)
     {
         _config = config ?? throw new ArgumentNullException(nameof(config));
         _transport = transport ?? new UnityWebRequestRamndTransport(config);
+        _store = store ?? RamndAnalyticsFileQueue.ForPersistentData(config.BaseUrl);
         _userId = string.IsNullOrEmpty(userId)
             ? RamndAnalyticsEnvelopeBuilder.GetOrCreateInstallUserId()
             : userId;
@@ -38,10 +58,25 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
             : platform;
         _playerId = playerId;
 
+        lock (_gate)
+        {
+            _queue.AddRange(_store.Load());
+            int dropped = TrimUnlocked();
+            if (dropped > 0)
+            {
+                PersistUnlocked();
+                AppLog.Warn("Analytics", $"Ramnd queue full — dropping {dropped} oldest event(s).");
+            }
+
+            if (NetworkStatus.IsOnline)
+                StartFlushUnlocked();
+        }
+
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
 #endif
         Application.quitting += OnQuitting;
+        NetworkStatus.IsOnlineChanged += OnNetworkOnline;
     }
 
     /// <summary>Updates authenticated player id after UGS sign-in (nullable clears).</summary>
@@ -63,6 +98,15 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
             lock (_gate)
             {
                 _queue.Add(row);
+                int dropped = TrimUnlocked();
+                PersistUnlocked();
+                if (dropped > 0)
+                {
+                    AppLog.Warn(
+                        "Analytics",
+                        $"Ramnd queue full — dropping {dropped} oldest event(s).");
+                }
+
                 if (_queue.Count >= _config.MaxBatchSize)
                     StartFlushUnlocked();
             }
@@ -101,8 +145,7 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
     }
 
     /// <summary>
-    /// Stops background drain (Play Mode exit / quit). Queued events are dropped —
-    /// in-memory only; do not rely on process death to finish HTTP retries.
+    /// Stops the in-flight POST. Queued envelopes stay on disk and are retried next session.
     /// </summary>
     public void Dispose()
     {
@@ -114,6 +157,7 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
         UnityEditor.EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
 #endif
         Application.quitting -= OnQuitting;
+        NetworkStatus.IsOnlineChanged -= OnNetworkOnline;
 
         try
         {
@@ -125,112 +169,239 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
         }
 
         lock (_gate)
-            _queue.Clear();
+            PersistUnlocked();
 
         _lifetime.Dispose();
     }
 
+    void OnNetworkOnline(bool isOnline)
+    {
+        if (!isOnline || _disposed)
+            return;
+        Flush();
+    }
+
     void StartFlushUnlocked()
     {
-        if (_disposed || _queue.Count == 0)
-            return;
-        if (!_flushTask.IsCompleted)
+        if (_disposed || _queue.Count == 0 || _inflight.Count > 0 || !_flushTask.IsCompleted)
             return;
 
-        var batch = TakeBatchUnlocked();
+        var batch = CopyFrontUnlocked();
         if (batch.Count == 0)
             return;
 
-        string json = JsonConvert.SerializeObject(new Dictionary<string, object> { ["events"] = batch });
+        MarkInflightUnlocked(batch);
+        string json = SerializeBatch(batch);
         _flushTask = DrainLoopAsync(batch, json);
     }
 
     async Task DrainLoopAsync(List<Dictionary<string, object>> batch, string json)
     {
-        // On failure: requeue once and stop this drain. Do NOT immediately re-take the same
-        // batch — that caused a tight retry loop that survived Play Mode exit.
-        if (!await TryPostBatchAsync(batch, json))
-            return;
-
+        // One failure ends this drain. The batch stays on disk; the next Flush / online
+        // transition / launch tries again. Do not tight-loop a dead gateway.
         while (!_disposed && !_lifetime.IsCancellationRequested)
         {
-            List<Dictionary<string, object>> nextBatch;
-            string nextJson;
-            lock (_gate)
+            if (!await TryPostBatchAsync(batch, json))
             {
-                if (_disposed || _queue.Count == 0)
-                    return;
-                nextBatch = TakeBatchUnlocked();
-                if (nextBatch.Count == 0)
-                    return;
-                nextJson = JsonConvert.SerializeObject(
-                    new Dictionary<string, object> { ["events"] = nextBatch });
+                lock (_gate)
+                    _inflight.Clear();
+                return;
             }
 
-            if (!await TryPostBatchAsync(nextBatch, nextJson))
-                return;
+            lock (_gate)
+            {
+                _inflight.Clear();
+                if (_disposed || _queue.Count == 0)
+                    return;
+                batch = CopyFrontUnlocked();
+                if (batch.Count == 0)
+                    return;
+                MarkInflightUnlocked(batch);
+                json = SerializeBatch(batch);
+            }
         }
+
+        lock (_gate)
+            _inflight.Clear();
     }
 
     async Task<bool> TryPostBatchAsync(List<Dictionary<string, object>> batch, string json)
     {
         if (_disposed || _lifetime.IsCancellationRequested)
-        {
-            RequeueFront(batch);
             return false;
-        }
 
         try
         {
             RamndIngestResult result = await _transport.PostEventsAsync(json, _lifetime.Token);
-            if (!result.IsSuccess)
+            if (result.StatusCode == 200 || result.StatusCode == 207)
             {
-                AppLog.Warn(
-                    "Analytics",
-                    $"Ramnd ingest HTTP {result.StatusCode}: {TrimBody(result.Body)}");
-                RequeueFront(batch);
-                return false;
+                Acknowledge(batch);
+                AppLog.Info("Analytics", $"Ramnd ingest ok ({batch.Count} events, HTTP {result.StatusCode})");
+                return true;
             }
 
-            AppLog.Info("Analytics", $"Ramnd ingest ok ({batch.Count} events, HTTP {result.StatusCode})");
-            return true;
+            if (result.StatusCode == 400 && TryDropPermanentRejects(batch, result.Body))
+                return true;
+
+            AppLog.Warn(
+                "Analytics",
+                $"Ramnd ingest HTTP {result.StatusCode}: {TrimBody(result.Body)}");
+            return false;
         }
         catch (OperationCanceledException)
         {
-            RequeueFront(batch);
             return false;
         }
         catch (Exception ex)
         {
             AppLog.Error("Analytics", $"Ramnd ingest failed: {ex.Message}");
-            RequeueFront(batch);
             return false;
         }
     }
 
-    List<Dictionary<string, object>> TakeBatchUnlocked()
+    void Acknowledge(List<Dictionary<string, object>> batch)
+    {
+        lock (_gate)
+        {
+            RemoveIdsUnlocked(IdsOf(batch));
+            PersistUnlocked();
+        }
+    }
+
+    /// <summary>
+    /// Schema rejects are permanent. A 400 without a <c>rejected</c> list (unknown app, bad body)
+    /// stays queued so a later server fix can still accept the envelopes.
+    /// </summary>
+    bool TryDropPermanentRejects(List<Dictionary<string, object>> batch, string body)
+    {
+        if (!TryReadRejected(body, out JArray rejected) || rejected.Count == 0)
+            return false;
+
+        var dropIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var dropIndexes = new HashSet<int>();
+        for (int i = 0; i < rejected.Count; i++)
+        {
+            if (!(rejected[i] is JObject item))
+                continue;
+            string eventId = item.Value<string>("eventId");
+            if (!string.IsNullOrEmpty(eventId))
+                dropIds.Add(eventId);
+            int? index = item.Value<int?>("index");
+            if (index.HasValue && index.Value >= 0 && index.Value < batch.Count)
+                dropIndexes.Add(index.Value);
+        }
+
+        if (rejected.Count >= batch.Count)
+        {
+            foreach (string id in IdsOf(batch))
+                dropIds.Add(id);
+        }
+        else
+        {
+            foreach (int index in dropIndexes)
+            {
+                string id = EventId(batch[index]);
+                if (!string.IsNullOrEmpty(id))
+                    dropIds.Add(id);
+            }
+        }
+
+        if (dropIds.Count == 0)
+            return false;
+
+        lock (_gate)
+        {
+            RemoveIdsUnlocked(dropIds);
+            PersistUnlocked();
+        }
+
+        AppLog.Warn("Analytics", $"Ramnd ingest dropped {dropIds.Count} rejected event(s) (HTTP 400).");
+        return true;
+    }
+
+    List<Dictionary<string, object>> CopyFrontUnlocked()
     {
         int count = Math.Min(_queue.Count, _config.MaxBatchSize);
         var batch = new List<Dictionary<string, object>>(count);
         for (int i = 0; i < count; i++)
             batch.Add(_queue[i]);
-        _queue.RemoveRange(0, count);
         return batch;
     }
 
-    void RequeueFront(List<Dictionary<string, object>> batch)
+    void MarkInflightUnlocked(List<Dictionary<string, object>> batch)
     {
-        if (_disposed)
-            return;
-
-        lock (_gate)
+        _inflight.Clear();
+        foreach (string id in IdsOf(batch))
         {
-            if (_disposed)
-                return;
-            _queue.InsertRange(0, batch);
-            int cap = _config.MaxBatchSize * 2;
-            if (_queue.Count > cap)
-                _queue.RemoveRange(cap, _queue.Count - cap);
+            if (!string.IsNullOrEmpty(id))
+                _inflight.Add(id);
+        }
+    }
+
+    int TrimUnlocked()
+    {
+        int dropped = 0;
+        while (_queue.Count > DiskQueueCap)
+        {
+            int victim = 0;
+            while (victim < _queue.Count && _inflight.Contains(EventId(_queue[victim])))
+                victim++;
+            if (victim >= _queue.Count)
+                break;
+            _queue.RemoveAt(victim);
+            dropped++;
+        }
+
+        return dropped;
+    }
+
+    void RemoveIdsUnlocked(HashSet<string> ids)
+    {
+        if (ids == null || ids.Count == 0)
+            return;
+        _queue.RemoveAll(row => ids.Contains(EventId(row)));
+    }
+
+    void PersistUnlocked() => _store.Save(_queue);
+
+    static string SerializeBatch(List<Dictionary<string, object>> batch) =>
+        JsonConvert.SerializeObject(new Dictionary<string, object> { ["events"] = batch });
+
+    static HashSet<string> IdsOf(List<Dictionary<string, object>> batch)
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < batch.Count; i++)
+        {
+            string id = EventId(batch[i]);
+            if (!string.IsNullOrEmpty(id))
+                ids.Add(id);
+        }
+
+        return ids;
+    }
+
+    static string EventId(Dictionary<string, object> row)
+    {
+        if (row != null && row.TryGetValue("event_id", out object id) && id != null)
+            return id.ToString();
+        return string.Empty;
+    }
+
+    static bool TryReadRejected(string body, out JArray rejected)
+    {
+        rejected = null;
+        if (string.IsNullOrWhiteSpace(body))
+            return false;
+        try
+        {
+            if (!(JObject.Parse(body)["rejected"] is JArray array))
+                return false;
+            rejected = array;
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 

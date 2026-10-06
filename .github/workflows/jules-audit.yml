@@ -1,0 +1,343 @@
+# Trusted workflow from the default branch. Do not checkout the pull request:
+# this job only sends branch names to the Jules API.
+name: Jules audit
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - converted_to_draft
+    branches:
+      - agent/jules
+  workflow_dispatch:
+    inputs:
+      starting_branch:
+        description: Branch Jules should audit
+        required: true
+        default: agent/jules
+        type: string
+      base_branch:
+        description: Branch used as the review baseline
+        required: true
+        default: staging
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: jules-audit-${{ github.event.pull_request.number || inputs.starting_branch || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Audit with Jules
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'pull_request_target' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        !startsWith(github.head_ref, 'jules-') &&
+        github.actor != 'google-labs-jules[bot]' &&
+        github.actor != 'google-labs-jules' &&
+        github.event.pull_request.user.login != 'google-labs-jules[bot]' &&
+        github.event.pull_request.user.login != 'google-labs-jules'
+      )
+    env:
+      JULES_API_URL: https://jules.googleapis.com/v1alpha
+      JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+      GH_TOKEN: ${{ github.token }}
+      STARTING_BRANCH: ${{ github.event_name == 'pull_request_target' && github.head_ref || inputs.starting_branch }}
+      BASE_BRANCH: ${{ github.event_name == 'pull_request_target' && github.base_ref || inputs.base_branch }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+
+    steps:
+      - name: Validate configuration
+        shell: bash
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${JULES_API_KEY}" ]]; then
+            echo "JULES_API_KEY is not configured." >&2
+            exit 1
+          fi
+          if [[ -z "${STARTING_BRANCH}" || -z "${BASE_BRANCH}" ]]; then
+            echo "Starting branch and base branch are required." >&2
+            exit 1
+          fi
+
+          branch_is_safe() {
+            local branch="$1"
+            [[ "${branch}" =~ ^[A-Za-z0-9._/][A-Za-z0-9._/-]*$ ]] || return 1
+            [[ "${branch}" != *..* ]] || return 1
+            return 0
+          }
+
+          if ! branch_is_safe "${STARTING_BRANCH}" || ! branch_is_safe "${BASE_BRANCH}"; then
+            echo "Refusing branch names that are empty or not a plain git ref." >&2
+            exit 1
+          fi
+          if [[ "${STARTING_BRANCH}" == "${BASE_BRANCH}" ]]; then
+            echo "Starting branch and base branch must differ." >&2
+            exit 1
+          fi
+          case "${STARTING_BRANCH}" in
+            main|staging)
+              echo "Refusing to start Jules from protected branch ${STARTING_BRANCH}." >&2
+              exit 1
+              ;;
+          esac
+
+          for branch in "${STARTING_BRANCH}" "${BASE_BRANCH}"; do
+            encoded="$(jq -nr --arg branch "${branch}" '$branch|@uri')"
+            if ! gh api --silent "repos/${REPOSITORY}/branches/${encoded}"; then
+              echo "Branch ${branch} does not exist on ${REPOSITORY}." >&2
+              exit 1
+            fi
+          done
+
+      - name: Resolve Jules source
+        id: source
+        shell: bash
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          owner="${REPOSITORY%%/*}"
+          repo="${REPOSITORY#*/}"
+          page_token=""
+          source_name=""
+
+          for _ in $(seq 1 20); do
+            url="${JULES_API_URL}/sources?pageSize=100"
+            if [[ -n "${page_token}" ]]; then
+              encoded_token="$(jq -nr --arg token "${page_token}" '$token|@uri')"
+              url="${url}&pageToken=${encoded_token}"
+            fi
+
+            response="$(curl --fail-with-body --silent --show-error \
+              --retry 3 \
+              --header "x-goog-api-key: ${JULES_API_KEY}" \
+              "${url}")"
+            source_name="$(jq -r \
+              --arg owner "${owner}" \
+              --arg repo "${repo}" \
+              '.sources[]? | select(.githubRepo.owner == $owner and .githubRepo.repo == $repo) | .name' \
+              <<<"${response}" | head -n 1)"
+            if [[ -n "${source_name}" ]]; then
+              break
+            fi
+
+            page_token="$(jq -r '.nextPageToken // empty' <<<"${response}")"
+            if [[ -z "${page_token}" ]]; then
+              break
+            fi
+          done
+
+          if [[ -z "${source_name}" ]]; then
+            echo "No Jules source is connected for ${REPOSITORY}." >&2
+            exit 1
+          fi
+
+          {
+            echo "name<<EOF"
+            echo "${source_name}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Start audit session
+        id: session
+        shell: bash
+        env:
+          SOURCE_NAME: ${{ steps.source.outputs.name }}
+        run: |
+          set -euo pipefail
+
+          prompt="$(cat <<EOF
+          Review the complete cumulative diff of ${STARTING_BRANCH} against ${BASE_BRANCH}. Use that pair only. Do not switch the baseline to another branch and do not open a promotion pull request to staging.
+
+          Apply the Jules scope checklist in AGENTS.md: correctness, accidental public API or Unity serialization breaks, missing .meta files, invalid assembly or package dependencies, unsafe optional-integration assumptions, Unity lifecycle issues, platform regressions, and documentation gaps.
+
+          Make a code change only when the correction is small, local, and unambiguous. Do not perform broad refactors, add unrelated dependencies, change package versions, create tags, or merge. Do not add tests merely to expand coverage. Describe larger or ambiguous findings in the session.
+
+          Automatic pull request mode is on. Leave any correction for the automatic pull request into ${STARTING_BRANCH}. Do not push directly to ${STARTING_BRANCH}, ${BASE_BRANCH}, main, staging, or agent/jules.
+          EOF
+          )"
+
+          payload="$(jq -n \
+            --arg prompt "${prompt}" \
+            --arg source "${SOURCE_NAME}" \
+            --arg branch "${STARTING_BRANCH}" \
+            --arg title "Audit ${STARTING_BRANCH} against ${BASE_BRANCH}" \
+            '{
+              prompt: $prompt,
+              title: $title,
+              sourceContext: {
+                source: $source,
+                githubRepoContext: {startingBranch: $branch}
+              },
+              requirePlanApproval: false,
+              automationMode: "AUTO_CREATE_PR"
+            }')"
+
+          response="$(curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Content-Type: application/json" \
+            --header "x-goog-api-key: ${JULES_API_KEY}" \
+            --data "${payload}" \
+            "${JULES_API_URL}/sessions")"
+          session_id="$(jq -r '.id // empty' <<<"${response}")"
+          session_url="$(jq -r '.url // empty' <<<"${response}")"
+
+          if [[ -z "${session_id}" ]]; then
+            echo "Jules did not return a session ID." >&2
+            exit 1
+          fi
+
+          {
+            echo "id=${session_id}"
+            echo "url<<EOF"
+            echo "${session_url}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Started Jules session ${session_id}."
+
+      - name: Mark audit requested
+        if: env.PR_NUMBER != ''
+        shell: bash
+        env:
+          SESSION_URL: ${{ steps.session.outputs.url }}
+          SESSION_ID: ${{ steps.session.outputs.id }}
+        run: |
+          set -euo pipefail
+
+          gh label create "jules:requested" \
+            --color "FBCA04" \
+            --description "Jules audit is running for this pull request" \
+            >/dev/null 2>&1 || true
+          gh label create "jules:complete" \
+            --color "0E8A16" \
+            --description "Jules audit session finished for this head" \
+            >/dev/null 2>&1 || true
+          gh pr edit "${PR_NUMBER}" --add-label "jules:requested" --remove-label "jules:complete" \
+            || gh pr edit "${PR_NUMBER}" --add-label "jules:requested" \
+            || echo "Could not label pull request ${PR_NUMBER}." >&2
+
+          gh pr comment "${PR_NUMBER}" --body "$(cat <<EOF
+          Jules audit started for \`${STARTING_BRANCH}\` against \`${BASE_BRANCH}\`.
+
+          - Session: ${SESSION_URL:-unavailable}
+          - Session ID: \`${SESSION_ID}\`
+          EOF
+          )" || echo "Could not comment on pull request ${PR_NUMBER}." >&2
+
+      - name: Wait for audit result
+        id: result
+        shell: bash
+        env:
+          SESSION_ID: ${{ steps.session.outputs.id }}
+          SESSION_URL: ${{ steps.session.outputs.url }}
+        run: |
+          set -euo pipefail
+
+          state="QUEUED"
+          response=""
+          for _ in $(seq 1 360); do
+            response="$(curl --fail-with-body --silent --show-error \
+              --retry 3 \
+              --header "x-goog-api-key: ${JULES_API_KEY}" \
+              "${JULES_API_URL}/sessions/${SESSION_ID}")"
+            state="$(jq -r '.state // "STATE_UNSPECIFIED"' <<<"${response}")"
+            echo "Jules session state: ${state}"
+
+            case "${state}" in
+              COMPLETED|FAILED|PAUSED|AWAITING_USER_FEEDBACK|AWAITING_PLAN_APPROVAL)
+                break
+                ;;
+            esac
+
+            sleep 30
+          done
+
+          pr_url="$(jq -r '[.outputs[]?.pullRequest.url // empty] | first // empty' <<<"${response}")"
+          resolved_url="$(jq -r '.url // empty' <<<"${response}")"
+          if [[ -z "${resolved_url}" ]]; then
+            resolved_url="${SESSION_URL}"
+          fi
+
+          {
+            echo "state=${state}"
+            echo "url<<EOF"
+            echo "${resolved_url}"
+            echo "EOF"
+            echo "pull_request<<EOF"
+            echo "${pr_url}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Stop superseded Jules session
+        if: cancelled() && steps.session.outputs.id != ''
+        shell: bash
+        env:
+          SESSION_ID: ${{ steps.session.outputs.id }}
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --request DELETE \
+            --header "x-goog-api-key: ${JULES_API_KEY}" \
+            "${JULES_API_URL}/sessions/${SESSION_ID}" \
+            || echo "Could not delete Jules session ${SESSION_ID}." >&2
+
+      - name: Publish audit result
+        if: steps.result.outputs.state != '' && !cancelled()
+        shell: bash
+        env:
+          STATE: ${{ steps.result.outputs.state }}
+          SESSION_URL: ${{ steps.result.outputs.url }}
+          SESSION_ID: ${{ steps.session.outputs.id }}
+          FIX_PULL_REQUEST: ${{ steps.result.outputs.pull_request }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${FIX_PULL_REQUEST}" ]]; then
+            fix_line="- Fix pull request: ${FIX_PULL_REQUEST}"
+          else
+            fix_line="- Fix pull request: none"
+          fi
+
+          summary="$(cat <<EOF
+          ### Jules audit
+
+          - Branch: \`${STARTING_BRANCH}\` against \`${BASE_BRANCH}\`
+          - Session: ${SESSION_URL:-unavailable}
+          - Session ID: \`${SESSION_ID}\`
+          - Final state: \`${STATE}\`
+          ${fix_line}
+
+          A completed session can still contain blocking findings. Read the Jules session before merging.
+          EOF
+          )"
+          printf '%s\n' "${summary}" >> "${GITHUB_STEP_SUMMARY}"
+
+          if [[ -n "${PR_NUMBER}" ]]; then
+            gh pr comment "${PR_NUMBER}" --body "${summary}" \
+              || echo "Could not comment on pull request ${PR_NUMBER}." >&2
+            if [[ "${STATE}" == "COMPLETED" ]]; then
+              gh pr edit "${PR_NUMBER}" --add-label "jules:complete" --remove-label "jules:requested" \
+                || gh pr edit "${PR_NUMBER}" --add-label "jules:complete" \
+                || echo "Could not label pull request ${PR_NUMBER}." >&2
+            fi
+          fi
+
+          if [[ "${STATE}" != "COMPLETED" ]]; then
+            echo "Jules audit did not complete successfully (state: ${STATE})." >&2
+            exit 1
+          fi
