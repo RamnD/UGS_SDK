@@ -163,9 +163,9 @@ jobs:
           set -euo pipefail
 
           prompt="$(cat <<EOF
-          Review the complete cumulative diff of ${STARTING_BRANCH} against ${BASE_BRANCH}.
+          Review the complete cumulative diff of ${STARTING_BRANCH} against ${BASE_BRANCH}. Use that pair only. Do not switch the baseline to another branch and do not open a promotion pull request to staging.
 
-          Follow the Jules scope in AGENTS.md. Look for correctness problems, accidental public API or Unity serialization breaks, missing .meta files, invalid assembly or package dependencies, unsafe optional-integration assumptions, Unity lifecycle issues, platform regressions, and documentation gaps.
+          Apply the Jules scope checklist in AGENTS.md: correctness, accidental public API or Unity serialization breaks, missing .meta files, invalid assembly or package dependencies, unsafe optional-integration assumptions, Unity lifecycle issues, platform regressions, and documentation gaps.
 
           Make a code change only when the correction is small, local, and unambiguous. Do not perform broad refactors, add unrelated dependencies, change package versions, create tags, or merge. Do not add tests merely to expand coverage. Describe larger or ambiguous findings in the session.
 
