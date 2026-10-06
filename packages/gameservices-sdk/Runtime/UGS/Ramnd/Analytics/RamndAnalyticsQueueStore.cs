@@ -81,22 +81,29 @@ internal sealed class RamndAnalyticsFileQueue : IRamndAnalyticsQueueStore
 
     public void Save(IReadOnlyList<Dictionary<string, object>> events)
     {
-        var snapshot = new Snapshot
+        try
         {
-            gateway = _gateway,
-            events = new List<Dictionary<string, object>>(events ?? Array.Empty<Dictionary<string, object>>()),
-        };
-        string json = JsonConvert.SerializeObject(snapshot, JsonSettings);
-        string directory = Path.GetDirectoryName(_path);
-        if (!string.IsNullOrEmpty(directory))
-            Directory.CreateDirectory(directory);
+            var snapshot = new Snapshot
+            {
+                gateway = _gateway,
+                events = new List<Dictionary<string, object>>(events ?? Array.Empty<Dictionary<string, object>>()),
+            };
+            string json = JsonConvert.SerializeObject(snapshot, JsonSettings);
+            string directory = Path.GetDirectoryName(_path);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
 
-        string tmp = _path + ".tmp";
-        File.WriteAllText(tmp, json);
-        if (File.Exists(_path))
-            File.Replace(tmp, _path, null);
-        else
-            File.Move(tmp, _path);
+            string tmp = _path + ".tmp";
+            File.WriteAllText(tmp, json);
+            if (File.Exists(_path))
+                File.Replace(tmp, _path, null);
+            else
+                File.Move(tmp, _path);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Analytics", $"Failed to save Ramnd queue: {ex.Message}");
+        }
     }
 
     sealed class Snapshot
