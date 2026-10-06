@@ -64,6 +64,7 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
             int dropped = TrimUnlocked();
             if (dropped > 0)
             {
+                PersistUnlocked();
                 AppLog.Warn("Analytics", $"Ramnd queue full — dropping {dropped} oldest event(s).");
             }
 
@@ -98,6 +99,7 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
             {
                 _queue.Add(row);
                 int dropped = TrimUnlocked();
+                PersistUnlocked();
                 if (dropped > 0)
                 {
                     AppLog.Warn(
