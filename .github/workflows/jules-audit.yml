@@ -1,0 +1,179 @@
+name: Jules audit
+
+on:
+  push:
+    branches:
+      - agent/jules
+    paths:
+      - .github/workflows/jules-audit.yml
+  workflow_dispatch:
+    inputs:
+      starting_branch:
+        description: Branch Jules should audit
+        required: true
+        default: agent/jules
+        type: string
+      base_branch:
+        description: Branch used as the review baseline
+        required: true
+        default: staging
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jules-audit-${{ inputs.starting_branch || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Audit with Jules
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      JULES_API_URL: https://jules.googleapis.com/v1alpha
+      JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+
+    steps:
+      - name: Validate configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${JULES_API_KEY}" ]]; then
+            echo "JULES_API_KEY is not configured." >&2
+            exit 1
+          fi
+
+      - name: Resolve Jules source
+        id: source
+        shell: bash
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          owner="${REPOSITORY%%/*}"
+          repo="${REPOSITORY#*/}"
+          response="$(curl --fail-with-body --silent --show-error \
+            --retry 3 \
+            --header "x-goog-api-key: ${JULES_API_KEY}" \
+            "${JULES_API_URL}/sources?pageSize=100")"
+          source_name="$(jq -r \
+            --arg owner "${owner}" \
+            --arg repo "${repo}" \
+            '.sources[]? | select(.githubRepo.owner == $owner and .githubRepo.repo == $repo) | .name' \
+            <<<"${response}" | head -n 1)"
+
+          if [[ -z "${source_name}" ]]; then
+            echo "No Jules source is connected for ${REPOSITORY}." >&2
+            exit 1
+          fi
+
+          echo "name=${source_name}" >> "${GITHUB_OUTPUT}"
+
+      - name: Start audit session
+        id: session
+        shell: bash
+        env:
+          SOURCE_NAME: ${{ steps.source.outputs.name }}
+          STARTING_BRANCH: ${{ inputs.starting_branch || github.ref_name }}
+          BASE_BRANCH: ${{ inputs.base_branch || 'staging' }}
+        run: |
+          set -euo pipefail
+
+          prompt="$(cat <<EOF
+          Review the complete cumulative diff of ${STARTING_BRANCH} against ${BASE_BRANCH}.
+
+          Follow AGENTS.md, including the Jules scope and package compatibility rules. Look for correctness problems, accidental public API or Unity serialization breaks, missing .meta files, invalid assembly or package dependencies, unsafe optional-integration assumptions, Unity lifecycle issues, platform regressions, and documentation gaps.
+
+          Make changes only when a correction is small, local, and unambiguous. Do not perform broad refactors, add unrelated dependencies, change package versions, create tags, modify protected branches, or merge. Do not add tests merely to expand coverage; report larger or ambiguous findings instead. If you make corrections, create a separate pull request targeting ${STARTING_BRANCH}.
+          EOF
+          )"
+
+          payload="$(jq -n \
+            --arg prompt "${prompt}" \
+            --arg source "${SOURCE_NAME}" \
+            --arg branch "${STARTING_BRANCH}" \
+            --arg title "Audit ${STARTING_BRANCH} against ${BASE_BRANCH}" \
+            '{
+              prompt: $prompt,
+              title: $title,
+              sourceContext: {
+                source: $source,
+                githubRepoContext: {startingBranch: $branch}
+              },
+              requirePlanApproval: false,
+              automationMode: "AUTO_CREATE_PR"
+            }')"
+
+          response="$(curl --fail-with-body --silent --show-error \
+            --retry 3 \
+            --request POST \
+            --header "Content-Type: application/json" \
+            --header "x-goog-api-key: ${JULES_API_KEY}" \
+            --data "${payload}" \
+            "${JULES_API_URL}/sessions")"
+          session_id="$(jq -r '.id // empty' <<<"${response}")"
+          session_url="$(jq -r '.url // empty' <<<"${response}")"
+
+          if [[ -z "${session_id}" ]]; then
+            echo "Jules did not return a session ID." >&2
+            exit 1
+          fi
+
+          echo "id=${session_id}" >> "${GITHUB_OUTPUT}"
+          echo "url=${session_url}" >> "${GITHUB_OUTPUT}"
+          echo "Started Jules session ${session_id}."
+
+      - name: Wait for audit result
+        id: result
+        shell: bash
+        env:
+          SESSION_ID: ${{ steps.session.outputs.id }}
+          SESSION_URL: ${{ steps.session.outputs.url }}
+        run: |
+          set -euo pipefail
+
+          state="QUEUED"
+          response=""
+          for _ in $(seq 1 360); do
+            response="$(curl --fail-with-body --silent --show-error \
+              --retry 3 \
+              --header "x-goog-api-key: ${JULES_API_KEY}" \
+              "${JULES_API_URL}/sessions/${SESSION_ID}")"
+            state="$(jq -r '.state // "STATE_UNSPECIFIED"' <<<"${response}")"
+            echo "Jules session state: ${state}"
+
+            case "${state}" in
+              COMPLETED|FAILED|PAUSED|AWAITING_USER_FEEDBACK|AWAITING_PLAN_APPROVAL)
+                break
+                ;;
+            esac
+
+            sleep 30
+          done
+
+          pr_url="$(jq -r '[.outputs[]?.pullRequest.url // empty] | first // empty' <<<"${response}")"
+          resolved_url="$(jq -r '.url // empty' <<<"${response}")"
+          if [[ -z "${resolved_url}" ]]; then
+            resolved_url="${SESSION_URL}"
+          fi
+
+          {
+            echo "### Jules audit"
+            echo
+            echo "- Session: ${resolved_url:-unavailable}"
+            echo "- Session ID: \`${SESSION_ID}\`"
+            echo "- Final state: \`${state}\`"
+            if [[ -n "${pr_url}" ]]; then
+              echo "- Pull request: ${pr_url}"
+            else
+              echo "- Pull request: none"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          if [[ "${state}" != "COMPLETED" ]]; then
+            echo "Jules audit did not complete successfully (state: ${state})." >&2
+            exit 1
+          fi
