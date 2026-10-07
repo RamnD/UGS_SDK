@@ -169,6 +169,8 @@ jobs:
 
           Make a code change only when the correction is small, local, and unambiguous. Do not perform broad refactors, add unrelated dependencies, change package versions, create tags, or merge. Do not add tests merely to expand coverage. Describe larger or ambiguous findings in the session.
 
+          This is an unattended audit. Never ask for plan approval or end with a question. Verify every proposed correction against the current HEAD before changing code. Fix only issues introduced by the reviewed diff. For pre-existing, unrelated, environmental, risky, or ambiguous issues, do not change the repository: record a finding or blocker and continue. If a public API, package layout, dependency, serialization contract, platform policy, or other high-risk decision would be required, leave a blocking finding and complete the audit without that change. If no directly related correction is required, complete the session with no code changes.
+
           Automatic pull request mode is on. Leave any correction for the automatic pull request into ${STARTING_BRANCH}. Do not push directly to ${STARTING_BRANCH}, ${BASE_BRANCH}, main, staging, or agent/jules.
           EOF
           )"
@@ -228,7 +230,11 @@ jobs:
             --color "0E8A16" \
             --description "Jules audit session finished for this head" \
             >/dev/null 2>&1 || true
-          gh pr edit "${PR_NUMBER}" --add-label "jules:requested" --remove-label "jules:complete" \
+          gh label create "jules:needs-feedback" \
+            --color "D93F0B" \
+            --description "Jules could not finish without human input" \
+            >/dev/null 2>&1 || true
+          gh pr edit "${PR_NUMBER}" --add-label "jules:requested" --remove-label "jules:complete,jules:needs-feedback" \
             || gh pr edit "${PR_NUMBER}" --add-label "jules:requested" \
             || echo "Could not label pull request ${PR_NUMBER}." >&2
 
@@ -251,6 +257,9 @@ jobs:
 
           state="QUEUED"
           response=""
+          feedback_resumes=0
+          plan_approvals=0
+          reached_terminal_state=false
           for _ in $(seq 1 360); do
             response="$(curl --fail-with-body --silent --show-error \
               --retry 3 \
@@ -260,13 +269,65 @@ jobs:
             echo "Jules session state: ${state}"
 
             case "${state}" in
-              COMPLETED|FAILED|PAUSED|AWAITING_USER_FEEDBACK|AWAITING_PLAN_APPROVAL)
+              COMPLETED|FAILED)
+                reached_terminal_state=true
                 break
+                ;;
+              PAUSED)
+                state="DROPPED_NEEDS_HUMAN"
+                reached_terminal_state=true
+                break
+                ;;
+              AWAITING_PLAN_APPROVAL)
+                if (( plan_approvals == 0 )); then
+                  echo "Unexpected plan approval request; approving once."
+                  curl --fail-with-body --silent --show-error \
+                    --request POST \
+                    --header "Content-Type: application/json" \
+                    --header "x-goog-api-key: ${JULES_API_KEY}" \
+                    --data '{}' \
+                    "${JULES_API_URL}/sessions/${SESSION_ID}:approvePlan"
+                  plan_approvals=1
+                else
+                  state="DROPPED_NEEDS_HUMAN"
+                  reached_terminal_state=true
+                  break
+                fi
+                ;;
+              AWAITING_USER_FEEDBACK)
+                if (( feedback_resumes == 0 )); then
+                  echo "Jules requested feedback; sending the unattended-audit policy once."
+                  resume_prompt="This audit is unattended. Do not ask for plan approval or confirmation. Re-check every proposed correction against the current HEAD. Fix only small, directly related, unambiguous issues introduced by the reviewed diff. For pre-existing, unrelated, environmental, risky, or ambiguous issues, do not modify the repository: record a finding or blocker and continue. Complete the audit without further user feedback. If no directly related correction is required, finish with no code changes."
+                  payload="$(jq -n --arg prompt "${resume_prompt}" '{prompt: $prompt}')"
+                  curl --fail-with-body --silent --show-error \
+                    --request POST \
+                    --header "Content-Type: application/json" \
+                    --header "x-goog-api-key: ${JULES_API_KEY}" \
+                    --data "${payload}" \
+                    "${JULES_API_URL}/sessions/${SESSION_ID}:sendMessage"
+                  feedback_resumes=1
+                else
+                  state="DROPPED_NEEDS_HUMAN"
+                  reached_terminal_state=true
+                  break
+                fi
                 ;;
             esac
 
             sleep 30
           done
+
+          if [[ "${reached_terminal_state}" != "true" ]]; then
+            state="TIMED_OUT"
+          fi
+
+          if [[ "${state}" == "DROPPED_NEEDS_HUMAN" || "${state}" == "TIMED_OUT" ]]; then
+            curl --fail-with-body --silent --show-error \
+              --request DELETE \
+              --header "x-goog-api-key: ${JULES_API_KEY}" \
+              "${JULES_API_URL}/sessions/${SESSION_ID}" \
+              || echo "Could not delete Jules session ${SESSION_ID}." >&2
+          fi
 
           pr_url="$(jq -r '[.outputs[]?.pullRequest.url // empty] | first // empty' <<<"${response}")"
           resolved_url="$(jq -r '.url // empty' <<<"${response}")"
@@ -276,6 +337,7 @@ jobs:
 
           {
             echo "state=${state}"
+            echo "feedback_resumes=${feedback_resumes}"
             echo "url<<EOF"
             echo "${resolved_url}"
             echo "EOF"
@@ -304,6 +366,7 @@ jobs:
           SESSION_URL: ${{ steps.result.outputs.url }}
           SESSION_ID: ${{ steps.session.outputs.id }}
           FIX_PULL_REQUEST: ${{ steps.result.outputs.pull_request }}
+          FEEDBACK_RESUMES: ${{ steps.result.outputs.feedback_resumes }}
         run: |
           set -euo pipefail
 
@@ -320,6 +383,7 @@ jobs:
           - Session: ${SESSION_URL:-unavailable}
           - Session ID: \`${SESSION_ID}\`
           - Final state: \`${STATE}\`
+          - Automatic feedback resumes: \`${FEEDBACK_RESUMES}\`
           ${fix_line}
 
           A completed session can still contain blocking findings. Read the Jules session before merging.
@@ -331,13 +395,19 @@ jobs:
             gh pr comment "${PR_NUMBER}" --body "${summary}" \
               || echo "Could not comment on pull request ${PR_NUMBER}." >&2
             if [[ "${STATE}" == "COMPLETED" ]]; then
-              gh pr edit "${PR_NUMBER}" --add-label "jules:complete" --remove-label "jules:requested" \
+              gh pr edit "${PR_NUMBER}" --add-label "jules:complete" --remove-label "jules:requested,jules:needs-feedback" \
                 || gh pr edit "${PR_NUMBER}" --add-label "jules:complete" \
+                || echo "Could not label pull request ${PR_NUMBER}." >&2
+            elif [[ "${STATE}" == "DROPPED_NEEDS_HUMAN" ]]; then
+              gh pr edit "${PR_NUMBER}" --add-label "jules:needs-feedback" --remove-label "jules:requested,jules:complete" \
+                || gh pr edit "${PR_NUMBER}" --add-label "jules:needs-feedback" \
                 || echo "Could not label pull request ${PR_NUMBER}." >&2
             fi
           fi
 
-          if [[ "${STATE}" != "COMPLETED" ]]; then
+          if [[ "${STATE}" == "DROPPED_NEEDS_HUMAN" ]]; then
+            echo "Jules audit was dropped after repeated requests for human input."
+          elif [[ "${STATE}" != "COMPLETED" ]]; then
             echo "Jules audit did not complete successfully (state: ${STATE})." >&2
             exit 1
           fi
