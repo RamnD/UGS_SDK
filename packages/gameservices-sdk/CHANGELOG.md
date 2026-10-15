@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.4.0] - 2026-10-06
+
+### Added
+- **Ramnd analytics disk queue.** Envelopes are frozen at `LogEvent` and kept in `ramnd-analytics-queue.json` under `Application.persistentDataPath` until the gateway accepts them. The file is stamped with the gateway base URL, so a staging queue is not sent to production. An offline session or a failed ingest is retried on the next launch, when the network returns, and on `Flush()`. One failed attempt ends that drain. The cap is 500 events; older events past the cap are dropped. HTTP 400 with a `rejected` list drops those envelopes. A 400 without that list, 401, 429, and 5xx stay queued.
+
 ## [2.3.5] - 2026-09-29
 
 ### Fixed
