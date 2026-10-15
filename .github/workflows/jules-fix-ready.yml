@@ -1,0 +1,58 @@
+name: Advance merged Jules fixes
+
+on:
+  pull_request_target:
+    types:
+      - closed
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  ready:
+    name: Advance audited pull request to Codex
+    if: >-
+      github.event.pull_request.merged == true &&
+      (
+        github.event.pull_request.user.login == 'google-labs-jules[bot]' ||
+        github.event.pull_request.user.login == 'google-labs-jules'
+      )
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      TASK_BRANCH: ${{ github.event.pull_request.base.ref }}
+      INTEGRATION_BRANCH: agent/jules
+    steps:
+      - name: Mark the audited pull request ready
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          candidates="$(gh pr list \
+            --repo "${REPOSITORY}" \
+            --state open \
+            --head "${TASK_BRANCH}" \
+            --base "${INTEGRATION_BRANCH}" \
+            --json number,isDraft,labels)"
+
+          pr_number="$(jq -r '
+            [
+              .[]
+              | select(.isDraft == true)
+              | select(any(.labels[]?; .name == "jules:awaiting-fix"))
+              | .number
+            ]
+            | if length == 1 then .[0] else empty end
+          ' <<<"${candidates}")"
+
+          if [[ -z "${pr_number}" ]]; then
+            echo "No unique draft pull request is waiting for Jules fixes from ${TASK_BRANCH}."
+            exit 0
+          fi
+
+          gh pr edit "${pr_number}" --repo "${REPOSITORY}" --remove-label "jules:awaiting-fix"
+          gh pr comment "${pr_number}" --repo "${REPOSITORY}" --body "Jules correction PR #${{ github.event.pull_request.number }} was merged. Advancing this pull request to Codex review."
+          gh pr ready "${pr_number}" --repo "${REPOSITORY}"
