@@ -99,7 +99,6 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
             {
                 _queue.Add(row);
                 int dropped = TrimUnlocked();
-                PersistUnlocked();
                 if (dropped > 0)
                 {
                     AppLog.Warn(
