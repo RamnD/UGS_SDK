@@ -81,14 +81,15 @@ The intended flow is:
 
 1. A developer opens a draft PR from a focused task branch to protected `agent/jules`; only a human merges task PRs into that integration branch.
 2. On the configured schedule, Google Jules audits the cumulative `origin/staging...HEAD` diff from `agent/jules`. It is an additional reviewer rather than a test author. It may make small, directly related corrections on its own temporary branch and create a PR back into `agent/jules`; it never merges that PR.
-3. After Jules' PR is accepted by a human, create or update one draft promotion PR with head `agent/jules` and base `staging`. Do not open duplicate promotion PRs.
-4. Repository CI and any available Unity/package validation run on the promotion PR head.
-5. Codex reviews the complete cumulative promotion diff after Jules, including package architecture, public compatibility, Unity lifecycle/platform behavior, documentation, and Jules' edits. It approves or requests changes for that exact head SHA.
-6. Every new commit makes earlier automated review state stale. Re-run required checks and final Codex review; return to Jules only when the change affects behavior that requires another pass, and avoid automatic bot-to-bot loops.
-7. Only the human maintainer may approve and merge the promotion PR into `staging`.
-8. After promotion, keep `agent/jules` based on the resulting `staging` history before accepting the next batch. Prefer a merge commit for the promotion or sync `staging` back through a reviewed PR; agents must not force-reset the integration branch.
-9. A release PR from protected `staging` to protected `main` carries version and changelog changes. Codex reviews it, and only the human maintainer may approve and merge it.
-10. Trusted release automation may create the tag only after merge into `main`.
+3. When Jules completes without a correction, automation closes any empty Jules PR and marks the audited task PR ready so the configured Codex GitHub review runs on the final head. When Jules creates a real correction PR, the task PR stays draft with `jules:awaiting-fix`; merging that correction marks the task PR ready. A Jules failure or request for feedback leaves it draft.
+4. After the ready task PR passes Codex review and is accepted by a human into `agent/jules`, create or update one draft promotion PR with head `agent/jules` and base `staging`. Do not open duplicate promotion PRs.
+5. Repository CI and any available Unity/package validation run on the promotion PR head.
+6. Codex reviews the complete cumulative promotion diff after Jules, including package architecture, public compatibility, Unity lifecycle/platform behavior, documentation, and Jules' edits. It approves or requests changes for that exact head SHA.
+7. Every new commit makes earlier automated review state stale. Re-run required checks and final Codex review; return to Jules only when the change affects behavior that requires another pass, and avoid automatic bot-to-bot loops.
+8. Only the human maintainer may approve and merge the promotion PR into `staging`.
+9. After promotion, keep `agent/jules` based on the resulting `staging` history before accepting the next batch. Prefer a merge commit for the promotion or sync `staging` back through a reviewed PR; agents must not force-reset the integration branch.
+10. A release PR from protected `staging` to protected `main` carries version and changelog changes. Codex reviews it, and only the human maintainer may approve and merge it.
+11. Trusted release automation may create the tag only after merge into `main`.
 
 ### Jules scope
 

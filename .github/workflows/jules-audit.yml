@@ -411,3 +411,46 @@ jobs:
             echo "Jules audit did not complete successfully (state: ${STATE})." >&2
             exit 1
           fi
+
+      - name: Advance completed audit to Codex review
+        if: >-
+          github.event_name == 'pull_request_target' &&
+          steps.result.outputs.state == 'COMPLETED' &&
+          github.event.pull_request.draft
+        shell: bash
+        env:
+          FIX_PULL_REQUEST: ${{ steps.result.outputs.pull_request }}
+        run: |
+          set -euo pipefail
+
+          gh label create "jules:awaiting-fix" \
+            --color "5319E7" \
+            --description "Waiting for the Jules correction pull request to be merged" \
+            >/dev/null 2>&1 || true
+
+          if [[ -n "${FIX_PULL_REQUEST}" ]]; then
+            fix_number="${FIX_PULL_REQUEST##*/}"
+            if [[ ! "${fix_number}" =~ ^[0-9]+$ ]]; then
+              echo "Could not resolve the Jules pull request number from ${FIX_PULL_REQUEST}." >&2
+              exit 1
+            fi
+
+            fix_json="$(gh pr view "${fix_number}" --json author,changedFiles,state)"
+            fix_author="$(jq -r '.author.login // empty' <<<"${fix_json}")"
+            changed_files="$(jq -r '.changedFiles // -1' <<<"${fix_json}")"
+
+            if [[
+              ( "${fix_author}" == "google-labs-jules" || "${fix_author}" == "google-labs-jules[bot]" ) &&
+              "${changed_files}" == "0"
+            ]]; then
+              gh pr close "${fix_number}" --comment "Closing this empty Jules correction PR. The audited pull request will now advance to Codex review."
+              gh pr comment "${PR_NUMBER}" --body "Jules completed without file changes. Closed empty correction PR #${fix_number}; advancing this pull request to Codex review."
+            else
+              gh pr edit "${PR_NUMBER}" --add-label "jules:awaiting-fix"
+              gh pr comment "${PR_NUMBER}" --body "Jules created correction PR #${fix_number}. This pull request will remain a draft until that correction PR is merged."
+              exit 0
+            fi
+          fi
+
+          gh pr edit "${PR_NUMBER}" --remove-label "jules:awaiting-fix" || true
+          gh pr ready "${PR_NUMBER}"
