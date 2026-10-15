@@ -102,7 +102,7 @@ internal sealed class RamndAnalyticsFileQueue : IRamndAnalyticsQueueStore
         }
         catch (Exception ex)
         {
-            AppLog.Error("Analytics", $"Failed to save Ramnd queue: {ex.Message}");
+            AppLog.Error("Analytics", $"Ramnd queue file write failed: {ex.Message}");
         }
     }
 
