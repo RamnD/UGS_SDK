@@ -129,6 +129,26 @@ public class RamndAnalyticsTests
     }
 
     [Test]
+    public async Task LogEvent_CheckpointsBeforeDispose_SoAKilledSessionCanReplay()
+    {
+        var store = new MemoryQueueStore();
+        var first = CreateSystem(new FakeTransport { StatusCode = 503 }, store);
+        first.LogEvent(new SampleEvent("1.2.3", true));
+
+        Assert.That(store.Count, Is.EqualTo(1));
+        first.Dispose();
+
+        var secondTransport = new FakeTransport { StatusCode = 200 };
+        var second = CreateSystem(secondTransport, store);
+        await second.FlushAsync();
+
+        Assert.That(secondTransport.Bodies.Count, Is.EqualTo(1));
+        Assert.That(secondTransport.Bodies[0], Does.Contain("1.2.3"));
+        Assert.That(store.Count, Is.EqualTo(0));
+        second.Dispose();
+    }
+
+    [Test]
     public async Task Flush_OnTransportFailure_DoesNotSpinRetryLoop()
     {
         var transport = new FakeTransport { StatusCode = 503 };
@@ -264,9 +284,145 @@ public class RamndAnalyticsTests
         string dir = CreateTempDir();
         try
         {
-            File.WriteAllText(Path.Combine(dir, "ramnd-analytics-queue.json"), "{not json");
+            File.WriteAllText(Path.Combine(dir, RamndAnalyticsFileQueue.FileName), "{not json");
             var store = new RamndAnalyticsFileQueue(dir, "http://localhost:3000");
             Assert.That(store.Load().Count, Is.EqualTo(0));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    public void FileQueue_AppendsNewEventsUntilARemovalCompactsTheSnapshot()
+    {
+        string dir = CreateTempDir();
+        try
+        {
+            const string gateway = "http://localhost:3000";
+            var store = new RamndAnalyticsFileQueue(dir, gateway);
+            var first = EventRow("11111111-1111-4111-8111-111111111111");
+            var second = EventRow("22222222-2222-4222-8222-222222222222");
+
+            store.Save(new[] { first });
+            store.Save(new[] { first });
+            store.Save(new[] { first, second });
+
+            string snapshotPath = Path.Combine(dir, RamndAnalyticsFileQueue.FileName);
+            string journalPath = Path.Combine(dir, RamndAnalyticsFileQueue.JournalFileName);
+            Assert.That(File.Exists(snapshotPath), Is.False);
+            Assert.That(JournalLineCount(journalPath), Is.EqualTo(2));
+
+            var appended = store.Load();
+            Assert.That(appended.Count, Is.EqualTo(2));
+            Assert.That(appended[0]["event_id"].ToString(), Is.EqualTo(first["event_id"]));
+            Assert.That(appended[1]["event_timestamp"].ToString(), Does.Contain("2026-09-28"));
+
+            string staleJournal = File.ReadAllText(journalPath);
+            store.Save(new[] { second });
+
+            Assert.That(File.Exists(snapshotPath), Is.True);
+            Assert.That(File.Exists(journalPath), Is.False);
+            var compacted = store.Load();
+            Assert.That(compacted.Count, Is.EqualTo(1));
+            Assert.That(compacted[0]["event_id"].ToString(), Is.EqualTo(second["event_id"]));
+
+            File.WriteAllText(journalPath, staleJournal);
+            var reloaded = new RamndAnalyticsFileQueue(dir, gateway).Load();
+            Assert.That(reloaded.Count, Is.EqualTo(1));
+            Assert.That(reloaded[0]["event_id"].ToString(), Is.EqualTo(second["event_id"]));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    public void FileQueue_UnreadableSnapshot_KeepsJournalEventsAndRepairsOnSave()
+    {
+        string dir = CreateTempDir();
+        try
+        {
+            const string gateway = "http://localhost:3000";
+            var row = EventRow("66666666-6666-4666-8666-666666666666");
+            var store = new RamndAnalyticsFileQueue(dir, gateway);
+            store.Save(new[] { row });
+            File.WriteAllText(Path.Combine(dir, RamndAnalyticsFileQueue.FileName), "{not json");
+
+            var recovered = new RamndAnalyticsFileQueue(dir, gateway);
+            var loaded = recovered.Load();
+            Assert.That(loaded.Count, Is.EqualTo(1));
+            Assert.That(loaded[0]["event_id"].ToString(), Is.EqualTo(row["event_id"]));
+
+            recovered.Save(loaded);
+            Assert.That(File.Exists(Path.Combine(dir, RamndAnalyticsFileQueue.JournalFileName)), Is.False);
+
+            var again = new RamndAnalyticsFileQueue(dir, gateway).Load();
+            Assert.That(again.Count, Is.EqualTo(1));
+            Assert.That(again[0]["event_id"].ToString(), Is.EqualTo(row["event_id"]));
+            Assert.That(again[0]["event_timestamp"].ToString(), Does.Contain("2026-09-28"));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    public void FileQueue_TornJournalLine_DoesNotDropEarlierEvents()
+    {
+        string dir = CreateTempDir();
+        try
+        {
+            const string gateway = "http://localhost:3000";
+            var store = new RamndAnalyticsFileQueue(dir, gateway);
+            var row = EventRow("33333333-3333-4333-8333-333333333333");
+            store.Save(new[] { row });
+            File.AppendAllText(
+                Path.Combine(dir, RamndAnalyticsFileQueue.JournalFileName),
+                "{\"gateway\":\"http://localhost:3000\",\"generation\":0,\"event\":");
+
+            var loaded = new RamndAnalyticsFileQueue(dir, gateway).Load();
+            Assert.That(loaded.Count, Is.EqualTo(1));
+            Assert.That(loaded[0]["event_id"].ToString(), Is.EqualTo(row["event_id"]));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    public void FileQueue_LegacySnapshotWithoutGeneration_AcceptsAppendedEvents()
+    {
+        string dir = CreateTempDir();
+        try
+        {
+            const string gateway = "http://localhost:3000";
+            string legacyId = "44444444-4444-4444-8444-444444444444";
+            File.WriteAllText(
+                Path.Combine(dir, RamndAnalyticsFileQueue.FileName),
+                "{\"gateway\":\"" + gateway + "\",\"events\":[{\"event_id\":\"" + legacyId +
+                "\",\"event_name\":\"app_session_start\",\"event_timestamp\":\"2026-09-28T12:00:00.000Z\"}]}");
+
+            var otherGateway = new RamndAnalyticsFileQueue(dir, "http://prod.example");
+            Assert.That(otherGateway.Load().Count, Is.EqualTo(0));
+            Assert.That(File.Exists(Path.Combine(dir, RamndAnalyticsFileQueue.FileName)), Is.True);
+
+            var store = new RamndAnalyticsFileQueue(dir, gateway);
+            var loaded = store.Load();
+            Assert.That(loaded.Count, Is.EqualTo(1));
+
+            var extra = EventRow("55555555-5555-4555-8555-555555555555");
+            var combined = new List<Dictionary<string, object>>(loaded) { extra };
+            store.Save(combined);
+
+            var again = new RamndAnalyticsFileQueue(dir, gateway).Load();
+            Assert.That(again.Count, Is.EqualTo(2));
+            Assert.That(again[0]["event_id"].ToString(), Is.EqualTo(legacyId));
+            Assert.That(again[1]["event_id"].ToString(), Is.EqualTo(extra["event_id"]));
         }
         finally
         {
@@ -310,6 +466,26 @@ public class RamndAnalyticsTests
         }
 
         return false;
+    }
+
+    static Dictionary<string, object> EventRow(string eventId) =>
+        new Dictionary<string, object>
+        {
+            ["event_id"] = eventId,
+            ["event_name"] = "app_session_start",
+            ["event_timestamp"] = "2026-09-28T12:00:00.000Z",
+        };
+
+    static int JournalLineCount(string path)
+    {
+        int count = 0;
+        foreach (string line in File.ReadAllText(path).Split('\n'))
+        {
+            if (!string.IsNullOrWhiteSpace(line))
+                count++;
+        }
+
+        return count;
     }
 
     static string CreateTempDir()
