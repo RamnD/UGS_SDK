@@ -344,6 +344,63 @@ public class RamndAnalyticsTests
     }
 
     [Test]
+    public async Task FullBatch_DuringBackoff_DoesNotPostUntilRetryIsDue()
+    {
+        var delays = new ScriptedDelay();
+        var transport = new FakeTransport { StatusCode = 503 };
+        var store = new MemoryQueueStore();
+        var system = CreateSystem(transport, store, delay: delays.Wait, maxBatchSize: 1);
+
+        system.LogEvent(new SampleEvent("one", true));
+        await WaitUntil(() => transport.Bodies.Count == 1 && delays.Started == 1);
+
+        system.LogEvent(new SampleEvent("two", false));
+        system.LogEvent(new SampleEvent("three", false));
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(1), "A full batch must not bypass backoff");
+        Assert.That(delays.Started, Is.EqualTo(1), "One scheduled retry, not one per event");
+        Assert.That(store.Count, Is.EqualTo(3), "Failed events stay queued");
+
+        delays.ReleaseOne();
+        await WaitUntil(() => transport.Bodies.Count == 2 && delays.Started == 2);
+
+        Assert.That(store.Count, Is.EqualTo(3));
+
+        system.LogEvent(new SampleEvent("four", false));
+        Assert.That(transport.Bodies.Count, Is.EqualTo(2));
+        Assert.That(store.Count, Is.EqualTo(4));
+
+        system.Flush();
+        await WaitUntil(() => transport.Bodies.Count == 3 && delays.Started == 3);
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(3), "Explicit Flush overrides backoff");
+        Assert.That(store.Count, Is.EqualTo(4));
+        system.Dispose();
+    }
+
+    [Test]
+    public async Task FullBatch_WhileOffline_DoesNotPostUntilExplicitFlush()
+    {
+        var transport = new FakeTransport { StatusCode = 503 };
+        var store = new MemoryQueueStore();
+        bool online = false;
+        var system = CreateSystem(transport, store, maxBatchSize: 1, isOnline: () => online);
+
+        system.LogEvent(new SampleEvent("one", true));
+        system.LogEvent(new SampleEvent("two", false));
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(0));
+        Assert.That(store.Count, Is.EqualTo(2));
+
+        online = true;
+        system.Flush();
+        await WaitUntil(() => transport.Bodies.Count == 1);
+
+        Assert.That(store.Count, Is.EqualTo(2), "A failed explicit flush still keeps the queue");
+        system.Dispose();
+    }
+
+    [Test]
     public async Task PeriodicFlush_SendsBeforeBatchIsFull()
     {
         var delays = new ScriptedDelay();
@@ -405,19 +462,22 @@ public class RamndAnalyticsTests
         IRamndAnalyticsTransport transport,
         IRamndAnalyticsQueueStore store,
         TimeSpan? flushInterval = null,
-        Func<TimeSpan, CancellationToken, Task> delay = null) =>
+        Func<TimeSpan, CancellationToken, Task> delay = null,
+        int maxBatchSize = 500,
+        Func<bool> isOnline = null) =>
         new RamndAnalyticSystem(
             new RamndAnalyticsConfig(
                 "http://localhost:3000",
                 "dev-maze-key",
-                flushInterval: flushInterval ?? TimeSpan.Zero),
+                maxBatchSize,
+                flushInterval ?? TimeSpan.Zero),
             transport,
             "install-test",
             "EDITOR",
             "p1",
             store,
             delay,
-            () => true);
+            isOnline ?? (() => true));
 
     static async Task WaitUntil(Func<bool> condition)
     {

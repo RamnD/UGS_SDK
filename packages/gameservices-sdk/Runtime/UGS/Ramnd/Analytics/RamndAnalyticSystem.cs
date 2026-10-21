@@ -11,6 +11,7 @@ using UnityEngine;
 /// Envelopes are frozen at <see cref="LogEvent{T}"/> and kept on disk until the gateway accepts them.
 /// While online, a non-empty queue is sent on <see cref="RamndAnalyticsConfig.FlushInterval"/>,
 /// on <see cref="Flush"/>, when the network returns, and again after a failed attempt (backoff).
+/// A full batch is an automatic flush: it waits for that backoff and for the device to be online.
 /// </summary>
 public sealed class RamndAnalyticSystem : IAnalyticsSystem
 {
@@ -137,7 +138,9 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
                         $"Ramnd queue full — dropping {dropped} oldest event(s).");
                 }
 
-                if (_queue.Count >= _config.MaxBatchSize)
+                // Automatic, same as the timer. Explicit Flush / pause / quit / network return
+                // clear the deadline and call FlushAsync, so they still send immediately.
+                if (_queue.Count >= _config.MaxBatchSize && IsAutomaticFlushDueUnlocked())
                     StartFlushUnlocked();
             }
         }
@@ -217,6 +220,13 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
             return;
         Flush();
     }
+
+    /// <summary>
+    /// True when an automatic trigger (timer or a full batch) may start a drain.
+    /// Caller holds <see cref="_gate"/>. Does not apply to explicit <see cref="Flush"/>.
+    /// </summary>
+    bool IsAutomaticFlushDueUnlocked() =>
+        !_disposed && _isOnline() && DateTime.UtcNow >= _nextRetryUtc;
 
     void StartFlushUnlocked()
     {
@@ -490,12 +500,12 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
                 return;
             }
 
-            if (_disposed || !_isOnline())
+            if (_disposed)
                 continue;
 
             bool due;
             lock (_gate)
-                due = DateTime.UtcNow >= _nextRetryUtc;
+                due = IsAutomaticFlushDueUnlocked();
             if (due)
                 StartPeriodicFlush();
         }

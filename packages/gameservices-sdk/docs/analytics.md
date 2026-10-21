@@ -103,7 +103,7 @@ RamnD events include envelope fields (`event_id`, `event_timestamp`, `user_id`, 
 
 HTTP **200** removes the batch. HTTP **207** is partial: events listed in `rejected` are dropped (unknown event, bad envelope, duplicate id in the batch) and the rest of that batch is confirmed. A **207** without a `rejected` list stays queued and is retried; the gateway dedupes anything it already stored. HTTP **400** with a `rejected` list drops those envelopes. A **400** without that list (unknown app, bad body), **401**, **429**, and **5xx** stay queued.
 
-Pending RamnD envelopes are stored in `ramnd-analytics-queue.json` under `Application.persistentDataPath`, stamped with the gateway base URL. A file written for a different gateway is not sent. The queue survives process exit. While online, a non-empty queue is sent every 15 seconds (`RamndAnalyticsConfig.FlushInterval`; `TimeSpan.Zero` turns the timer off). It is also sent on the next launch, when `NetworkStatus` comes back online, and on `Flush()` (pause / quit). A failed attempt does not spin: the same drain stops, then one retry is scheduled with backoff and jitter from 2 seconds up to 60 seconds. Pause, quit, and a network return still send immediately. The cap is 500 events; older events past the cap are dropped and a warning is logged.
+Pending RamnD envelopes are stored in `ramnd-analytics-queue.json` under `Application.persistentDataPath`, stamped with the gateway base URL. A file written for a different gateway is not sent. The queue survives process exit. While online, a non-empty queue is sent every 15 seconds (`RamndAnalyticsConfig.FlushInterval`; `TimeSpan.Zero` turns the timer off). It is also sent on the next launch, when `NetworkStatus` comes back online, and on `Flush()` (pause / quit). A failed attempt does not spin: the same drain stops, then one retry is scheduled with backoff and jitter from 2 seconds up to 60 seconds. Filling the batch does not skip that wait or send while offline. Pause, quit, and a network return still send immediately. The cap is 500 events; older events past the cap are dropped and a warning is logged.
 
 `WithCachedAnalytics()` still applies only to the UGS leg. It is not replayed into RamnD.
 
@@ -111,7 +111,7 @@ Pending RamnD envelopes are stored in `ramnd-analytics-queue.json` under `Applic
 
 ## Flushing events
 
-UGS Analytics auto-flushes on its own schedule. RamnD flushes every 15 seconds while online, and again after a failed ingest using backoff. Call `Flush()` on app pause / quit so the newest events are not left waiting for that timer:
+UGS Analytics auto-flushes on its own schedule. RamnD flushes every 15 seconds while online, and again after a failed ingest using backoff. Reaching the batch size does not flush during that backoff. Call `Flush()` on app pause / quit so the newest events are not left waiting for that timer:
 
 ```csharp
 private void OnApplicationPause(bool paused)
