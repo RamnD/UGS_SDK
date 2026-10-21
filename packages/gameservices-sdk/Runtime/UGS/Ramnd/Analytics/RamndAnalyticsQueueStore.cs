@@ -19,8 +19,10 @@ internal interface IRamndAnalyticsQueueStore
 /// Disk queue of frozen ingest envelopes. The snapshot file is stamped with the gateway
 /// base URL so a staging queue is not replayed against production.
 /// New envelopes are appended to a journal so a gameplay <c>LogEvent</c> does not rewrite
-/// the whole queue on the calling thread. Removals compact a new snapshot generation; a
-/// journal left behind by a crash is ignored once that generation advances.
+/// the whole queue on the calling thread. A torn tail left by an interrupted append is closed
+/// onto its own line before the next record, so that fragment cannot swallow the new event.
+/// Removals compact a new snapshot generation; a journal left behind by a crash is ignored
+/// once that generation advances.
 /// </summary>
 internal sealed class RamndAnalyticsFileQueue : IRamndAnalyticsQueueStore
 {
@@ -269,6 +271,12 @@ internal sealed class RamndAnalyticsFileQueue : IRamndAnalyticsQueueStore
     {
         EnsureDirectory();
         var sb = new StringBuilder();
+        // An interrupted write can leave a partial JSON object with no trailing newline.
+        // Appending the next record onto that fragment makes one malformed line, and the
+        // reader then skips the new event with the fragment. Close the tail first.
+        if (JournalTailNeedsBoundary())
+            sb.Append('\n');
+
         for (int i = start; i < events.Count; i++)
         {
             var line = new JournalLine
@@ -282,6 +290,21 @@ internal sealed class RamndAnalyticsFileQueue : IRamndAnalyticsQueueStore
         }
 
         File.AppendAllText(_journalPath, sb.ToString());
+    }
+
+    bool JournalTailNeedsBoundary()
+    {
+        if (!File.Exists(_journalPath))
+            return false;
+
+        using (var stream = new FileStream(_journalPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        {
+            if (stream.Length == 0)
+                return false;
+
+            stream.Position = stream.Length - 1;
+            return stream.ReadByte() != '\n';
+        }
     }
 
     void RewriteSnapshot(List<Dictionary<string, object>> events)

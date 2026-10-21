@@ -371,6 +371,71 @@ public class RamndAnalyticsTests
     }
 
     [Test]
+    public void FileQueue_TornJournalTail_DoesNotSwallowTheNextAppend()
+    {
+        string dir = CreateTempDir();
+        try
+        {
+            const string gateway = "http://localhost:3000";
+            var first = EventRow("11111111-1111-4111-8111-111111111111");
+            var second = EventRow("22222222-2222-4222-8222-222222222222");
+            string journalPath = Path.Combine(dir, RamndAnalyticsFileQueue.JournalFileName);
+
+            var store = new RamndAnalyticsFileQueue(dir, gateway);
+            store.Save(new[] { first });
+            File.AppendAllText(journalPath, "{\"gateway\":");
+
+            var resumed = new RamndAnalyticsFileQueue(dir, gateway);
+            var loaded = resumed.Load();
+            Assert.That(loaded.Count, Is.EqualTo(1));
+            Assert.That(loaded[0]["event_id"].ToString(), Is.EqualTo(first["event_id"]));
+
+            resumed.Save(new[] { first, second });
+
+            var again = new RamndAnalyticsFileQueue(dir, gateway).Load();
+            Assert.That(again.Count, Is.EqualTo(2));
+            Assert.That(again[0]["event_id"].ToString(), Is.EqualTo(first["event_id"]));
+            Assert.That(again[1]["event_id"].ToString(), Is.EqualTo(second["event_id"]));
+            Assert.That(File.ReadAllText(journalPath), Does.Contain("\n{\"gateway\":\n"));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    public void FileQueue_CompleteJournalLineWithoutNewline_SurvivesTheNextAppend()
+    {
+        string dir = CreateTempDir();
+        try
+        {
+            const string gateway = "http://localhost:3000";
+            var first = EventRow("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+            var second = EventRow("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+            string journalPath = Path.Combine(dir, RamndAnalyticsFileQueue.JournalFileName);
+
+            var store = new RamndAnalyticsFileQueue(dir, gateway);
+            store.Save(new[] { first });
+            string line = File.ReadAllText(journalPath).TrimEnd('\n', '\r');
+            File.WriteAllText(journalPath, line);
+
+            var resumed = new RamndAnalyticsFileQueue(dir, gateway);
+            Assert.That(resumed.Load().Count, Is.EqualTo(1));
+            resumed.Save(new[] { first, second });
+
+            var again = new RamndAnalyticsFileQueue(dir, gateway).Load();
+            Assert.That(again.Count, Is.EqualTo(2));
+            Assert.That(again[0]["event_id"].ToString(), Is.EqualTo(first["event_id"]));
+            Assert.That(again[1]["event_id"].ToString(), Is.EqualTo(second["event_id"]));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
     public void FileQueue_TornJournalLine_DoesNotDropEarlierEvents()
     {
         string dir = CreateTempDir();
