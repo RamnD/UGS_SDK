@@ -8,7 +8,8 @@ using UnityEngine;
 
 /// <summary>
 /// <see cref="IAnalyticsSystem"/> that batches events and POSTs them to the RamnD game-services gateway.
-/// Envelopes are frozen at <see cref="LogEvent{T}"/> and kept on disk until the gateway accepts them.
+/// Envelopes are frozen at <see cref="LogEvent{T}"/> and checkpointed to disk before that call
+/// returns, then kept until the gateway accepts them, including after a force-kill.
 /// While online, a non-empty queue is sent on <see cref="RamndAnalyticsConfig.FlushInterval"/>,
 /// on <see cref="Flush"/>, when the network returns, and again after a failed attempt (backoff).
 /// A full batch is an automatic flush: it waits for that backoff and for the device to be online.
@@ -130,6 +131,8 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
             {
                 _queue.Add(row);
                 int dropped = TrimUnlocked();
+                // Durable before return. A force-kill does not run Dispose, and a failed POST
+                // does not drop the row. A suffix checkpoint is an append, not a full rewrite.
                 PersistUnlocked();
                 if (dropped > 0)
                 {
@@ -250,8 +253,13 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
         {
             if (!await TryPostBatchAsync(batch, json))
             {
+                // The batch stays queued. Checkpoint again in case the LogEvent write failed;
+                // an unchanged queue does not rewrite the snapshot.
                 lock (_gate)
+                {
                     _inflight.Clear();
+                    PersistUnlocked();
+                }
                 ScheduleRetry();
                 return;
             }
@@ -627,6 +635,8 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
         _queue.RemoveAll(row => ids.Contains(EventId(row)));
     }
 
+    // Caller holds _gate. File-store saves append a suffix and rewrite the snapshot only
+    // when events are removed, so LogEvent does not hitch on a full-queue serialize.
     void PersistUnlocked() => _store.Save(_queue);
 
     static string SerializeBatch(List<Dictionary<string, object>> batch) =>
