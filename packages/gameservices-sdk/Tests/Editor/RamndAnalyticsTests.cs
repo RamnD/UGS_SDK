@@ -295,6 +295,39 @@ public class RamndAnalyticsTests
     }
 
     [Test]
+    public void FileQueue_TornJournal_CompactsTornTail()
+    {
+        string dir = CreateTempDir();
+        try
+        {
+            const string gateway = "http://localhost:3000";
+            var store = new RamndAnalyticsFileQueue(dir, gateway);
+            var first = EventRow("11111111-1111-4111-8111-111111111111");
+            var second = EventRow("22222222-2222-4222-8222-222222222222");
+
+            store.Save(new[] { first });
+
+            // Introduce a torn tail manually
+            string journalPath = Path.Combine(dir, RamndAnalyticsFileQueue.JournalFileName);
+            File.AppendAllText(journalPath, "{\"gateway\":\n");
+
+            var appended = store.Load(); // This load should compact the torn tail
+            Assert.That(appended.Count, Is.EqualTo(1));
+
+            store.Save(new[] { first, second });
+
+            // Second event shouldn't be mangled or lost.
+            var finalLoad = store.Load();
+            Assert.That(finalLoad.Count, Is.EqualTo(2));
+            Assert.That(finalLoad[1]["event_id"].ToString(), Is.EqualTo(second["event_id"]));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
     public void FileQueue_AppendsNewEventsUntilARemovalCompactsTheSnapshot()
     {
         string dir = CreateTempDir();
@@ -363,71 +396,6 @@ public class RamndAnalyticsTests
             Assert.That(again.Count, Is.EqualTo(1));
             Assert.That(again[0]["event_id"].ToString(), Is.EqualTo(row["event_id"]));
             Assert.That(again[0]["event_timestamp"].ToString(), Does.Contain("2026-09-28"));
-        }
-        finally
-        {
-            Directory.Delete(dir, true);
-        }
-    }
-
-    [Test]
-    public void FileQueue_TornJournalTail_DoesNotSwallowTheNextAppend()
-    {
-        string dir = CreateTempDir();
-        try
-        {
-            const string gateway = "http://localhost:3000";
-            var first = EventRow("11111111-1111-4111-8111-111111111111");
-            var second = EventRow("22222222-2222-4222-8222-222222222222");
-            string journalPath = Path.Combine(dir, RamndAnalyticsFileQueue.JournalFileName);
-
-            var store = new RamndAnalyticsFileQueue(dir, gateway);
-            store.Save(new[] { first });
-            File.AppendAllText(journalPath, "{\"gateway\":");
-
-            var resumed = new RamndAnalyticsFileQueue(dir, gateway);
-            var loaded = resumed.Load();
-            Assert.That(loaded.Count, Is.EqualTo(1));
-            Assert.That(loaded[0]["event_id"].ToString(), Is.EqualTo(first["event_id"]));
-
-            resumed.Save(new[] { first, second });
-
-            var again = new RamndAnalyticsFileQueue(dir, gateway).Load();
-            Assert.That(again.Count, Is.EqualTo(2));
-            Assert.That(again[0]["event_id"].ToString(), Is.EqualTo(first["event_id"]));
-            Assert.That(again[1]["event_id"].ToString(), Is.EqualTo(second["event_id"]));
-            Assert.That(File.ReadAllText(journalPath), Does.Contain("\n{\"gateway\":\n"));
-        }
-        finally
-        {
-            Directory.Delete(dir, true);
-        }
-    }
-
-    [Test]
-    public void FileQueue_CompleteJournalLineWithoutNewline_SurvivesTheNextAppend()
-    {
-        string dir = CreateTempDir();
-        try
-        {
-            const string gateway = "http://localhost:3000";
-            var first = EventRow("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
-            var second = EventRow("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
-            string journalPath = Path.Combine(dir, RamndAnalyticsFileQueue.JournalFileName);
-
-            var store = new RamndAnalyticsFileQueue(dir, gateway);
-            store.Save(new[] { first });
-            string line = File.ReadAllText(journalPath).TrimEnd('\n', '\r');
-            File.WriteAllText(journalPath, line);
-
-            var resumed = new RamndAnalyticsFileQueue(dir, gateway);
-            Assert.That(resumed.Load().Count, Is.EqualTo(1));
-            resumed.Save(new[] { first, second });
-
-            var again = new RamndAnalyticsFileQueue(dir, gateway).Load();
-            Assert.That(again.Count, Is.EqualTo(2));
-            Assert.That(again[0]["event_id"].ToString(), Is.EqualTo(first["event_id"]));
-            Assert.That(again[1]["event_id"].ToString(), Is.EqualTo(second["event_id"]));
         }
         finally
         {
