@@ -438,11 +438,31 @@ public class RamndAnalyticsTests
         Assert.That(config.FlushInterval, Is.EqualTo(RamndAnalyticsConfig.DefaultFlushInterval));
         Assert.That(config.FlushInterval, Is.EqualTo(TimeSpan.FromSeconds(15)));
         Assert.That(config.MaxBatchSize, Is.EqualTo(500));
+
+        var namedInterval = new RamndAnalyticsConfig(
+            "http://localhost:3000",
+            "key",
+            flushInterval: TimeSpan.Zero);
+        Assert.That(namedInterval.FlushInterval, Is.EqualTo(TimeSpan.Zero));
+        Assert.That(namedInterval.MaxBatchSize, Is.EqualTo(500));
+
+        var namedBatch = new RamndAnalyticsConfig(
+            "http://localhost:3000",
+            "key",
+            maxBatchSize: 25);
+        Assert.That(namedBatch.MaxBatchSize, Is.EqualTo(25));
+        Assert.That(namedBatch.FlushInterval, Is.EqualTo(TimeSpan.FromSeconds(15)));
     }
 
     [Test]
     public void Config_RejectsNegativeFlushInterval()
     {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new RamndAnalyticsConfig(
+                "http://localhost:3000",
+                "key",
+                500,
+                flushInterval: TimeSpan.FromSeconds(-1)));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new RamndAnalyticsConfig(
                 "http://localhost:3000",
