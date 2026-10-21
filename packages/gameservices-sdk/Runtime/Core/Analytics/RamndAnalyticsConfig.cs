@@ -25,11 +25,16 @@ public sealed class RamndAnalyticsConfig
     /// </summary>
     public TimeSpan FlushInterval { get; }
 
+    public RamndAnalyticsConfig(string baseUrl, string apiKey, int maxBatchSize = DefaultMaxBatchSize)
+        : this(baseUrl, apiKey, maxBatchSize, null)
+    {
+    }
+
     public RamndAnalyticsConfig(
         string baseUrl,
         string apiKey,
-        int maxBatchSize = DefaultMaxBatchSize,
-        TimeSpan? flushInterval = null)
+        int maxBatchSize,
+        TimeSpan? flushInterval)
     {
         if (string.IsNullOrWhiteSpace(baseUrl))
             throw new ArgumentException("BaseUrl is required.", nameof(baseUrl));

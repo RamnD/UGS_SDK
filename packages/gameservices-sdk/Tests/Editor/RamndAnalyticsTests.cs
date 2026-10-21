@@ -447,7 +447,8 @@ public class RamndAnalyticsTests
             new RamndAnalyticsConfig(
                 "http://localhost:3000",
                 "key",
-                flushInterval: TimeSpan.FromSeconds(-1)));
+                500,
+                TimeSpan.FromSeconds(-1)));
     }
 
     [Test]
