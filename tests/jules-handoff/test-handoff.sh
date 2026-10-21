@@ -109,12 +109,12 @@ promotion="$(jq -nc --arg sha "$SHA_A" '[{number:9,isDraft:true,headRefOid:$sha,
 two_promotions="$(jq -nc --arg sha "$SHA_A" '[{number:9,isDraft:true,headRefOid:$sha,labels:[]},{number:10,isDraft:false,headRefOid:$sha,labels:[]}]')"
 
 echo "=== correction mapping ==="
-assert_eq "$(fix_action fix/foo "$SHA_A" none none "${task_candidate}")" ready "task correction readies the awaiting-fix pull request"
+assert_eq "$(fix_action fix/foo "$SHA_A" task 7 "${task_candidate}")" ready "task correction readies the awaiting-fix pull request"
 assert_eq "$(fix_action fix/foo "$SHA_A" task 7 "${two_tasks}")" ready "marker selects one task pull request"
 assert_eq "$(fix_action fix/foo "$SHA_A" task 99 "${two_tasks}")" missing-target "marker for a missing pull request does not fall back"
-assert_eq "$(fix_action fix/foo "$SHA_A" none none "${task_stale}")" stale "task head moved after the merge commit"
-assert_eq "$(fix_action fix/foo "$SHA_A" none none "${task_blocking}")" withhold-blocking "blocking label survives the correction merge"
-assert_eq "$(fix_action fix/foo "$SHA_A" none none "[]")" missing-target "no task pull request is a visible miss"
+assert_eq "$(fix_action fix/foo "$SHA_A" task 7 "${task_stale}")" stale "task head moved after the merge commit"
+assert_eq "$(fix_action fix/foo "$SHA_A" task 7 "${task_blocking}")" withhold-blocking "blocking label survives the correction merge"
+assert_eq "$(fix_action fix/foo "$SHA_A" task 7 "[]")" missing-target "no task pull request is a visible miss"
 assert_eq "$(fix_action agent/jules "$SHA_A" integration none "${promotion}")" ready "integration correction targets the promotion pull request"
 assert_eq "$(fix_action agent/jules "$SHA_A" integration none "[]")" missing-target "integration without a promotion pull request"
 assert_eq "$(fix_action agent/jules "$SHA_A" integration none "${two_promotions}")" ambiguous-target "ambiguous promotion pull requests"
@@ -129,6 +129,17 @@ assert_eq "$(printf '%s\n' "${parsed}" | sed -n '2p')" 7 "marker pull request ro
 assert_eq "$(jules_parse_marker "no marker here" | sed -n '1p')" none "absent marker"
 conflict="$(printf '%s\n%s\n' "$(jules_marker_body task 7 "$SHA_A" s clean)" "$(jules_marker_body integration none "$SHA_A" s clean)")"
 assert_eq "$(jules_parse_marker "${conflict}" | sed -n '1p')" conflict "disagreeing markers"
+
+
+# Completion of a correction is not a substitute for an explicit clean audit.
+assert_eq "$(fix_action agent/jules "$SHA_A" none none "${promotion}")" marker-conflict "integration without an audit marker stays pending"
+assert_eq "$(fix_action fix/foo "$SHA_A" none none "${task_candidate}")" marker-conflict "task without an audit marker stays pending"
+for verdict in blocking unknown; do
+  parsed="$(jules_parse_marker "$(jules_marker_body integration none "$SHA_A" 123 "${verdict}")")"
+  assert_eq "$(printf '%s\n' "${parsed}" | sed -n '1p')" conflict "${verdict} marker cannot authorize correction hand-off"
+done
+different_sha="$(printf '%s\n%s\n' "$(jules_marker_body task 7 "$SHA_A" 123 clean)" "$(jules_marker_body task 7 "$SHA_B" 123 clean)")"
+assert_eq "$(jules_parse_marker "${different_sha}" | sed -n '1p')" conflict "markers for different audited SHAs conflict"
 
 echo "=== mocked gh scenarios ==="
 
@@ -446,7 +457,7 @@ fi
 log="${tmpdir}/fix-stale.log"
 : > "${log}"
 export CORRECTION_BASE="fix/foo" MERGE_SHA="${SHA_A}" MOCK_LIST="${task_stale}"
-export MOCK_BODY=""
+export MOCK_BODY="$(jules_marker_body task 7 "${SHA_A}" 123 clean)"
 set +e
 run_fix "${log}"
 rc=$?
@@ -457,13 +468,32 @@ assert_repo_context "${log}" "stale correction"
 
 log="${tmpdir}/fix-ambiguous.log"
 : > "${log}"
-export MOCK_LIST="${two_tasks}" MOCK_BODY=""
+export MOCK_LIST="${two_tasks}" MOCK_BODY="$(jules_marker_body task none "${SHA_A}" 123 clean)"
 set +e
 run_fix "${log}"
 rc=$?
 set -e
 assert_eq "${rc}" 1 "ambiguous correction target exits 1"
 assert_log_lacks "${log}" "pr ready" "ambiguous correction target does not mark ready"
+
+
+# A merged correction must carry a clean, consistent audit marker.
+for verdict in missing blocking unknown; do
+  log="${tmpdir}/fix-verdict-${verdict}.log"
+  : > "${log}"
+  export CORRECTION_BASE="agent/jules" MERGE_SHA="${SHA_A}" MOCK_LIST="${promotion}" MOCK_COMMENTS=""
+  if [[ "${verdict}" == "missing" ]]; then
+    export MOCK_BODY=""
+  else
+    export MOCK_BODY="$(jules_marker_body integration none "${SHA_A}" 123 "${verdict}")"
+  fi
+  set +e
+  run_fix "${log}"
+  rc=$?
+  set -e
+  assert_eq "${rc}" 1 "${verdict} correction verdict exits 1"
+  assert_log_lacks "${log}" "pr ready" "${verdict} correction verdict does not mark ready"
+done
 
 # Missing GH_REPO fails before any gh command.
 set +e

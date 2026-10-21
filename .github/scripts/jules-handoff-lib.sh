@@ -61,7 +61,7 @@ jules_classify_verdict() {
 # Prints two lines: kind (task|integration|none|conflict) and audited_pr (number|none).
 jules_parse_marker() {
   local text="${1:-}"
-  local lines line kind="" pr="" conflicts=0
+  local lines line kind="" pr="" fingerprint="" conflicts=0
   lines="$(printf '%s\n' "${text}" | grep -o '<!-- jules-audit-target [^>]*-->' || true)"
   if [[ -z "${lines}" ]]; then
     printf '%s\n%s\n' none none
@@ -69,9 +69,13 @@ jules_parse_marker() {
   fi
   while IFS= read -r line; do
     [[ -z "${line}" ]] && continue
-    if [[ "${line}" =~ ^\<\!--[[:space:]]jules-audit-target[[:space:]]kind=(task|integration)[[:space:]]audited_pr=([0-9]+|none)[[:space:]]audited_sha=[0-9a-f]{40}[[:space:]]session_id=[A-Za-z0-9._:-]+[[:space:]]verdict=(clean|blocking|unknown)[[:space:]]--\>$ ]]; then
+    if [[ "${line}" =~ ^\<\!--[[:space:]]jules-audit-target[[:space:]]kind=(task|integration)[[:space:]]audited_pr=([0-9]+|none)[[:space:]]audited_sha=([0-9a-f]{40})[[:space:]]session_id=([A-Za-z0-9._:-]+)[[:space:]]verdict=(clean|blocking|unknown)[[:space:]]--\>$ ]]; then
       local next_kind="${BASH_REMATCH[1]}"
       local next_pr="${BASH_REMATCH[2]}"
+      if [[ "${BASH_REMATCH[5]}" != "clean" || ( -n "${fingerprint}" && "${fingerprint}" != "${line}" ) ]]; then
+        conflicts=1
+      fi
+      fingerprint="${line}"
       if [[ -n "${kind}" && ( "${next_kind}" != "${kind}" || "${next_pr}" != "${pr}" ) ]]; then
         conflicts=1
       fi
@@ -304,6 +308,11 @@ jules_fix_ready_action() {
       emit marker-conflict
       return 0
     fi
+  fi
+
+  if [[ "${marker_kind}" != "task" && "${marker_kind}" != "integration" ]]; then
+    emit marker-conflict
+    return 0
   fi
 
   local filtered count number sha draft blocking
@@ -758,7 +767,7 @@ jules_publish_and_advance() {
 - Hand-off action: \`${action}\`
 - Fix pull request: ${fix_url:-none}
 
-Session completion is not a clean verdict. Zero changed files do not clear a blocking finding. Marking a pull request ready only makes it eligible for the repository's configured Codex review; it is not a completed review of this SHA.
+Session completion is not a clean verdict. Zero changed files do not clear a blocking finding. Marking a pull request ready only makes it eligible for the configured repository Codex review; it is not a completed review of this SHA.
 EOF
 )"
   printf '%s\n' "${summary}" >> "${GITHUB_STEP_SUMMARY}"
