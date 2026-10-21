@@ -390,6 +390,7 @@ public class RamndAnalyticsTests
             new RamndAnalyticsConfig(
                 "http://localhost:3000",
                 "key",
+                500,
                 flushInterval: TimeSpan.FromSeconds(-1)));
     }
 
@@ -410,6 +411,7 @@ public class RamndAnalyticsTests
             new RamndAnalyticsConfig(
                 "http://localhost:3000",
                 "dev-maze-key",
+                500,
                 flushInterval: flushInterval ?? TimeSpan.Zero),
             transport,
             "install-test",
