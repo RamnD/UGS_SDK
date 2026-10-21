@@ -110,7 +110,11 @@ public class RamndAnalyticsTests
     [Test]
     public async Task Flush_PostsBatch_AndTreats207AsSuccess()
     {
-        var transport = new FakeTransport { StatusCode = 207 };
+        var transport = new FakeTransport
+        {
+            StatusCode = 207,
+            Body = "{\"accepted\":1,\"duplicates\":0,\"rejected\":[]}",
+        };
         var store = new MemoryQueueStore();
         var system = CreateSystem(transport, store);
 
@@ -292,6 +296,198 @@ public class RamndAnalyticsTests
         {
             Directory.Delete(dir, true);
         }
+    }
+
+    [Test]
+    public async Task Http207WithoutRejectedList_KeepsTheBatch()
+    {
+        var delays = new ScriptedDelay();
+        var transport = new FakeTransport { StatusCode = 207, Body = "{\"accepted\":1}" };
+        var store = new MemoryQueueStore();
+        var system = CreateSystem(transport, store, delay: delays.Wait);
+
+        system.LogEvent(new SampleEvent("1.2.3", true));
+        await system.FlushAsync();
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(1));
+        Assert.That(store.Count, Is.EqualTo(1));
+        Assert.That(delays.Started, Is.EqualTo(1), "One backoff wait, not a tight retry loop");
+        system.Dispose();
+    }
+
+    [Test]
+    public async Task Http207_DropsRejectedEventAndConfirmsTheRest()
+    {
+        var transport = new PartialAcceptTransport();
+        var store = new MemoryQueueStore();
+        var system = CreateSystem(transport, store);
+
+        system.LogEvent(new SampleEvent("bad", true));
+        system.LogEvent(new SampleEvent("good", false));
+        await system.FlushAsync();
+
+        Assert.That(store.Count, Is.EqualTo(0));
+
+        system.LogEvent(new SampleEvent("later", false));
+        await system.FlushAsync();
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(2));
+        var second = (JArray)JObject.Parse(transport.Bodies[1])["events"];
+        Assert.That(second.Count, Is.EqualTo(1));
+        Assert.That(second[0]!["build_version"]!.Value<string>(), Is.EqualTo("later"));
+        system.Dispose();
+    }
+
+    [Test]
+    public async Task TransportFailure_RetriesAfterBackoff_NotImmediately()
+    {
+        var delays = new ScriptedDelay();
+        var transport = new FakeTransport { StatusCode = 503 };
+        var store = new MemoryQueueStore();
+        var system = CreateSystem(transport, store, delay: delays.Wait);
+
+        system.LogEvent(new SampleEvent("1.2.3", true));
+        await system.FlushAsync();
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(1));
+        Assert.That(delays.Started, Is.EqualTo(1));
+        Assert.That(delays.Delays[0].TotalSeconds, Is.EqualTo(2).Within(0.5));
+        Assert.That(store.Count, Is.EqualTo(1));
+
+        delays.ReleaseOne();
+        await WaitUntil(() => transport.Bodies.Count >= 2);
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(2));
+        Assert.That(delays.Started, Is.EqualTo(2));
+        Assert.That(store.Count, Is.EqualTo(1));
+        system.Dispose();
+    }
+
+    [Test]
+    public async Task FullBatch_DuringBackoff_DoesNotPostUntilRetryIsDue()
+    {
+        var delays = new ScriptedDelay();
+        var transport = new FakeTransport { StatusCode = 503 };
+        var store = new MemoryQueueStore();
+        var system = CreateSystem(transport, store, delay: delays.Wait, maxBatchSize: 1);
+
+        system.LogEvent(new SampleEvent("one", true));
+        await WaitUntil(() => transport.Bodies.Count == 1 && delays.Started == 1);
+
+        system.LogEvent(new SampleEvent("two", false));
+        system.LogEvent(new SampleEvent("three", false));
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(1), "A full batch must not bypass backoff");
+        Assert.That(delays.Started, Is.EqualTo(1), "One scheduled retry, not one per event");
+        Assert.That(store.Count, Is.EqualTo(3), "Failed events stay queued");
+
+        delays.ReleaseOne();
+        await WaitUntil(() => transport.Bodies.Count == 2 && delays.Started == 2);
+
+        Assert.That(store.Count, Is.EqualTo(3));
+
+        system.LogEvent(new SampleEvent("four", false));
+        Assert.That(transport.Bodies.Count, Is.EqualTo(2));
+        Assert.That(store.Count, Is.EqualTo(4));
+
+        system.Flush();
+        await WaitUntil(() => transport.Bodies.Count == 3 && delays.Started == 3);
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(3), "Explicit Flush overrides backoff");
+        Assert.That(store.Count, Is.EqualTo(4));
+        system.Dispose();
+    }
+
+    [Test]
+    public async Task FullBatch_WhileOffline_DoesNotPostUntilExplicitFlush()
+    {
+        var transport = new FakeTransport { StatusCode = 503 };
+        var store = new MemoryQueueStore();
+        bool online = false;
+        var system = CreateSystem(transport, store, maxBatchSize: 1, isOnline: () => online);
+
+        system.LogEvent(new SampleEvent("one", true));
+        system.LogEvent(new SampleEvent("two", false));
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(0));
+        Assert.That(store.Count, Is.EqualTo(2));
+
+        online = true;
+        system.Flush();
+        await WaitUntil(() => transport.Bodies.Count == 1);
+
+        Assert.That(store.Count, Is.EqualTo(2), "A failed explicit flush still keeps the queue");
+        system.Dispose();
+    }
+
+    [Test]
+    public async Task PeriodicFlush_SendsBeforeBatchIsFull()
+    {
+        var delays = new ScriptedDelay();
+        var transport = new FakeTransport { StatusCode = 200 };
+        var store = new MemoryQueueStore();
+        var system = CreateSystem(transport, store, TimeSpan.FromSeconds(15), delays.Wait);
+
+        system.LogEvent(new SampleEvent("1.2.3", true));
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(0));
+        Assert.That(delays.Started, Is.EqualTo(1));
+        Assert.That(delays.Delays[0], Is.EqualTo(TimeSpan.FromSeconds(15)));
+
+        delays.ReleaseOne();
+        await WaitUntil(() => transport.Bodies.Count == 1);
+
+        Assert.That(store.Count, Is.EqualTo(0));
+        Assert.That(transport.Bodies.Count, Is.EqualTo(1));
+        system.Dispose();
+    }
+
+    [Test]
+    public void RetryDelay_GrowsThenCaps()
+    {
+        Assert.That(RamndAnalyticSystem.ComputeRetryDelay(1, 0).TotalSeconds, Is.EqualTo(1.5).Within(0.001));
+        Assert.That(RamndAnalyticSystem.ComputeRetryDelay(1, 1).TotalSeconds, Is.EqualTo(2.5).Within(0.001));
+        Assert.That(RamndAnalyticSystem.ComputeRetryDelay(2, 0).TotalSeconds, Is.EqualTo(3).Within(0.001));
+        Assert.That(RamndAnalyticSystem.ComputeRetryDelay(6, 1).TotalSeconds, Is.EqualTo(75).Within(0.001));
+    }
+
+    [Test]
+    public void Config_DefaultsFlushIntervalToFifteenSeconds()
+    {
+        var config = new RamndAnalyticsConfig("http://localhost:3000", "key");
+        Assert.That(config.FlushInterval, Is.EqualTo(RamndAnalyticsConfig.DefaultFlushInterval));
+        Assert.That(config.FlushInterval, Is.EqualTo(TimeSpan.FromSeconds(15)));
+        Assert.That(config.MaxBatchSize, Is.EqualTo(500));
+
+        var namedInterval = new RamndAnalyticsConfig(
+            "http://localhost:3000",
+            "key",
+            flushInterval: TimeSpan.Zero);
+        Assert.That(namedInterval.FlushInterval, Is.EqualTo(TimeSpan.Zero));
+        Assert.That(namedInterval.MaxBatchSize, Is.EqualTo(500));
+
+        var namedBatch = new RamndAnalyticsConfig(
+            "http://localhost:3000",
+            "key",
+            maxBatchSize: 25);
+        Assert.That(namedBatch.MaxBatchSize, Is.EqualTo(25));
+        Assert.That(namedBatch.FlushInterval, Is.EqualTo(TimeSpan.FromSeconds(15)));
+    }
+
+    [Test]
+    public void Config_RejectsNegativeFlushInterval()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new RamndAnalyticsConfig(
+                "http://localhost:3000",
+                "key",
+                500,
+                flushInterval: TimeSpan.FromSeconds(-1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new RamndAnalyticsConfig(
+                "http://localhost:3000",
+                "key",
+                flushInterval: TimeSpan.FromSeconds(-1)));
     }
 
     [Test]
@@ -503,14 +699,33 @@ public class RamndAnalyticsTests
         Assert.That(new RamndIngestResult(400, "{}").IsSuccess, Is.False);
     }
 
-    static RamndAnalyticSystem CreateSystem(IRamndAnalyticsTransport transport, IRamndAnalyticsQueueStore store) =>
+    static RamndAnalyticSystem CreateSystem(
+        IRamndAnalyticsTransport transport,
+        IRamndAnalyticsQueueStore store,
+        TimeSpan? flushInterval = null,
+        Func<TimeSpan, CancellationToken, Task> delay = null,
+        int maxBatchSize = 500,
+        Func<bool> isOnline = null) =>
         new RamndAnalyticSystem(
-            new RamndAnalyticsConfig("http://localhost:3000", "dev-maze-key"),
+            new RamndAnalyticsConfig(
+                "http://localhost:3000",
+                "dev-maze-key",
+                maxBatchSize,
+                flushInterval ?? TimeSpan.Zero),
             transport,
             "install-test",
             "EDITOR",
             "p1",
-            store);
+            store,
+            delay,
+            isOnline ?? (() => true));
+
+    static async Task WaitUntil(Func<bool> condition)
+    {
+        for (int i = 0; i < 100 && !condition(); i++)
+            await Task.Delay(10);
+        Assert.That(condition(), Is.True);
+    }
 
     static string EventIdOf(string body) =>
         JObject.Parse(body)["events"]![0]!["event_id"]!.Value<string>();
@@ -581,7 +796,62 @@ public class RamndAnalyticsTests
                 return Task.FromResult(new RamndIngestResult(400, body));
             }
 
-            return Task.FromResult(new RamndIngestResult(200, "{\"accepted\":1}"));
+            return Task.FromResult(new RamndIngestResult(200, "{\"accepted\":1,\"rejected\":[]}"));
+        }
+    }
+
+    sealed class PartialAcceptTransport : IRamndAnalyticsTransport
+    {
+        public readonly List<string> Bodies = new List<string>();
+
+        public Task<RamndIngestResult> PostEventsAsync(
+            string jsonBody,
+            CancellationToken cancellationToken = default)
+        {
+            Bodies.Add(jsonBody);
+            var events = (JArray)JObject.Parse(jsonBody)["events"];
+            if (events.Count < 2)
+                return Task.FromResult(new RamndIngestResult(200, "{\"accepted\":1,\"rejected\":[]}"));
+
+            string badId = events[0]!["event_id"]!.Value<string>();
+            string body = JsonConvert.SerializeObject(new
+            {
+                accepted = 1,
+                duplicates = 0,
+                rejected = new[]
+                {
+                    new { eventId = badId, index = 0, reason = "unknown_event_name:missing" },
+                },
+            });
+            return Task.FromResult(new RamndIngestResult(207, body));
+        }
+    }
+
+    sealed class ScriptedDelay
+    {
+        readonly Queue<TaskCompletionSource<bool>> _pending = new Queue<TaskCompletionSource<bool>>();
+        public readonly List<TimeSpan> Delays = new List<TimeSpan>();
+        public int Started => Delays.Count;
+
+        public Task Wait(TimeSpan delay, CancellationToken cancellationToken)
+        {
+            var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            cancellationToken.Register(() => gate.TrySetCanceled(cancellationToken));
+            lock (_pending)
+            {
+                Delays.Add(delay);
+                _pending.Enqueue(gate);
+            }
+
+            return gate.Task;
+        }
+
+        public void ReleaseOne()
+        {
+            TaskCompletionSource<bool> gate;
+            lock (_pending)
+                gate = _pending.Dequeue();
+            gate.TrySetResult(true);
         }
     }
 }
