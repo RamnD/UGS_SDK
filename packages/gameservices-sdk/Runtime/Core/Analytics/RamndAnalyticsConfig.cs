@@ -25,14 +25,44 @@ public sealed class RamndAnalyticsConfig
     /// </summary>
     public TimeSpan FlushInterval { get; }
 
+    /// <summary>
+    /// Original constructor. <paramref name="maxBatchSize"/> defaults to 500 and
+    /// <see cref="FlushInterval"/> stays <see cref="DefaultFlushInterval"/>.
+    /// </summary>
+    /// <remarks>
+    /// This three-argument signature is the binary contract. Flush interval is a separate
+    /// overload so existing <c>(url, key)</c> and <c>(url, key, batch)</c> calls keep binding here.
+    /// </remarks>
     public RamndAnalyticsConfig(
         string baseUrl,
         string apiKey,
         int maxBatchSize = DefaultMaxBatchSize)
-        : this(baseUrl, apiKey, maxBatchSize, null)
+        : this(baseUrl, apiKey, maxBatchSize, flushInterval: null)
     {
     }
 
+    /// <summary>
+    /// Uses <see cref="DefaultMaxBatchSize"/> and the given flush interval.
+    /// Null uses <see cref="DefaultFlushInterval"/>. <see cref="TimeSpan.Zero"/> disables the timer.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="flushInterval"/> is required so this overload does not compete with
+    /// the original two- and three-argument calls. Named <c>flushInterval:</c> calls bind here
+    /// without supplying <c>maxBatchSize</c>.
+    /// </remarks>
+    public RamndAnalyticsConfig(
+        string baseUrl,
+        string apiKey,
+        TimeSpan? flushInterval)
+        : this(baseUrl, apiKey, DefaultMaxBatchSize, flushInterval)
+    {
+    }
+
+    /// <summary>
+    /// Sets batch size and flush interval together.
+    /// <paramref name="maxBatchSize"/> is required so this overload does not hide the original constructor.
+    /// Null <paramref name="flushInterval"/> uses <see cref="DefaultFlushInterval"/>.
+    /// </summary>
     public RamndAnalyticsConfig(
         string baseUrl,
         string apiKey,
