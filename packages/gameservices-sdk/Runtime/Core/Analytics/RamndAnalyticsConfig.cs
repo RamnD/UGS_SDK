@@ -7,6 +7,9 @@ public sealed class RamndAnalyticsConfig
 {
     const int DefaultMaxBatchSize = 500;
 
+    /// <summary>How often a non-empty queue is sent while the device is online.</summary>
+    public static readonly TimeSpan DefaultFlushInterval = TimeSpan.FromSeconds(15);
+
     /// <summary>Public gateway base URL, e.g. <c>http://localhost:3000</c> (no trailing slash required).</summary>
     public string BaseUrl { get; }
 
@@ -16,7 +19,17 @@ public sealed class RamndAnalyticsConfig
     /// <summary>Max events per ingest POST (gateway default / hard limit is 500).</summary>
     public int MaxBatchSize { get; }
 
-    public RamndAnalyticsConfig(string baseUrl, string apiKey, int maxBatchSize = DefaultMaxBatchSize)
+    /// <summary>
+    /// Interval between automatic flushes while online.
+    /// <see cref="TimeSpan.Zero"/> disables the timer; <c>Flush()</c> still sends immediately.
+    /// </summary>
+    public TimeSpan FlushInterval { get; }
+
+    public RamndAnalyticsConfig(
+        string baseUrl,
+        string apiKey,
+        int maxBatchSize = DefaultMaxBatchSize,
+        TimeSpan? flushInterval = null)
     {
         if (string.IsNullOrWhiteSpace(baseUrl))
             throw new ArgumentException("BaseUrl is required.", nameof(baseUrl));
@@ -28,8 +41,16 @@ public sealed class RamndAnalyticsConfig
                 maxBatchSize,
                 $"MaxBatchSize must be 1..{DefaultMaxBatchSize}.");
 
+        TimeSpan interval = flushInterval ?? DefaultFlushInterval;
+        if (interval < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(
+                nameof(flushInterval),
+                interval,
+                "FlushInterval must be zero or positive.");
+
         BaseUrl = baseUrl.TrimEnd('/');
         ApiKey = apiKey.Trim();
         MaxBatchSize = maxBatchSize;
+        FlushInterval = interval;
     }
 }

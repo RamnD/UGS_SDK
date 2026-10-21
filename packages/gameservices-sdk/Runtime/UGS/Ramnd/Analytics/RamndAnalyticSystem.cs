@@ -8,17 +8,24 @@ using UnityEngine;
 
 /// <summary>
 /// <see cref="IAnalyticsSystem"/> that batches events and POSTs them to the RamnD game-services gateway.
-/// Envelopes are frozen at <see cref="LogEvent{T}"/> and kept on disk until the gateway accepts them,
-/// so an offline session is replayed on the next launch, <see cref="Flush"/>, or network return.
+/// Envelopes are frozen at <see cref="LogEvent{T}"/> and kept on disk until the gateway accepts them.
+/// While online, a non-empty queue is sent on <see cref="RamndAnalyticsConfig.FlushInterval"/>,
+/// on <see cref="Flush"/>, when the network returns, and again after a failed attempt (backoff).
 /// </summary>
 public sealed class RamndAnalyticSystem : IAnalyticsSystem
 {
     /// <summary>Oldest events past this cap are dropped. Matches the gateway batch limit.</summary>
     internal const int DiskQueueCap = 500;
 
+    internal const double RetryBaseSeconds = 2;
+    internal const double RetryCapSeconds = 60;
+
     readonly RamndAnalyticsConfig _config;
     readonly IRamndAnalyticsTransport _transport;
     readonly IRamndAnalyticsQueueStore _store;
+    readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
+    readonly Func<bool> _isOnline;
+    readonly Random _random = new Random();
     readonly string _userId;
     readonly string _platform;
     readonly object _gate = new object();
@@ -27,6 +34,9 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
     readonly CancellationTokenSource _lifetime = new CancellationTokenSource();
     string _playerId;
     Task _flushTask = Task.CompletedTask;
+    int _consecutiveFailures;
+    int _retryGeneration;
+    DateTime _nextRetryUtc = DateTime.MinValue;
     bool _disposed;
 
     public RamndAnalyticSystem(
@@ -45,11 +55,15 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
         string userId,
         string platform,
         string playerId,
-        IRamndAnalyticsQueueStore store)
+        IRamndAnalyticsQueueStore store,
+        Func<TimeSpan, CancellationToken, Task> delayAsync = null,
+        Func<bool> isOnline = null)
     {
         _config = config ?? throw new ArgumentNullException(nameof(config));
         _transport = transport ?? new UnityWebRequestRamndTransport(config);
         _store = store ?? RamndAnalyticsFileQueue.ForPersistentData(config.BaseUrl);
+        _delayAsync = delayAsync ?? DelayAsync;
+        _isOnline = isOnline ?? (() => NetworkStatus.IsOnline);
         _userId = string.IsNullOrEmpty(userId)
             ? RamndAnalyticsEnvelopeBuilder.GetOrCreateInstallUserId()
             : userId;
@@ -68,7 +82,7 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
                 AppLog.Warn("Analytics", $"Ramnd queue full — dropping {dropped} oldest event(s).");
             }
 
-            if (NetworkStatus.IsOnline)
+            if (_isOnline())
                 StartFlushUnlocked();
         }
 
@@ -77,6 +91,22 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
 #endif
         Application.quitting += OnQuitting;
         NetworkStatus.IsOnlineChanged += OnNetworkOnline;
+        _ = PeriodicFlushLoop();
+    }
+
+    /// <summary>
+    /// Delay before the next automatic retry after <paramref name="failureCount"/> failed attempts.
+    /// <paramref name="jitterUnit"/> is 0..1 and spreads the delay by ±25%.
+    /// </summary>
+    internal static TimeSpan ComputeRetryDelay(int failureCount, double jitterUnit)
+    {
+        if (failureCount < 1)
+            failureCount = 1;
+        int shift = Math.Min(failureCount - 1, 5);
+        double baseSeconds = Math.Min(RetryCapSeconds, RetryBaseSeconds * Math.Pow(2, shift));
+        double unit = Math.Min(1d, Math.Max(0d, jitterUnit));
+        double jitter = 0.75d + (unit * 0.5d);
+        return TimeSpan.FromMilliseconds(baseSeconds * jitter * 1000d);
     }
 
     /// <summary>Updates authenticated player id after UGS sign-in (nullable clears).</summary>
@@ -122,6 +152,13 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
     {
         if (_disposed)
             return;
+
+        // Pause / quit / network return try immediately and cancel a pending backoff.
+        lock (_gate)
+        {
+            _nextRetryUtc = DateTime.MinValue;
+            _retryGeneration++;
+        }
 
         try
         {
@@ -197,14 +234,15 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
 
     async Task DrainLoopAsync(List<Dictionary<string, object>> batch, string json)
     {
-        // One failure ends this drain. The batch stays on disk; the next Flush / online
-        // transition / launch tries again. Do not tight-loop a dead gateway.
+        // One failure ends this drain. The batch stays on disk and a later backoff tick,
+        // Flush, or the online transition tries again. Do not tight-loop a dead gateway.
         while (!_disposed && !_lifetime.IsCancellationRequested)
         {
             if (!await TryPostBatchAsync(batch, json))
             {
                 lock (_gate)
                     _inflight.Clear();
+                ScheduleRetry();
                 return;
             }
 
@@ -233,15 +271,22 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
         try
         {
             RamndIngestResult result = await _transport.PostEventsAsync(json, _lifetime.Token);
-            if (result.StatusCode == 200 || result.StatusCode == 207)
+            if (result.StatusCode == 200)
             {
                 Acknowledge(batch);
+                NoteSuccess();
                 AppLog.Info("Analytics", $"Ramnd ingest ok ({batch.Count} events, HTTP {result.StatusCode})");
                 return true;
             }
 
+            if (result.StatusCode == 207)
+                return TryApplyPartialAccept(batch, result.Body);
+
             if (result.StatusCode == 400 && TryDropPermanentRejects(batch, result.Body))
+            {
+                NoteSuccess();
                 return true;
+            }
 
             AppLog.Warn(
                 "Analytics",
@@ -258,6 +303,221 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
             return false;
         }
     }
+
+    /// <summary>
+    /// 207 stores some events and permanently rejects others. Drop <c>rejected</c> ids,
+    /// confirm the rest, and keep the whole batch when the list cannot be applied.
+    /// A replay is safe: the gateway dedupes <c>event_id</c>.
+    /// </summary>
+    bool TryApplyPartialAccept(List<Dictionary<string, object>> batch, string body)
+    {
+        if (!TryReadRejected(body, out JArray rejected))
+        {
+            AppLog.Warn(
+                "Analytics",
+                "Ramnd ingest HTTP 207 without a rejected list; keeping the batch for retry.");
+            return false;
+        }
+
+        if (!TryResolvePartial(batch, rejected, out HashSet<string> dropIds))
+        {
+            AppLog.Warn(
+                "Analytics",
+                "Ramnd ingest HTTP 207 rejected list could not be applied; keeping the batch for retry.");
+            return false;
+        }
+
+        lock (_gate)
+        {
+            var acceptedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string id in IdsOf(batch))
+            {
+                if (!dropIds.Contains(id))
+                    acceptedIds.Add(id);
+            }
+
+            RemoveIdsUnlocked(dropIds);
+            RemoveIdsUnlocked(acceptedIds);
+            PersistUnlocked();
+        }
+
+        if (dropIds.Count > 0)
+        {
+            AppLog.Warn(
+                "Analytics",
+                $"Ramnd ingest dropped {dropIds.Count} rejected event(s) (HTTP 207).");
+        }
+
+        AppLog.Info(
+            "Analytics",
+            $"Ramnd ingest partial ({batch.Count - dropIds.Count} confirmed, {dropIds.Count} rejected, HTTP 207)");
+        NoteSuccess();
+        return true;
+    }
+
+    static bool TryResolvePartial(
+        List<Dictionary<string, object>> batch,
+        JArray rejected,
+        out HashSet<string> dropIds)
+    {
+        dropIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (rejected.Count == 0)
+            return true;
+
+        if (rejected.Count >= batch.Count)
+        {
+            dropIds.UnionWith(IdsOf(batch));
+            return dropIds.Count > 0 || batch.Count == 0;
+        }
+
+        int unresolved = 0;
+        for (int i = 0; i < rejected.Count; i++)
+        {
+            if (!(rejected[i] is JObject item))
+            {
+                unresolved++;
+                continue;
+            }
+
+            string eventId = item.Value<string>("eventId");
+            if (!string.IsNullOrEmpty(eventId))
+            {
+                dropIds.Add(eventId);
+                continue;
+            }
+
+            int? index = item.Value<int?>("index");
+            if (index.HasValue && index.Value >= 0 && index.Value < batch.Count)
+            {
+                string id = EventId(batch[index.Value]);
+                if (!string.IsNullOrEmpty(id))
+                {
+                    dropIds.Add(id);
+                    continue;
+                }
+            }
+
+            unresolved++;
+        }
+
+        return unresolved == 0;
+    }
+
+    void NoteSuccess()
+    {
+        lock (_gate)
+        {
+            _consecutiveFailures = 0;
+            _nextRetryUtc = DateTime.MinValue;
+        }
+    }
+
+    void ScheduleRetry()
+    {
+        if (_disposed || !_isOnline())
+            return;
+
+        try
+        {
+            if (_lifetime.IsCancellationRequested)
+                return;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        TimeSpan delay;
+        int generation;
+        lock (_gate)
+        {
+            if (_disposed)
+                return;
+            _consecutiveFailures++;
+            delay = ComputeRetryDelay(_consecutiveFailures, _random.NextDouble());
+            _nextRetryUtc = DateTime.UtcNow + delay;
+            generation = ++_retryGeneration;
+        }
+
+        _ = RetryAfterAsync(delay, generation);
+    }
+
+    async Task RetryAfterAsync(TimeSpan delay, int generation)
+    {
+        try
+        {
+            await _delayAsync(delay, _lifetime.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        if (_disposed)
+            return;
+
+        lock (_gate)
+        {
+            if (generation != _retryGeneration)
+                return;
+        }
+
+        StartPeriodicFlush();
+    }
+
+    async Task PeriodicFlushLoop()
+    {
+        TimeSpan interval = _config.FlushInterval;
+        if (interval <= TimeSpan.Zero)
+            return;
+
+        while (!_disposed)
+        {
+            try
+            {
+                await _delayAsync(interval, _lifetime.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+
+            if (_disposed || !_isOnline())
+                continue;
+
+            bool due;
+            lock (_gate)
+                due = DateTime.UtcNow >= _nextRetryUtc;
+            if (due)
+                StartPeriodicFlush();
+        }
+    }
+
+    void StartPeriodicFlush()
+    {
+        if (_disposed)
+            return;
+
+        try
+        {
+            _ = FlushAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Analytics", $"Ramnd periodic flush failed: {ex.Message}");
+        }
+    }
+
+    static Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken) =>
+        Task.Delay(delay, cancellationToken);
 
     void Acknowledge(List<Dictionary<string, object>> batch)
     {
