@@ -1,9 +1,12 @@
 # Changelog
 
-## [Unreleased]
+## [2.4.1] - 2026-10-21
 
 ### Fixed
-- **Ramnd analytics delivery during a session.** A non-empty queue is flushed every 15 seconds while online. A failed ingest is retried with backoff and jitter (2s up to 60s) instead of waiting for pause or the next launch. A full batch uses that same backoff and does not send while offline or before the retry is due. HTTP 207 with a `rejected` list drops those envelopes and confirms the rest. A 207 without that list stays queued. Pause, quit, and network return still send immediately.
+- **Analytics delivery during gameplay.** Non-empty online queues flush every 15 seconds by default. Failed ingest schedules exponential backoff with a base delay from 2 to 60 seconds and ±25% jitter. Full batches respect offline/backoff state; explicit flush and network return still attempt immediately.
+- **Durable analytics checkpoints without whole-queue rewrites per event.** New envelopes append to a journal before `LogEvent` returns. Queue removals compact a snapshot. Torn journal tails and complete records without a final newline cannot swallow the following event after restart.
+- **Partial ingest acknowledgement.** HTTP 207 confirms or drops only events from the sent batch; unrelated queued events are retained. A 207 without a usable `rejected` list stays queued.
+- **Constructor compatibility.** Preserve the original `RamndAnalyticsConfig(string, string, int)` binary signature while supporting configurable flush intervals and named `flushInterval:` calls.
 
 ## [2.4.0] - 2026-10-06
 
