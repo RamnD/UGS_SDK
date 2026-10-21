@@ -1,5 +1,7 @@
 # Trusted workflow from the default branch. Do not checkout the pull request:
-# this job only sends branch names to the Jules API.
+# this job only sends branch names to the Jules API and talks to GitHub with GH_REPO.
+# GitHub reads pull_request_target workflows from the default branch (main).
+# Merging this file into agent/jules does not activate it.
 name: Jules audit
 
 on:
@@ -53,67 +55,1018 @@ jobs:
       JULES_API_URL: https://jules.googleapis.com/v1alpha
       JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
       GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
       STARTING_BRANCH: ${{ github.event_name == 'pull_request_target' && github.head_ref || inputs.starting_branch }}
       BASE_BRANCH: ${{ github.event_name == 'pull_request_target' && github.base_ref || inputs.base_branch }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
     steps:
-      - name: Validate configuration
+      - name: Install handoff library
         shell: bash
-        env:
-          REPOSITORY: ${{ github.repository }}
         run: |
+          # Embedded copy of .github/scripts/jules-handoff-lib.sh. The hand-off test rejects drift.
+          cat > "${RUNNER_TEMP}/jules-handoff-lib.sh" <<'END_LIB'
+          #!/usr/bin/env bash
+          # Trusted Jules hand-off helpers.
+          # Workflows embed this file because pull_request_target must not checkout a PR.
+          # tests/jules-handoff/test-handoff.sh fails if an embedded copy drifts.
           set -euo pipefail
-
-          if [[ -z "${JULES_API_KEY}" ]]; then
-            echo "JULES_API_KEY is not configured." >&2
-            exit 1
-          fi
-          if [[ -z "${STARTING_BRANCH}" || -z "${BASE_BRANCH}" ]]; then
-            echo "Starting branch and base branch are required." >&2
-            exit 1
-          fi
-
-          branch_is_safe() {
-            local branch="$1"
+          
+          jules_is_sha() {
+            [[ "${1:-}" =~ ^[0-9a-f]{40}$ ]]
+          }
+          
+          jules_branch_is_safe() {
+            local branch="${1:-}"
             [[ "${branch}" =~ ^[A-Za-z0-9._/][A-Za-z0-9._/-]*$ ]] || return 1
             [[ "${branch}" != *..* ]] || return 1
+            [[ "${branch}" != -* ]] || return 1
             return 0
           }
-
-          if ! branch_is_safe "${STARTING_BRANCH}" || ! branch_is_safe "${BASE_BRANCH}"; then
-            echo "Refusing branch names that are empty or not a plain git ref." >&2
-            exit 1
-          fi
-          if [[ "${STARTING_BRANCH}" == "${BASE_BRANCH}" ]]; then
-            echo "Starting branch and base branch must differ." >&2
-            exit 1
-          fi
-          case "${STARTING_BRANCH}" in
-            main|staging)
-              echo "Refusing to start Jules from protected branch ${STARTING_BRANCH}." >&2
-              exit 1
-              ;;
-          esac
-
-          for branch in "${STARTING_BRANCH}" "${BASE_BRANCH}"; do
-            encoded="$(jq -nr --arg branch "${branch}" '$branch|@uri')"
-            if ! gh api --silent "repos/${REPOSITORY}/branches/${encoded}"; then
-              echo "Branch ${branch} does not exist on ${REPOSITORY}." >&2
-              exit 1
+          
+          jules_is_jules_author() {
+            local login="${1:-}"
+            [[ "${login}" == "google-labs-jules" || "${login}" == "google-labs-jules[bot]" || "${login}" == "app/google-labs-jules" ]]
+          }
+          
+          jules_require_repo() {
+            if [[ -z "${GH_REPO:-}" ]]; then
+              echo "GH_REPO is required. gh cannot discover the repository without a checkout." >&2
+              return 1
             fi
-          done
+          }
+          
+          # Prints clean, blocking, or unknown.
+          # A clean result requires one explicit JULES_AUDIT_VERDICT: clean line and no blocking signal.
+          # Conflicting signals are unknown so they cannot be treated as approval.
+          jules_classify_verdict() {
+            local text="${1:-}"
+            text="${text//$'\r'/}"
+            local clean=0 blocking=0
+            if printf '%s\n' "${text}" | grep -Eq '^[[:space:]]*JULES_AUDIT_VERDICT:[[:space:]]*clean[[:space:]]*$'; then
+              clean=1
+            fi
+            if printf '%s\n' "${text}" | grep -Eq '^[[:space:]]*JULES_AUDIT_VERDICT:[[:space:]]*blocking[[:space:]]*$'; then
+              blocking=1
+            fi
+            if printf '%s\n' "${text}" | grep -Eq '^[[:space:]]*(\*\*)?BLOCKING FINDING(\*\*)?:[[:space:]]*'; then
+              blocking=1
+            fi
+            if printf '%s\n' "${text}" | grep -F -q '(Blocking Finding)'; then
+              blocking=1
+            fi
+            if (( blocking == 1 && clean == 1 )); then
+              printf '%s\n' unknown
+            elif (( blocking == 1 )); then
+              printf '%s\n' blocking
+            elif (( clean == 1 )); then
+              printf '%s\n' clean
+            else
+              printf '%s\n' unknown
+            fi
+          }
+          
+          # Prints two lines: kind (task|integration|none|conflict) and audited_pr (number|none).
+          jules_parse_marker() {
+            local text="${1:-}"
+            local lines line kind="" pr="" fingerprint="" conflicts=0
+            lines="$(printf '%s\n' "${text}" | grep -o '<!-- jules-audit-target [^>]*-->' || true)"
+            if [[ -z "${lines}" ]]; then
+              printf '%s\n%s\n' none none
+              return 0
+            fi
+            while IFS= read -r line; do
+              [[ -z "${line}" ]] && continue
+              if [[ "${line}" =~ ^\<\!--[[:space:]]jules-audit-target[[:space:]]kind=(task|integration)[[:space:]]audited_pr=([0-9]+|none)[[:space:]]audited_sha=([0-9a-f]{40})[[:space:]]session_id=([A-Za-z0-9._:-]+)[[:space:]]verdict=(clean|blocking|unknown)[[:space:]]--\>$ ]]; then
+                local next_kind="${BASH_REMATCH[1]}"
+                local next_pr="${BASH_REMATCH[2]}"
+                if [[ "${BASH_REMATCH[5]}" != "clean" || ( -n "${fingerprint}" && "${fingerprint}" != "${line}" ) ]]; then
+                  conflicts=1
+                fi
+                fingerprint="${line}"
+                if [[ -n "${kind}" && ( "${next_kind}" != "${kind}" || "${next_pr}" != "${pr}" ) ]]; then
+                  conflicts=1
+                fi
+                kind="${next_kind}"
+                pr="${next_pr}"
+              else
+                conflicts=1
+              fi
+            done <<<"${lines}"
+            if (( conflicts == 1 )) || [[ -z "${kind}" ]]; then
+              printf '%s\n%s\n' conflict none
+              return 0
+            fi
+            printf '%s\n%s\n' "${kind}" "${pr}"
+          }
+          
+          jules_marker_body() {
+            local kind="$1"
+            local audited_pr="$2"
+            local audited_sha="$3"
+            local session_id="$4"
+            local verdict="$5"
+            if [[ ! "${kind}" =~ ^(task|integration)$ ]]; then
+              echo "Refusing to write an audit marker with kind ${kind}." >&2
+              return 1
+            fi
+            if [[ ! "${audited_pr}" =~ ^([0-9]+|none)$ ]]; then
+              echo "Refusing to write an audit marker with audited_pr ${audited_pr}." >&2
+              return 1
+            fi
+            if ! jules_is_sha "${audited_sha}"; then
+              echo "Refusing to write an audit marker without a full audited SHA." >&2
+              return 1
+            fi
+            if [[ ! "${session_id}" =~ ^[A-Za-z0-9._:-]+$ ]]; then
+              session_id="unknown"
+            fi
+            if [[ ! "${verdict}" =~ ^(clean|blocking|unknown)$ ]]; then
+              verdict="unknown"
+            fi
+            cat <<EOF
+          Jules audit link for hand-off bookkeeping. This comment does not approve the change and does not mean Codex has reviewed this SHA.
+          
+          <!-- jules-audit-target kind=${kind} audited_pr=${audited_pr} audited_sha=${audited_sha} session_id=${session_id} verdict=${verdict} -->
+          EOF
+          }
+          
+          # Prints two lines: action and target number ("-" when there is no single PR to mutate).
+          # spec is a JSON object. File count is "none" when Jules did not open a pull request.
+          jules_audit_action() {
+            local spec="$1"
+            local verdict changed author fix_state audited branch kind count target_sha target_num draft fix_number
+            verdict="$(jq -r '.verdict' <<<"${spec}")"
+            changed="$(jq -r '.changed_files' <<<"${spec}")"
+            author="$(jq -r '.fix_author // ""' <<<"${spec}")"
+            fix_state="$(jq -r '.fix_state // ""' <<<"${spec}")"
+            audited="$(jq -r '.audited_sha' <<<"${spec}")"
+            branch="$(jq -r '.branch_sha' <<<"${spec}")"
+            kind="$(jq -r '.audit_kind' <<<"${spec}")"
+            count="$(jq -r '.target_count' <<<"${spec}")"
+            target_sha="$(jq -r '.target_sha // ""' <<<"${spec}")"
+            target_num="$(jq -r '.target_number // "-" ' <<<"${spec}")"
+            draft="$(jq -r '.target_is_draft // false' <<<"${spec}")"
+            fix_number="$(jq -r '.fix_number // "-" ' <<<"${spec}")"
+          
+            emit() {
+              printf '%s\n%s\n' "$1" "$2"
+            }
+          
+            if ! jules_is_sha "${audited}" || [[ "${audited}" != "${branch}" ]]; then
+              emit stale -
+              return 0
+            fi
+            if [[ "${kind}" != "task" && "${kind}" != "integration" ]]; then
+              emit ambiguous-target -
+              return 0
+            fi
+          
+            if [[ "${kind}" == "task" ]]; then
+              if [[ "${count}" == "0" ]]; then
+                emit missing-target -
+                return 0
+              fi
+              if [[ "${count}" != "1" ]]; then
+                emit ambiguous-target -
+                return 0
+              fi
+              if [[ "${target_sha}" != "${audited}" || ! "${target_num}" =~ ^[0-9]+$ ]]; then
+                emit stale "${target_num}"
+                return 0
+              fi
+            fi
+          
+            if [[ "${verdict}" != "clean" && "${verdict}" != "blocking" && "${verdict}" != "unknown" ]]; then
+              verdict="unknown"
+            fi
+          
+            if [[ "${verdict}" == "unknown" ]]; then
+              if [[ "${kind}" == "integration" && ( "${count}" != "1" || "${target_sha}" != "${audited}" || ! "${target_num}" =~ ^[0-9]+$ ) ]]; then
+                emit unknown-preserve -
+              else
+                emit unknown-preserve "${target_num}"
+              fi
+              return 0
+            fi
+            if [[ "${verdict}" == "blocking" ]]; then
+              if [[ "${kind}" == "integration" && "${count}" == "1" && "${target_sha}" == "${audited}" && "${target_num}" =~ ^[0-9]+$ ]]; then
+                emit blocking-preserve "${target_num}"
+              elif [[ "${kind}" == "task" && "${target_num}" =~ ^[0-9]+$ ]]; then
+                emit blocking-preserve "${target_num}"
+              else
+                emit blocking-preserve -
+              fi
+              return 0
+            fi
+          
+            # Explicit clean verdict. An unreadable file count must not be treated as zero.
+            if [[ "${changed}" != "none" && ! "${changed}" =~ ^[0-9]+$ ]]; then
+              emit unknown-preserve "${target_num}"
+              return 0
+            fi
+          
+            # File count decides whether a correction is still outstanding. It does not decide the verdict.
+            if [[ "${changed}" != "none" && "${changed}" -gt 0 ]]; then
+              if ! jules_is_jules_author "${author}"; then
+                emit unknown-preserve "${target_num}"
+                return 0
+              fi
+              if [[ "${kind}" == "integration" ]]; then
+                emit defer-integration-fix "${fix_number}"
+              else
+                emit await-fix "${target_num}"
+              fi
+              return 0
+            fi
+          
+            if [[ "${changed}" != "none" && "${changed}" -eq 0 ]]; then
+              if ! jules_is_jules_author "${author}"; then
+                emit unknown-preserve "${target_num}"
+                return 0
+              fi
+              if [[ -n "${fix_state}" && "${fix_state}" != "OPEN" && "${fix_state}" != "open" ]]; then
+                # Already closed. Do not treat that as new approval metadata; still require a clean hand-off target.
+                changed="none"
+              fi
+            fi
+          
+            if [[ "${kind}" == "integration" ]]; then
+              if [[ "${count}" == "0" ]]; then
+                emit missing-target -
+                return 0
+              fi
+              if [[ "${count}" != "1" ]]; then
+                emit ambiguous-target -
+                return 0
+              fi
+              if [[ "${target_sha}" != "${audited}" || ! "${target_num}" =~ ^[0-9]+$ ]]; then
+                emit stale "${target_num}"
+                return 0
+              fi
+              if [[ "${draft}" == "true" ]]; then
+                if [[ "${changed}" != "none" ]]; then
+                  emit close-empty-ready "${target_num}"
+                else
+                  emit ready "${target_num}"
+                fi
+              else
+                if [[ "${changed}" != "none" ]]; then
+                  emit close-empty-note "${target_num}"
+                else
+                  emit note-already-ready "${target_num}"
+                fi
+              fi
+              return 0
+            fi
+          
+            if [[ "${draft}" == "true" ]]; then
+              if [[ "${changed}" != "none" ]]; then
+                emit close-empty-ready "${target_num}"
+              else
+                emit ready "${target_num}"
+              fi
+            else
+              if [[ "${changed}" != "none" ]]; then
+                emit close-empty-note "${target_num}"
+              else
+                emit note-already-ready "${target_num}"
+              fi
+            fi
+          }
+          
+          # Prints action, then the pull request number when one was selected.
+          # candidates_json is the pre-filtered open set for this audit kind.
+          # Task callers must pass only head=<task> base=agent/jules.
+          # Integration callers must pass only head=agent/jules base=staging.
+          jules_fix_ready_action() {
+            local base="$1"
+            local merge_sha="$2"
+            local marker_kind="$3"
+            local marker_pr="$4"
+            local candidates="$5"
+          
+            emit() {
+              if [[ -n "${2:-}" ]]; then
+                printf '%s\n%s\n' "$1" "$2"
+              else
+                printf '%s\n' "$1"
+              fi
+            }
+          
+            if [[ "${base}" == "main" || "${base}" == "staging" ]]; then
+              emit refuse-protected
+              return 0
+            fi
+            if [[ "${base}" == "agent/jules" && "${marker_pr}" == "agent/jules" ]]; then
+              emit marker-conflict
+              return 0
+            fi
+            if ! jules_is_sha "${merge_sha}"; then
+              emit stale
+              return 0
+            fi
+            if [[ "${base}" == "agent/jules" ]]; then
+              if [[ "${marker_kind}" == "task" || "${marker_kind}" == "conflict" ]]; then
+                emit marker-conflict
+                return 0
+              fi
+            else
+              if [[ "${marker_kind}" == "integration" || "${marker_kind}" == "conflict" ]]; then
+                emit marker-conflict
+                return 0
+              fi
+            fi
+          
+            if [[ "${marker_kind}" != "task" && "${marker_kind}" != "integration" ]]; then
+              emit marker-conflict
+              return 0
+            fi
+          
+            local filtered count number sha draft blocking
+            if [[ "${base}" == "agent/jules" ]]; then
+              filtered="$(jq -c --arg pr "${marker_pr}" '
+                [ .[]
+                  | select(($pr == "none") or ((.number | tostring) == $pr))
+                ]' <<<"${candidates}")"
+            else
+              filtered="$(jq -c --arg pr "${marker_pr}" '
+                [ .[]
+                  | select(any(.labels[]?; .name == "jules:awaiting-fix"))
+                  | select(($pr == "none") or ((.number | tostring) == $pr))
+                ]' <<<"${candidates}")"
+            fi
+          
+            count="$(jq 'length' <<<"${filtered}")"
+            if [[ "${count}" == "0" ]]; then
+              emit missing-target
+              return 0
+            fi
+            if [[ "${count}" != "1" ]]; then
+              emit ambiguous-target
+              return 0
+            fi
+          
+            number="$(jq -r '.[0].number' <<<"${filtered}")"
+            sha="$(jq -r '.[0].headRefOid // ""' <<<"${filtered}")"
+            draft="$(jq -r '.[0].isDraft' <<<"${filtered}")"
+            blocking="$(jq -r '
+              [ .[0].labels[]?.name ] as $names
+              | ($names | index("jules:blocking")) != null
+                or ($names | index("jules:verdict-unknown")) != null
+            ' <<<"${filtered}")"
+          
+            if [[ "${sha}" != "${merge_sha}" ]]; then
+              emit stale "${number}"
+              return 0
+            fi
+            if [[ "${blocking}" == "true" ]]; then
+              emit withhold-blocking "${number}"
+              return 0
+            fi
+            if [[ "${draft}" == "true" ]]; then
+              emit ready "${number}"
+            else
+              emit note-already-ready "${number}"
+            fi
+          }
+          
+          jules_branch_sha() {
+            jules_require_repo
+            local branch="$1"
+            jules_branch_is_safe "${branch}" || {
+              echo "Refusing unsafe branch name ${branch}." >&2
+              return 1
+            }
+            local encoded
+            encoded="$(jq -nr --arg branch "${branch}" '$branch|@uri')"
+            gh api "repos/${GH_REPO}/branches/${encoded}" --jq .commit.sha
+          }
+          
+          jules_ensure_label() {
+            jules_require_repo
+            gh label create "$1" --repo "${GH_REPO}" --color "$2" --description "$3" --force >/dev/null
+          }
+          
+          jules_ensure_handoff_labels() {
+            jules_ensure_label "jules:requested" "FBCA04" "Jules audit is running for this pull request"
+            jules_ensure_label "jules:complete" "0E8A16" "Jules session finished for this head; not a clean verdict"
+            jules_ensure_label "jules:needs-feedback" "D93F0B" "Jules could not finish without human input"
+            jules_ensure_label "jules:blocking" "B60205" "Blocking Jules finding; Codex hand-off is withheld"
+            jules_ensure_label "jules:verdict-unknown" "D4C5F9" "Jules verdict could not be determined; Codex hand-off is withheld"
+            jules_ensure_label "jules:awaiting-fix" "5319E7" "Waiting for a human to merge the Jules correction"
+          }
+          
+          jules_label_names() {
+            jules_require_repo
+            gh pr view "$1" --repo "${GH_REPO}" --json labels --jq '[.labels[].name] | join("\n")'
+          }
+          
+          jules_add_and_remove_labels() {
+            local pr="$1"
+            local add="$2"
+            shift 2
+            jules_require_repo
+            local current name
+            local -a args
+            current="$(jules_label_names "${pr}")"
+            args=(--add-label "${add}")
+            for name in "$@"; do
+              if printf '%s\n' "${current}" | grep -Fxq "${name}"; then
+                args+=(--remove-label "${name}")
+              fi
+            done
+            gh pr edit "${pr}" --repo "${GH_REPO}" "${args[@]}"
+          }
+          
+          jules_comment() {
+            jules_require_repo
+            local pr="$1"
+            local body="$2"
+            gh pr comment "${pr}" --repo "${GH_REPO}" --body "${body}"
+          }
+          
+          jules_fix_pr_number() {
+            local url="${1:-}"
+            local prefix="https://github.com/${GH_REPO}/pull/"
+            if [[ -z "${url}" ]]; then
+              return 1
+            fi
+            if [[ "${url}" != "${prefix}"* ]]; then
+              echo "Refusing Jules pull request outside ${GH_REPO}: ${url}" >&2
+              return 1
+            fi
+            local num="${url#"${prefix}"}"
+            num="${num%%\?*}"
+            num="${num%%#*}"
+            if [[ ! "${num}" =~ ^[0-9]+$ ]]; then
+              echo "Could not parse a pull request number from ${url}." >&2
+              return 1
+            fi
+            printf '%s\n' "${num}"
+          }
+          
+          jules_validate_config() {
+            jules_require_repo
+            if [[ -z "${JULES_API_KEY:-}" ]]; then
+              echo "JULES_API_KEY is not configured." >&2
+              return 1
+            fi
+            if [[ -z "${STARTING_BRANCH:-}" || -z "${BASE_BRANCH:-}" ]]; then
+              echo "Starting branch and base branch are required." >&2
+              return 1
+            fi
+            if ! jules_branch_is_safe "${STARTING_BRANCH}" || ! jules_branch_is_safe "${BASE_BRANCH}"; then
+              echo "Refusing branch names that are empty or not a plain git ref." >&2
+              return 1
+            fi
+            if [[ "${STARTING_BRANCH}" == "${BASE_BRANCH}" ]]; then
+              echo "Starting branch and base branch must differ. Refusing ${STARTING_BRANCH} → ${BASE_BRANCH}." >&2
+              return 1
+            fi
+            case "${STARTING_BRANCH}" in
+              main|staging)
+                echo "Refusing to start Jules from protected branch ${STARTING_BRANCH}." >&2
+                return 1
+                ;;
+            esac
+            if [[ "${STARTING_BRANCH}" == "agent/jules" && "${BASE_BRANCH}" != "staging" ]]; then
+              echo "Cumulative agent/jules audits must use staging as the baseline." >&2
+              return 1
+            fi
+            if [[ "${STARTING_BRANCH}" != "agent/jules" && "${BASE_BRANCH}" != "agent/jules" ]]; then
+              echo "Task audits must use agent/jules as the baseline so correction hand-off has one destination." >&2
+              return 1
+            fi
+          
+            local branch encoded
+            for branch in "${STARTING_BRANCH}" "${BASE_BRANCH}"; do
+              encoded="$(jq -nr --arg item "${branch}" '$item|@uri')"
+              if ! gh api --silent "repos/${GH_REPO}/branches/${encoded}"; then
+                echo "Branch ${branch} does not exist on ${GH_REPO}." >&2
+                return 1
+              fi
+            done
+          
+            local branch_sha
+            branch_sha="$(jules_branch_sha "${STARTING_BRANCH}")"
+            if ! jules_is_sha "${branch_sha}"; then
+              echo "Could not resolve a full SHA for ${STARTING_BRANCH}." >&2
+              return 1
+            fi
+            if [[ -n "${PR_HEAD_SHA:-}" ]]; then
+              if ! jules_is_sha "${PR_HEAD_SHA}"; then
+                echo "Pull request head SHA is not a full SHA." >&2
+                return 1
+              fi
+              if [[ "${PR_HEAD_SHA}" != "${branch_sha}" ]]; then
+                echo "Pull request head ${PR_HEAD_SHA} does not match ${STARTING_BRANCH} tip ${branch_sha}." >&2
+                return 1
+              fi
+              printf '%s\n' "${PR_HEAD_SHA}"
+            else
+              printf '%s\n' "${branch_sha}"
+            fi
+          }
+          
+          jules_audit_kind() {
+            if [[ "${STARTING_BRANCH}" == "agent/jules" && "${BASE_BRANCH}" == "staging" ]]; then
+              printf '%s\n' integration
+            else
+              printf '%s\n' task
+            fi
+          }
+          
+          jules_append_pull_request_output() {
+            local response="$1"
+            local dest="$2"
+            jq -r '
+              .outputs[]?.pullRequest
+              | select(type == "object")
+              | [.title // "", .description // ""]
+              | join("\n")
+            ' <<<"${response}" >> "${dest}"
+          }
+          
+          jules_append_agent_messages() {
+            local session_id="$1"
+            local dest="$2"
+            local page_token="" encoded response page
+            for page in $(seq 1 20); do
+              local url="${JULES_API_URL}/sessions/${session_id}/activities?pageSize=100"
+              if [[ -n "${page_token}" ]]; then
+                encoded="$(jq -nr --arg token "${page_token}" '$token|@uri')"
+                url="${url}&pageToken=${encoded}"
+              fi
+              if ! response="$(curl --fail-with-body --silent --show-error --retry 3 \
+                --header "x-goog-api-key: ${JULES_API_KEY}" \
+                "${url}")"; then
+                echo "Could not list Jules activities for session ${session_id}." >&2
+                return 1
+              fi
+              jq -r '.activities[]?.agentMessaged.agentMessage // empty' <<<"${response}" >> "${dest}"
+              page_token="$(jq -r '.nextPageToken // empty' <<<"${response}")"
+              if [[ -z "${page_token}" ]]; then
+                return 0
+              fi
+            done
+            echo "Jules activity pagination did not finish for session ${session_id}." >&2
+            return 1
+          }
+          
+          jules_mark_requested() {
+            jules_require_repo
+            if [[ -z "${PR_NUMBER:-}" ]]; then
+              echo "No pull request number is available to mark." >&2
+              return 1
+            fi
+            jules_ensure_handoff_labels
+            jules_add_and_remove_labels "${PR_NUMBER}" "jules:requested" \
+              "jules:complete" "jules:needs-feedback"
+            jules_comment "${PR_NUMBER}" "$(cat <<EOF
+          Jules audit started for \`${STARTING_BRANCH}\` against \`${BASE_BRANCH}\`.
+          
+          - Audited SHA: \`${AUDITED_SHA}\`
+          - Session: ${SESSION_URL:-unavailable}
+          - Session ID: \`${SESSION_ID}\`
+          
+          \`jules:requested\` means the session is running. It is not a review result.
+          EOF
+          )"
+          }
+          
+          jules_load_fix_metadata() {
+            local url="${1:-}"
+            FIX_NUMBER=""
+            FIX_AUTHOR=""
+            FIX_CHANGED="none"
+            FIX_TITLE=""
+            FIX_BODY=""
+            FIX_STATE=""
+            if [[ -z "${url}" ]]; then
+              return 0
+            fi
+            FIX_NUMBER="$(jules_fix_pr_number "${url}")" || return 1
+            local json
+            json="$(gh pr view "${FIX_NUMBER}" --repo "${GH_REPO}" --json author,changedFiles,title,body,state)"
+            FIX_AUTHOR="$(jq -r '.author.login // ""' <<<"${json}")"
+            FIX_CHANGED="$(jq -r '.changedFiles // empty' <<<"${json}")"
+            FIX_TITLE="$(jq -r '.title // ""' <<<"${json}")"
+            FIX_BODY="$(jq -r '.body // ""' <<<"${json}")"
+            FIX_STATE="$(jq -r '.state // ""' <<<"${json}")"
+            if [[ -z "${FIX_CHANGED}" ]]; then
+              FIX_CHANGED="missing"
+            fi
+          }
+          
+          jules_resolve_task_target() {
+            TARGET_COUNT=0
+            TARGET_NUMBER="-"
+            TARGET_SHA=""
+            TARGET_DRAFT=false
+            local json
+            if [[ -n "${PR_NUMBER:-}" ]]; then
+              json="$(gh pr view "${PR_NUMBER}" --repo "${GH_REPO}" --json number,isDraft,headRefOid,headRefName,baseRefName)"
+              local head_ref base_ref
+              head_ref="$(jq -r '.headRefName' <<<"${json}")"
+              base_ref="$(jq -r '.baseRefName' <<<"${json}")"
+              if [[ "${head_ref}" != "${STARTING_BRANCH}" || "${base_ref}" != "${BASE_BRANCH}" ]]; then
+                echo "Audited pull request #${PR_NUMBER} is ${head_ref} → ${base_ref}, not ${STARTING_BRANCH} → ${BASE_BRANCH}." >&2
+                TARGET_COUNT=0
+                return 0
+              fi
+              TARGET_COUNT=1
+              TARGET_NUMBER="$(jq -r '.number' <<<"${json}")"
+              TARGET_SHA="$(jq -r '.headRefOid' <<<"${json}")"
+              TARGET_DRAFT="$(jq -r '.isDraft' <<<"${json}")"
+              return 0
+            fi
+          
+            json="$(gh pr list --repo "${GH_REPO}" --state open --head "${STARTING_BRANCH}" --base "${BASE_BRANCH}" --json number,isDraft,headRefOid,headRefName,baseRefName)"
+            TARGET_COUNT="$(jq 'length' <<<"${json}")"
+            if [[ "${TARGET_COUNT}" == "1" ]]; then
+              TARGET_NUMBER="$(jq -r '.[0].number' <<<"${json}")"
+              TARGET_SHA="$(jq -r '.[0].headRefOid' <<<"${json}")"
+              TARGET_DRAFT="$(jq -r '.[0].isDraft' <<<"${json}")"
+            fi
+          }
+          
+          jules_resolve_promotion_target() {
+            TARGET_COUNT=0
+            TARGET_NUMBER="-"
+            TARGET_SHA=""
+            TARGET_DRAFT=false
+            local json
+            json="$(gh pr list --repo "${GH_REPO}" --state open --head agent/jules --base staging --json number,isDraft,headRefOid,labels)"
+            TARGET_COUNT="$(jq 'length' <<<"${json}")"
+            if [[ "${TARGET_COUNT}" == "1" ]]; then
+              TARGET_NUMBER="$(jq -r '.[0].number' <<<"${json}")"
+              TARGET_SHA="$(jq -r '.[0].headRefOid' <<<"${json}")"
+              TARGET_DRAFT="$(jq -r '.[0].isDraft' <<<"${json}")"
+            fi
+          }
+          
+          jules_failure_comment() {
+            local pr="$1"
+            local message="$2"
+            if [[ -z "${pr}" || "${pr}" == "-" ]]; then
+              echo "${message}" >&2
+              return 0
+            fi
+            jules_comment "${pr}" "${message}"
+            echo "${message}" >&2
+          }
+          
+          jules_publish_and_advance() {
+            jules_require_repo
+            : "${STARTING_BRANCH:?}"
+            : "${BASE_BRANCH:?}"
+            : "${AUDITED_SHA:?}"
+            : "${STATE:?}"
+            : "${JULES_VERDICT_FILE:?}"
+            : "${GITHUB_STEP_SUMMARY:?}"
+          
+            local kind branch_sha verdict_text verdict="n/a"
+            kind="$(jules_audit_kind)"
+            branch_sha="$(jules_branch_sha "${STARTING_BRANCH}")"
+          
+            if [[ -f "${JULES_VERDICT_FILE}" ]]; then
+              verdict_text="$(cat "${JULES_VERDICT_FILE}")"
+            else
+              verdict_text=""
+            fi
+          
+            local fix_url="${FIX_PULL_REQUEST:-}"
+            if [[ -z "${fix_url}" && -n "${JULES_FIX_URL_FILE:-}" && -f "${JULES_FIX_URL_FILE}" ]]; then
+              fix_url="$(head -n 1 "${JULES_FIX_URL_FILE}")"
+            fi
+            local fix_metadata_ok=true
+            if [[ -n "${fix_url}" ]]; then
+              if ! jules_load_fix_metadata "${fix_url}"; then
+                fix_metadata_ok=false
+                FIX_CHANGED="missing"
+                echo "Could not read Jules pull request metadata. The verdict will not be treated as clean." >&2
+              fi
+            else
+              jules_load_fix_metadata ""
+            fi
+            if [[ -n "${FIX_TITLE}" || -n "${FIX_BODY}" ]]; then
+              verdict_text="${verdict_text}"$'\n'"${FIX_TITLE}"$'\n'"${FIX_BODY}"
+            fi
+            if [[ "${STATE}" == "COMPLETED" ]]; then
+              verdict="$(jules_classify_verdict "${verdict_text}")"
+              if [[ "${fix_metadata_ok}" == false && "${verdict}" == "clean" ]]; then
+                verdict="unknown"
+              fi
+              if [[ -f "${JULES_ACTIVITY_FETCH_FAILED:-/nonexistent}" && "${verdict}" == "clean" ]]; then
+                echo "Activity text could not be read. Refusing to treat the verdict as clean." >&2
+                verdict="unknown"
+              fi
+            fi
+          
+            TARGET_COUNT=0
+            TARGET_NUMBER="-"
+            TARGET_SHA=""
+            TARGET_DRAFT=false
+            if [[ "${kind}" == "integration" ]]; then
+              jules_resolve_promotion_target
+            else
+              jules_resolve_task_target
+            fi
+          
+            local changed_for_spec="${FIX_CHANGED}"
+            local author_for_spec="${FIX_AUTHOR}"
+            local fix_number_for_spec="${FIX_NUMBER:-"-"}"
+            if [[ -z "${fix_url}" ]]; then
+              changed_for_spec="none"
+              author_for_spec=""
+              fix_number_for_spec="-"
+            fi
+          
+            local action="not-run" action_target="-"
+            if [[ "${STATE}" == "COMPLETED" ]]; then
+              local spec action_lines
+              spec="$(jq -n \
+                --arg verdict "${verdict}" \
+                --arg changed "${changed_for_spec}" \
+                --arg author "${author_for_spec}" \
+                --arg fix_state "${FIX_STATE}" \
+                --arg audited "${AUDITED_SHA}" \
+                --arg branch "${branch_sha}" \
+                --arg kind "${kind}" \
+                --argjson count "${TARGET_COUNT}" \
+                --arg target_sha "${TARGET_SHA}" \
+                --arg target_number "${TARGET_NUMBER}" \
+                --arg draft "${TARGET_DRAFT}" \
+                --arg fix_number "${fix_number_for_spec}" \
+                '{
+                  verdict: $verdict,
+                  changed_files: $changed,
+                  fix_author: $author,
+                  fix_state: $fix_state,
+                  audited_sha: $audited,
+                  branch_sha: $branch,
+                  audit_kind: $kind,
+                  target_count: $count,
+                  target_sha: $target_sha,
+                  target_number: $target_number,
+                  target_is_draft: ($draft == "true"),
+                  fix_number: $fix_number
+                }')"
+              action_lines="$(jules_audit_action "${spec}")"
+              action="$(printf '%s\n' "${action_lines}" | sed -n '1p')"
+              action_target="$(printf '%s\n' "${action_lines}" | sed -n '2p')"
+              [[ -n "${action_target}" ]] || action_target="-"
+            fi
+          
+            local summary
+            summary="$(cat <<EOF
+          ### Jules audit
+          
+          - Kind: \`${kind}\`
+          - Branch: \`${STARTING_BRANCH}\` against \`${BASE_BRANCH}\`
+          - Audited SHA: \`${AUDITED_SHA}\`
+          - Current SHA: \`${branch_sha}\`
+          - Session: ${SESSION_URL:-unavailable}
+          - Session ID: \`${SESSION_ID:-unknown}\`
+          - Final state: \`${STATE}\`
+          - Verdict: \`${verdict}\`
+          - Changed files: \`${changed_for_spec}\`
+          - Hand-off action: \`${action}\`
+          - Fix pull request: ${fix_url:-none}
+          
+          Session completion is not a clean verdict. Zero changed files do not clear a blocking finding. Marking a pull request ready only makes it eligible for the configured repository Codex review; it is not a completed review of this SHA.
+          EOF
+          )"
+            printf '%s\n' "${summary}" >> "${GITHUB_STEP_SUMMARY}"
+          
+            if [[ -n "${PR_NUMBER:-}" ]]; then
+              jules_comment "${PR_NUMBER}" "${summary}"
+            elif [[ "${action_target}" =~ ^[0-9]+$ && "${action_target}" != "${PR_NUMBER:-}" ]]; then
+              jules_comment "${action_target}" "${summary}"
+            fi
+          
+            if [[ "${STATE}" == "DROPPED_NEEDS_HUMAN" && -n "${PR_NUMBER:-}" ]]; then
+              jules_ensure_handoff_labels
+              jules_add_and_remove_labels "${PR_NUMBER}" "jules:needs-feedback" "jules:requested" "jules:complete"
+            fi
+          
+            if [[ "${STATE}" != "COMPLETED" ]]; then
+              echo "Jules audit did not complete successfully (state: ${STATE}). Codex hand-off was not performed." >&2
+              return 1
+            fi
+          
+            case "${action}" in
+              stale)
+                jules_failure_comment "${PR_NUMBER:-${action_target}}" \
+                  "Jules finished for \`${AUDITED_SHA}\`, but \`${STARTING_BRANCH}\` is now \`${branch_sha}\`. The result is stale. Codex hand-off was not performed."
+                return 1
+                ;;
+              missing-target)
+                jules_failure_comment "${PR_NUMBER:-}" \
+                  "Codex hand-off was not performed for \`${STARTING_BRANCH}\` at \`${AUDITED_SHA}\`. No unambiguous target pull request was found. This workflow does not create a promotion pull request."
+                return 1
+                ;;
+              ambiguous-target)
+                jules_failure_comment "${PR_NUMBER:-}" \
+                  "Codex hand-off was not performed for \`${STARTING_BRANCH}\` at \`${AUDITED_SHA}\`. More than one target pull request matched."
+                return 1
+                ;;
+              unknown-preserve)
+                if [[ "${action_target}" =~ ^[0-9]+$ ]]; then
+                  jules_ensure_handoff_labels
+                  jules_add_and_remove_labels "${action_target}" "jules:verdict-unknown" "jules:requested" "jules:needs-feedback"
+                  if [[ "${changed_for_spec}" =~ ^[0-9]+$ && "${changed_for_spec}" -gt 0 && "${kind}" == "task" ]]; then
+                    jules_add_and_remove_labels "${action_target}" "jules:awaiting-fix"
+                  fi
+                  jules_failure_comment "${action_target}" \
+                    "Jules session \`${SESSION_ID:-unknown}\` finished for \`${AUDITED_SHA}\`, but the verdict could not be determined. The pull request stays pending with \`jules:verdict-unknown\` and was not marked ready."
+                else
+                  echo "Jules verdict could not be determined and there is no pull request to label. Codex hand-off was not performed." >&2
+                fi
+                return 1
+                ;;
+              blocking-preserve)
+                if [[ "${action_target}" =~ ^[0-9]+$ ]]; then
+                  jules_ensure_handoff_labels
+                  jules_add_and_remove_labels "${action_target}" "jules:complete" "jules:requested" "jules:needs-feedback" "jules:verdict-unknown"
+                  jules_add_and_remove_labels "${action_target}" "jules:blocking"
+                  if [[ "${changed_for_spec}" =~ ^[0-9]+$ && "${changed_for_spec}" -gt 0 && "${kind}" == "task" ]]; then
+                    jules_add_and_remove_labels "${action_target}" "jules:awaiting-fix"
+                  fi
+                  jules_failure_comment "${action_target}" "$(cat <<EOF
+          Jules reported a blocking finding for \`${AUDITED_SHA}\`. Changed files: \`${changed_for_spec}\`. The finding is preserved and this pull request was not marked ready. Zero changed files is not an approval.
+          EOF
+          )"
+                else
+                  echo "Jules reported a blocking finding for ${AUDITED_SHA}, and no single pull request was labeled. Codex hand-off was not performed." >&2
+                fi
+                if [[ "${FIX_NUMBER}" =~ ^[0-9]+$ ]]; then
+                  local audited_pr="none"
+                  if [[ "${kind}" == "task" && "${PR_NUMBER:-}" =~ ^[0-9]+$ ]]; then
+                    audited_pr="${PR_NUMBER}"
+                  fi
+                  jules_comment "${FIX_NUMBER}" "$(jules_marker_body "${kind}" "${audited_pr}" "${AUDITED_SHA}" "${SESSION_ID:-unknown}" blocking)"
+                fi
+                return 1
+                ;;
+              await-fix)
+                jules_ensure_handoff_labels
+                jules_add_and_remove_labels "${action_target}" "jules:complete" "jules:requested" "jules:needs-feedback" "jules:blocking" "jules:verdict-unknown"
+                jules_add_and_remove_labels "${action_target}" "jules:awaiting-fix"
+                local marker
+                marker="$(jules_marker_body task "${action_target}" "${AUDITED_SHA}" "${SESSION_ID:-unknown}" clean)"
+                jules_comment "${action_target}" "$(cat <<EOF
+          Jules opened a correction with ${changed_for_spec} changed file(s) for \`${AUDITED_SHA}\`. This pull request stays a draft with \`jules:awaiting-fix\` until a human merges that correction. It was not marked ready.
+          
+          ${marker}
+          EOF
+          )"
+                if [[ -n "${FIX_NUMBER}" ]]; then
+                  jules_comment "${FIX_NUMBER}" "${marker}"
+                fi
+                ;;
+              defer-integration-fix)
+                echo "Integration correction is open. Codex hand-off waits until a human merges it and the promotion pull request head is that merge SHA. No promotion pull request was created."
+                if [[ "${FIX_NUMBER}" =~ ^[0-9]+$ ]]; then
+                  jules_comment "${FIX_NUMBER}" "$(jules_marker_body integration none "${AUDITED_SHA}" "${SESSION_ID:-unknown}" clean)"
+                fi
+                ;;
+              close-empty-ready|close-empty-note)
+                if [[ ! "${FIX_NUMBER}" =~ ^[0-9]+$ ]]; then
+                  echo "Refusing to close a clean empty correction without a pull request number." >&2
+                  return 1
+                fi
+                if [[ "${FIX_STATE}" == "OPEN" || "${FIX_STATE}" == "open" ]]; then
+                  gh pr close "${FIX_NUMBER}" --repo "${GH_REPO}" --comment "Closing this empty Jules pull request because the verdict is explicitly clean and it changes no files. A blocking finding is not closed by this path."
+                fi
+                jules_ensure_handoff_labels
+                jules_add_and_remove_labels "${action_target}" "jules:complete" "jules:requested" "jules:needs-feedback" "jules:blocking" "jules:verdict-unknown" "jules:awaiting-fix"
+                if [[ "${action}" == "close-empty-ready" ]]; then
+                  jules_comment "${action_target}" "Jules verdict is clean for \`${AUDITED_SHA}\` with no file changes. Marking this draft ready makes it eligible for the configured Codex review. Readiness is not a completed Codex review."
+                  gh pr ready "${action_target}" --repo "${GH_REPO}"
+                else
+                  jules_comment "${action_target}" "Jules verdict is clean for \`${AUDITED_SHA}\` with no file changes. This pull request is already ready. Codex was not marked as having reviewed this SHA."
+                fi
+                ;;
+              ready)
+                jules_ensure_handoff_labels
+                jules_add_and_remove_labels "${action_target}" "jules:complete" "jules:requested" "jules:needs-feedback" "jules:blocking" "jules:verdict-unknown" "jules:awaiting-fix"
+                jules_comment "${action_target}" "Jules verdict is clean for \`${AUDITED_SHA}\` and no correction is open. Marking this draft ready makes it eligible for the configured Codex review. Readiness is not a completed Codex review."
+                gh pr ready "${action_target}" --repo "${GH_REPO}"
+                ;;
+              note-already-ready)
+                jules_ensure_handoff_labels
+                jules_add_and_remove_labels "${action_target}" "jules:complete" "jules:requested" "jules:needs-feedback" "jules:blocking" "jules:verdict-unknown" "jules:awaiting-fix"
+                jules_comment "${action_target}" "Jules verdict is clean for \`${AUDITED_SHA}\`. This pull request is already ready, so it was left as-is. This workflow does not record a Codex approval."
+                ;;
+              *)
+                echo "Unrecognized hand-off action ${action}. Codex hand-off was not performed." >&2
+                return 1
+                ;;
+            esac
+          }
+          
+          jules_correction_marker_text() {
+            local number="$1"
+            local body comments
+            body="$(gh pr view "${number}" --repo "${GH_REPO}" --json body --jq .body)"
+            comments="$(gh api --paginate "repos/${GH_REPO}/issues/${number}/comments" --jq '.[].body')"
+            printf '%s\n%s\n' "${body}" "${comments}"
+          }
+          
+          jules_fix_ready_main() {
+            jules_require_repo
+            : "${CORRECTION_BASE:?}"
+            : "${CORRECTION_NUMBER:?}"
+            local merge_sha="${MERGE_SHA:-}"
+            if ! jules_branch_is_safe "${CORRECTION_BASE}"; then
+              echo "Refusing unsafe correction base ${CORRECTION_BASE}." >&2
+              return 1
+            fi
+            if [[ "${CORRECTION_BASE}" == "main" || "${CORRECTION_BASE}" == "staging" ]]; then
+              echo "Refusing Codex hand-off for a correction that targeted protected branch ${CORRECTION_BASE}. No pull request was changed." >&2
+              return 1
+            fi
+          
+            local marker_text marker_lines marker_kind marker_pr candidates
+            marker_text="$(jules_correction_marker_text "${CORRECTION_NUMBER}")"
+            marker_lines="$(jules_parse_marker "${marker_text}")"
+            marker_kind="$(printf '%s\n' "${marker_lines}" | sed -n '1p')"
+            marker_pr="$(printf '%s\n' "${marker_lines}" | sed -n '2p')"
+            [[ -n "${marker_pr}" ]] || marker_pr="none"
+          
+            if [[ "${CORRECTION_BASE}" == "agent/jules" ]]; then
+              # Cumulative correction into agent/jules. The Codex target is the promotion PR.
+              candidates="$(gh pr list --repo "${GH_REPO}" --state open --head agent/jules --base staging --json number,isDraft,headRefOid,labels)"
+            else
+              candidates="$(gh pr list --repo "${GH_REPO}" --state open --head "${CORRECTION_BASE}" --base agent/jules --json number,isDraft,headRefOid,labels)"
+            fi
+          
+            local action_lines action target
+            action_lines="$(jules_fix_ready_action "${CORRECTION_BASE}" "${merge_sha}" "${marker_kind}" "${marker_pr}" "${candidates}")"
+            action="$(printf '%s\n' "${action_lines}" | sed -n '1p')"
+            target="$(printf '%s\n' "${action_lines}" | sed -n '2p')"
+          
+            case "${action}" in
+              ready)
+                jules_add_and_remove_labels "${target}" "jules:complete" "jules:awaiting-fix" "jules:requested"
+                jules_comment "${target}" "Jules correction #${CORRECTION_NUMBER} merged as \`${merge_sha}\`. Marking this draft ready makes that SHA eligible for the configured Codex review. Readiness is not a completed Codex review."
+                gh pr ready "${target}" --repo "${GH_REPO}"
+                ;;
+              note-already-ready)
+                jules_comment "${target}" "Jules correction #${CORRECTION_NUMBER} merged as \`${merge_sha}\`, which matches this head. The pull request is already ready. This workflow does not record a Codex approval."
+                ;;
+              withhold-blocking)
+                jules_failure_comment "${target}" "Jules correction #${CORRECTION_NUMBER} merged as \`${merge_sha}\`, but \`jules:blocking\` or \`jules:verdict-unknown\` is still present. Codex hand-off was not performed."
+                return 1
+                ;;
+              stale)
+                jules_failure_comment "${target:-${CORRECTION_NUMBER}}" "Refusing a stale Jules hand-off. Correction #${CORRECTION_NUMBER} merged as \`${merge_sha}\`, which is not the current head of the target pull request."
+                return 1
+                ;;
+              missing-target)
+                if [[ "${CORRECTION_BASE}" == "agent/jules" ]]; then
+                  jules_failure_comment "${CORRECTION_NUMBER}" "Codex hand-off was not performed after Jules correction #${CORRECTION_NUMBER} merged into agent/jules. No open agent/jules → staging promotion pull request matched the merge SHA. agent/jules → agent/jules was not searched, and no promotion pull request was created."
+                else
+                  jules_failure_comment "${CORRECTION_NUMBER}" "Codex hand-off was not performed after Jules correction #${CORRECTION_NUMBER} merged into \`${CORRECTION_BASE}\`. No open \`${CORRECTION_BASE}\` → agent/jules pull request labeled jules:awaiting-fix matched. No promotion pull request was created."
+                fi
+                return 1
+                ;;
+              ambiguous-target|marker-conflict)
+                jules_failure_comment "${CORRECTION_NUMBER}" "Codex hand-off was not performed after Jules correction #${CORRECTION_NUMBER}. The audited pull request mapping is ambiguous (${action})."
+                return 1
+                ;;
+              refuse-protected)
+                echo "Refusing protected-branch hand-off." >&2
+                return 1
+                ;;
+              *)
+                echo "Unrecognized fix-ready action ${action}." >&2
+                return 1
+                ;;
+            esac
+          }
+          END_LIB
+
+      - name: Validate configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          # shellcheck source=/dev/null
+          source "${RUNNER_TEMP}/jules-handoff-lib.sh"
+          sha="$(jules_validate_config)"
+          echo "AUDITED_SHA=${sha}" >> "${GITHUB_ENV}"
 
       - name: Resolve Jules source
         id: source
         shell: bash
-        env:
-          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
 
-          owner="${REPOSITORY%%/*}"
-          repo="${REPOSITORY#*/}"
+          owner="${GH_REPO%%/*}"
+          repo="${GH_REPO#*/}"
           page_token=""
           source_name=""
 
@@ -144,7 +1097,7 @@ jobs:
           done
 
           if [[ -z "${source_name}" ]]; then
-            echo "No Jules source is connected for ${REPOSITORY}." >&2
+            echo "No Jules source is connected for ${GH_REPO}." >&2
             exit 1
           fi
 
@@ -170,6 +1123,8 @@ jobs:
           Make a code change only when the correction is small, local, and unambiguous. Do not perform broad refactors, add unrelated dependencies, change package versions, create tags, or merge. Do not add tests merely to expand coverage. Describe larger or ambiguous findings in the session.
 
           This is an unattended audit. Never ask for plan approval or end with a question. Verify every proposed correction against the current HEAD before changing code. Fix only issues introduced by the reviewed diff. For pre-existing, unrelated, environmental, risky, or ambiguous issues, do not change the repository: record a finding or blocker and continue. If a public API, package layout, dependency, serialization contract, platform policy, or other high-risk decision would be required, leave a blocking finding and complete the audit without that change. If no directly related correction is required, complete the session with no code changes.
+
+          End the report and any pull request description with one machine-readable line. The key is JULES_AUDIT_VERDICT. Use the value clean only when there are no blocking findings. Use the value blocking when any finding should stop the automated Codex hand-off, including a finding you did not change code for. Do not write both values. A pull request that changes no files can still use the blocking value.
 
           Automatic pull request mode is on. Leave any correction for the automatic pull request into ${STARTING_BRANCH}. Do not push directly to ${STARTING_BRANCH}, ${BASE_BRANCH}, main, staging, or agent/jules.
           EOF
@@ -221,33 +1176,13 @@ jobs:
           SESSION_ID: ${{ steps.session.outputs.id }}
         run: |
           set -euo pipefail
-
-          gh label create "jules:requested" \
-            --color "FBCA04" \
-            --description "Jules audit is running for this pull request" \
-            >/dev/null 2>&1 || true
-          gh label create "jules:complete" \
-            --color "0E8A16" \
-            --description "Jules audit session finished for this head" \
-            >/dev/null 2>&1 || true
-          gh label create "jules:needs-feedback" \
-            --color "D93F0B" \
-            --description "Jules could not finish without human input" \
-            >/dev/null 2>&1 || true
-          gh pr edit "${PR_NUMBER}" --add-label "jules:requested" --remove-label "jules:complete,jules:needs-feedback" \
-            || gh pr edit "${PR_NUMBER}" --add-label "jules:requested" \
-            || echo "Could not label pull request ${PR_NUMBER}." >&2
-
-          gh pr comment "${PR_NUMBER}" --body "$(cat <<EOF
-          Jules audit started for \`${STARTING_BRANCH}\` against \`${BASE_BRANCH}\`.
-
-          - Session: ${SESSION_URL:-unavailable}
-          - Session ID: \`${SESSION_ID}\`
-          EOF
-          )" || echo "Could not comment on pull request ${PR_NUMBER}." >&2
+          # shellcheck source=/dev/null
+          source "${RUNNER_TEMP}/jules-handoff-lib.sh"
+          jules_mark_requested
 
       - name: Wait for audit result
         id: result
+        if: always() && !cancelled() && steps.session.outputs.id != ''
         shell: bash
         env:
           SESSION_ID: ${{ steps.session.outputs.id }}
@@ -297,7 +1232,7 @@ jobs:
               AWAITING_USER_FEEDBACK)
                 if (( feedback_resumes == 0 )); then
                   echo "Jules requested feedback; sending the unattended-audit policy once."
-                  resume_prompt="This audit is unattended. Do not ask for plan approval or confirmation. Re-check every proposed correction against the current HEAD. Fix only small, directly related, unambiguous issues introduced by the reviewed diff. For pre-existing, unrelated, environmental, risky, or ambiguous issues, do not modify the repository: record a finding or blocker and continue. Complete the audit without further user feedback. If no directly related correction is required, finish with no code changes."
+                  resume_prompt="This audit is unattended. Do not ask for plan approval or confirmation. Re-check every proposed correction against the current HEAD. Fix only small, directly related, unambiguous issues introduced by the reviewed diff. For pre-existing, unrelated, environmental, risky, or ambiguous issues, do not modify the repository: record a finding or blocker and continue. Complete the audit without further user feedback. If no directly related correction is required, finish with no code changes. End with one JULES_AUDIT_VERDICT line whose value is clean or blocking."
                   payload="$(jq -n --arg prompt "${resume_prompt}" '{prompt: $prompt}')"
                   curl --fail-with-body --silent --show-error \
                     --request POST \
@@ -335,6 +1270,18 @@ jobs:
             resolved_url="${SESSION_URL}"
           fi
 
+          # shellcheck source=/dev/null
+          source "${RUNNER_TEMP}/jules-handoff-lib.sh"
+          verdict_file="${RUNNER_TEMP}/jules-verdict-text.txt"
+          : > "${verdict_file}"
+          if [[ -n "${response}" ]]; then
+            jules_append_pull_request_output "${response}" "${verdict_file}"
+          fi
+          if ! jules_append_agent_messages "${SESSION_ID}" "${verdict_file}"; then
+            : > "${RUNNER_TEMP}/jules-activity-fetch-failed"
+          fi
+          printf '%s\n' "${pr_url}" > "${RUNNER_TEMP}/jules-fix-url.txt"
+
           {
             echo "state=${state}"
             echo "feedback_resumes=${feedback_resumes}"
@@ -358,8 +1305,8 @@ jobs:
             "${JULES_API_URL}/sessions/${SESSION_ID}" \
             || echo "Could not delete Jules session ${SESSION_ID}." >&2
 
-      - name: Publish audit result
-        if: steps.result.outputs.state != '' && !cancelled()
+      - name: Publish audit result and hand off
+        if: always() && !cancelled() && steps.result.outputs.state != ''
         shell: bash
         env:
           STATE: ${{ steps.result.outputs.state }}
@@ -369,45 +1316,9 @@ jobs:
           FEEDBACK_RESUMES: ${{ steps.result.outputs.feedback_resumes }}
         run: |
           set -euo pipefail
-
-          if [[ -n "${FIX_PULL_REQUEST}" ]]; then
-            fix_line="- Fix pull request: ${FIX_PULL_REQUEST}"
-          else
-            fix_line="- Fix pull request: none"
-          fi
-
-          summary="$(cat <<EOF
-          ### Jules audit
-
-          - Branch: \`${STARTING_BRANCH}\` against \`${BASE_BRANCH}\`
-          - Session: ${SESSION_URL:-unavailable}
-          - Session ID: \`${SESSION_ID}\`
-          - Final state: \`${STATE}\`
-          - Automatic feedback resumes: \`${FEEDBACK_RESUMES}\`
-          ${fix_line}
-
-          A completed session can still contain blocking findings. Read the Jules session before merging.
-          EOF
-          )"
-          printf '%s\n' "${summary}" >> "${GITHUB_STEP_SUMMARY}"
-
-          if [[ -n "${PR_NUMBER}" ]]; then
-            gh pr comment "${PR_NUMBER}" --body "${summary}" \
-              || echo "Could not comment on pull request ${PR_NUMBER}." >&2
-            if [[ "${STATE}" == "COMPLETED" ]]; then
-              gh pr edit "${PR_NUMBER}" --add-label "jules:complete" --remove-label "jules:requested,jules:needs-feedback" \
-                || gh pr edit "${PR_NUMBER}" --add-label "jules:complete" \
-                || echo "Could not label pull request ${PR_NUMBER}." >&2
-            elif [[ "${STATE}" == "DROPPED_NEEDS_HUMAN" ]]; then
-              gh pr edit "${PR_NUMBER}" --add-label "jules:needs-feedback" --remove-label "jules:requested,jules:complete" \
-                || gh pr edit "${PR_NUMBER}" --add-label "jules:needs-feedback" \
-                || echo "Could not label pull request ${PR_NUMBER}." >&2
-            fi
-          fi
-
-          if [[ "${STATE}" == "DROPPED_NEEDS_HUMAN" ]]; then
-            echo "Jules audit was dropped after repeated requests for human input."
-          elif [[ "${STATE}" != "COMPLETED" ]]; then
-            echo "Jules audit did not complete successfully (state: ${STATE})." >&2
-            exit 1
-          fi
+          # shellcheck source=/dev/null
+          source "${RUNNER_TEMP}/jules-handoff-lib.sh"
+          export JULES_VERDICT_FILE="${RUNNER_TEMP}/jules-verdict-text.txt"
+          export JULES_FIX_URL_FILE="${RUNNER_TEMP}/jules-fix-url.txt"
+          export JULES_ACTIVITY_FETCH_FAILED="${RUNNER_TEMP}/jules-activity-fetch-failed"
+          jules_publish_and_advance

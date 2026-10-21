@@ -110,7 +110,11 @@ public class RamndAnalyticsTests
     [Test]
     public async Task Flush_PostsBatch_AndTreats207AsSuccess()
     {
-        var transport = new FakeTransport { StatusCode = 207 };
+        var transport = new FakeTransport
+        {
+            StatusCode = 207,
+            Body = "{\"accepted\":1,\"duplicates\":0,\"rejected\":[]}",
+        };
         var store = new MemoryQueueStore();
         var system = CreateSystem(transport, store);
 
@@ -126,6 +130,26 @@ public class RamndAnalyticsTests
         Assert.That(events[0]!["user_id"]!.Value<string>(), Is.EqualTo("install-test"));
         Assert.That(store.Count, Is.EqualTo(0));
         system.Dispose();
+    }
+
+    [Test]
+    public async Task LogEvent_CheckpointsBeforeDispose_SoAKilledSessionCanReplay()
+    {
+        var store = new MemoryQueueStore();
+        var first = CreateSystem(new FakeTransport { StatusCode = 503 }, store);
+        first.LogEvent(new SampleEvent("1.2.3", true));
+
+        Assert.That(store.Count, Is.EqualTo(1));
+        first.Dispose();
+
+        var secondTransport = new FakeTransport { StatusCode = 200 };
+        var second = CreateSystem(secondTransport, store);
+        await second.FlushAsync();
+
+        Assert.That(secondTransport.Bodies.Count, Is.EqualTo(1));
+        Assert.That(secondTransport.Bodies[0], Does.Contain("1.2.3"));
+        Assert.That(store.Count, Is.EqualTo(0));
+        second.Dispose();
     }
 
     [Test]
@@ -264,9 +288,402 @@ public class RamndAnalyticsTests
         string dir = CreateTempDir();
         try
         {
-            File.WriteAllText(Path.Combine(dir, "ramnd-analytics-queue.json"), "{not json");
+            File.WriteAllText(Path.Combine(dir, RamndAnalyticsFileQueue.FileName), "{not json");
             var store = new RamndAnalyticsFileQueue(dir, "http://localhost:3000");
             Assert.That(store.Load().Count, Is.EqualTo(0));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    public async Task Http207WithoutRejectedList_KeepsTheBatch()
+    {
+        var delays = new ScriptedDelay();
+        var transport = new FakeTransport { StatusCode = 207, Body = "{\"accepted\":1}" };
+        var store = new MemoryQueueStore();
+        var system = CreateSystem(transport, store, delay: delays.Wait);
+
+        system.LogEvent(new SampleEvent("1.2.3", true));
+        await system.FlushAsync();
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(1));
+        Assert.That(store.Count, Is.EqualTo(1));
+        Assert.That(delays.Started, Is.EqualTo(1), "One backoff wait, not a tight retry loop");
+        system.Dispose();
+    }
+
+    [Test]
+    public async Task Http207_DropsRejectedEventAndConfirmsTheRest()
+    {
+        var transport = new PartialAcceptTransport();
+        var store = new MemoryQueueStore();
+        var system = CreateSystem(transport, store);
+
+        system.LogEvent(new SampleEvent("bad", true));
+        system.LogEvent(new SampleEvent("good", false));
+        await system.FlushAsync();
+
+        Assert.That(store.Count, Is.EqualTo(0));
+
+        system.LogEvent(new SampleEvent("later", false));
+        await system.FlushAsync();
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(2));
+        var second = (JArray)JObject.Parse(transport.Bodies[1])["events"];
+        Assert.That(second.Count, Is.EqualTo(1));
+        Assert.That(second[0]!["build_version"]!.Value<string>(), Is.EqualTo("later"));
+        system.Dispose();
+    }
+
+    [Test]
+    public async Task TransportFailure_RetriesAfterBackoff_NotImmediately()
+    {
+        var delays = new ScriptedDelay();
+        var transport = new FakeTransport { StatusCode = 503 };
+        var store = new MemoryQueueStore();
+        var system = CreateSystem(transport, store, delay: delays.Wait);
+
+        system.LogEvent(new SampleEvent("1.2.3", true));
+        await system.FlushAsync();
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(1));
+        Assert.That(delays.Started, Is.EqualTo(1));
+        Assert.That(delays.Delays[0].TotalSeconds, Is.EqualTo(2).Within(0.5));
+        Assert.That(store.Count, Is.EqualTo(1));
+
+        delays.ReleaseOne();
+        await WaitUntil(() => transport.Bodies.Count >= 2);
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(2));
+        Assert.That(delays.Started, Is.EqualTo(2));
+        Assert.That(store.Count, Is.EqualTo(1));
+        system.Dispose();
+    }
+
+    [Test]
+    public async Task FullBatch_DuringBackoff_DoesNotPostUntilRetryIsDue()
+    {
+        var delays = new ScriptedDelay();
+        var transport = new FakeTransport { StatusCode = 503 };
+        var store = new MemoryQueueStore();
+        var system = CreateSystem(transport, store, delay: delays.Wait, maxBatchSize: 1);
+
+        system.LogEvent(new SampleEvent("one", true));
+        await WaitUntil(() => transport.Bodies.Count == 1 && delays.Started == 1);
+
+        system.LogEvent(new SampleEvent("two", false));
+        system.LogEvent(new SampleEvent("three", false));
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(1), "A full batch must not bypass backoff");
+        Assert.That(delays.Started, Is.EqualTo(1), "One scheduled retry, not one per event");
+        Assert.That(store.Count, Is.EqualTo(3), "Failed events stay queued");
+
+        delays.ReleaseOne();
+        await WaitUntil(() => transport.Bodies.Count == 2 && delays.Started == 2);
+
+        Assert.That(store.Count, Is.EqualTo(3));
+
+        system.LogEvent(new SampleEvent("four", false));
+        Assert.That(transport.Bodies.Count, Is.EqualTo(2));
+        Assert.That(store.Count, Is.EqualTo(4));
+
+        system.Flush();
+        await WaitUntil(() => transport.Bodies.Count == 3 && delays.Started == 3);
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(3), "Explicit Flush overrides backoff");
+        Assert.That(store.Count, Is.EqualTo(4));
+        system.Dispose();
+    }
+
+    [Test]
+    public async Task FullBatch_WhileOffline_DoesNotPostUntilExplicitFlush()
+    {
+        var transport = new FakeTransport { StatusCode = 503 };
+        var store = new MemoryQueueStore();
+        bool online = false;
+        var system = CreateSystem(transport, store, maxBatchSize: 1, isOnline: () => online);
+
+        system.LogEvent(new SampleEvent("one", true));
+        system.LogEvent(new SampleEvent("two", false));
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(0));
+        Assert.That(store.Count, Is.EqualTo(2));
+
+        online = true;
+        system.Flush();
+        await WaitUntil(() => transport.Bodies.Count == 1);
+
+        Assert.That(store.Count, Is.EqualTo(2), "A failed explicit flush still keeps the queue");
+        system.Dispose();
+    }
+
+    [Test]
+    public async Task PeriodicFlush_SendsBeforeBatchIsFull()
+    {
+        var delays = new ScriptedDelay();
+        var transport = new FakeTransport { StatusCode = 200 };
+        var store = new MemoryQueueStore();
+        var system = CreateSystem(transport, store, TimeSpan.FromSeconds(15), delays.Wait);
+
+        system.LogEvent(new SampleEvent("1.2.3", true));
+
+        Assert.That(transport.Bodies.Count, Is.EqualTo(0));
+        Assert.That(delays.Started, Is.EqualTo(1));
+        Assert.That(delays.Delays[0], Is.EqualTo(TimeSpan.FromSeconds(15)));
+
+        delays.ReleaseOne();
+        await WaitUntil(() => transport.Bodies.Count == 1);
+
+        Assert.That(store.Count, Is.EqualTo(0));
+        Assert.That(transport.Bodies.Count, Is.EqualTo(1));
+        system.Dispose();
+    }
+
+    [Test]
+    public void RetryDelay_GrowsThenCaps()
+    {
+        Assert.That(RamndAnalyticSystem.ComputeRetryDelay(1, 0).TotalSeconds, Is.EqualTo(1.5).Within(0.001));
+        Assert.That(RamndAnalyticSystem.ComputeRetryDelay(1, 1).TotalSeconds, Is.EqualTo(2.5).Within(0.001));
+        Assert.That(RamndAnalyticSystem.ComputeRetryDelay(2, 0).TotalSeconds, Is.EqualTo(3).Within(0.001));
+        Assert.That(RamndAnalyticSystem.ComputeRetryDelay(6, 1).TotalSeconds, Is.EqualTo(75).Within(0.001));
+    }
+
+    [Test]
+    public void Config_DefaultsFlushIntervalToFifteenSeconds()
+    {
+        var config = new RamndAnalyticsConfig("http://localhost:3000", "key");
+        Assert.That(config.FlushInterval, Is.EqualTo(RamndAnalyticsConfig.DefaultFlushInterval));
+        Assert.That(config.FlushInterval, Is.EqualTo(TimeSpan.FromSeconds(15)));
+        Assert.That(config.MaxBatchSize, Is.EqualTo(500));
+
+        var namedInterval = new RamndAnalyticsConfig(
+            "http://localhost:3000",
+            "key",
+            flushInterval: TimeSpan.Zero);
+        Assert.That(namedInterval.FlushInterval, Is.EqualTo(TimeSpan.Zero));
+        Assert.That(namedInterval.MaxBatchSize, Is.EqualTo(500));
+
+        var namedBatch = new RamndAnalyticsConfig(
+            "http://localhost:3000",
+            "key",
+            maxBatchSize: 25);
+        Assert.That(namedBatch.MaxBatchSize, Is.EqualTo(25));
+        Assert.That(namedBatch.FlushInterval, Is.EqualTo(TimeSpan.FromSeconds(15)));
+    }
+
+    [Test]
+    public void Config_RejectsNegativeFlushInterval()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new RamndAnalyticsConfig(
+                "http://localhost:3000",
+                "key",
+                500,
+                flushInterval: TimeSpan.FromSeconds(-1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new RamndAnalyticsConfig(
+                "http://localhost:3000",
+                "key",
+                flushInterval: TimeSpan.FromSeconds(-1)));
+    }
+
+    [Test]
+    public void FileQueue_AppendsNewEventsUntilARemovalCompactsTheSnapshot()
+    {
+        string dir = CreateTempDir();
+        try
+        {
+            const string gateway = "http://localhost:3000";
+            var store = new RamndAnalyticsFileQueue(dir, gateway);
+            var first = EventRow("11111111-1111-4111-8111-111111111111");
+            var second = EventRow("22222222-2222-4222-8222-222222222222");
+
+            store.Save(new[] { first });
+            store.Save(new[] { first });
+            store.Save(new[] { first, second });
+
+            string snapshotPath = Path.Combine(dir, RamndAnalyticsFileQueue.FileName);
+            string journalPath = Path.Combine(dir, RamndAnalyticsFileQueue.JournalFileName);
+            Assert.That(File.Exists(snapshotPath), Is.False);
+            Assert.That(JournalLineCount(journalPath), Is.EqualTo(2));
+
+            var appended = store.Load();
+            Assert.That(appended.Count, Is.EqualTo(2));
+            Assert.That(appended[0]["event_id"].ToString(), Is.EqualTo(first["event_id"]));
+            Assert.That(appended[1]["event_timestamp"].ToString(), Does.Contain("2026-09-28"));
+
+            string staleJournal = File.ReadAllText(journalPath);
+            store.Save(new[] { second });
+
+            Assert.That(File.Exists(snapshotPath), Is.True);
+            Assert.That(File.Exists(journalPath), Is.False);
+            var compacted = store.Load();
+            Assert.That(compacted.Count, Is.EqualTo(1));
+            Assert.That(compacted[0]["event_id"].ToString(), Is.EqualTo(second["event_id"]));
+
+            File.WriteAllText(journalPath, staleJournal);
+            var reloaded = new RamndAnalyticsFileQueue(dir, gateway).Load();
+            Assert.That(reloaded.Count, Is.EqualTo(1));
+            Assert.That(reloaded[0]["event_id"].ToString(), Is.EqualTo(second["event_id"]));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    public void FileQueue_UnreadableSnapshot_KeepsJournalEventsAndRepairsOnSave()
+    {
+        string dir = CreateTempDir();
+        try
+        {
+            const string gateway = "http://localhost:3000";
+            var row = EventRow("66666666-6666-4666-8666-666666666666");
+            var store = new RamndAnalyticsFileQueue(dir, gateway);
+            store.Save(new[] { row });
+            File.WriteAllText(Path.Combine(dir, RamndAnalyticsFileQueue.FileName), "{not json");
+
+            var recovered = new RamndAnalyticsFileQueue(dir, gateway);
+            var loaded = recovered.Load();
+            Assert.That(loaded.Count, Is.EqualTo(1));
+            Assert.That(loaded[0]["event_id"].ToString(), Is.EqualTo(row["event_id"]));
+
+            recovered.Save(loaded);
+            Assert.That(File.Exists(Path.Combine(dir, RamndAnalyticsFileQueue.JournalFileName)), Is.False);
+
+            var again = new RamndAnalyticsFileQueue(dir, gateway).Load();
+            Assert.That(again.Count, Is.EqualTo(1));
+            Assert.That(again[0]["event_id"].ToString(), Is.EqualTo(row["event_id"]));
+            Assert.That(again[0]["event_timestamp"].ToString(), Does.Contain("2026-09-28"));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    public void FileQueue_TornJournalTail_DoesNotSwallowTheNextAppend()
+    {
+        string dir = CreateTempDir();
+        try
+        {
+            const string gateway = "http://localhost:3000";
+            var first = EventRow("11111111-1111-4111-8111-111111111111");
+            var second = EventRow("22222222-2222-4222-8222-222222222222");
+            string journalPath = Path.Combine(dir, RamndAnalyticsFileQueue.JournalFileName);
+
+            var store = new RamndAnalyticsFileQueue(dir, gateway);
+            store.Save(new[] { first });
+            File.AppendAllText(journalPath, "{\"gateway\":");
+
+            var resumed = new RamndAnalyticsFileQueue(dir, gateway);
+            var loaded = resumed.Load();
+            Assert.That(loaded.Count, Is.EqualTo(1));
+            Assert.That(loaded[0]["event_id"].ToString(), Is.EqualTo(first["event_id"]));
+
+            resumed.Save(new[] { first, second });
+
+            var again = new RamndAnalyticsFileQueue(dir, gateway).Load();
+            Assert.That(again.Count, Is.EqualTo(2));
+            Assert.That(again[0]["event_id"].ToString(), Is.EqualTo(first["event_id"]));
+            Assert.That(again[1]["event_id"].ToString(), Is.EqualTo(second["event_id"]));
+            Assert.That(File.ReadAllText(journalPath), Does.Contain("\n{\"gateway\":\n"));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    public void FileQueue_CompleteJournalLineWithoutNewline_SurvivesTheNextAppend()
+    {
+        string dir = CreateTempDir();
+        try
+        {
+            const string gateway = "http://localhost:3000";
+            var first = EventRow("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+            var second = EventRow("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+            string journalPath = Path.Combine(dir, RamndAnalyticsFileQueue.JournalFileName);
+
+            var store = new RamndAnalyticsFileQueue(dir, gateway);
+            store.Save(new[] { first });
+            string line = File.ReadAllText(journalPath).TrimEnd('\n', '\r');
+            File.WriteAllText(journalPath, line);
+
+            var resumed = new RamndAnalyticsFileQueue(dir, gateway);
+            Assert.That(resumed.Load().Count, Is.EqualTo(1));
+            resumed.Save(new[] { first, second });
+
+            var again = new RamndAnalyticsFileQueue(dir, gateway).Load();
+            Assert.That(again.Count, Is.EqualTo(2));
+            Assert.That(again[0]["event_id"].ToString(), Is.EqualTo(first["event_id"]));
+            Assert.That(again[1]["event_id"].ToString(), Is.EqualTo(second["event_id"]));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    public void FileQueue_TornJournalLine_DoesNotDropEarlierEvents()
+    {
+        string dir = CreateTempDir();
+        try
+        {
+            const string gateway = "http://localhost:3000";
+            var store = new RamndAnalyticsFileQueue(dir, gateway);
+            var row = EventRow("33333333-3333-4333-8333-333333333333");
+            store.Save(new[] { row });
+            File.AppendAllText(
+                Path.Combine(dir, RamndAnalyticsFileQueue.JournalFileName),
+                "{\"gateway\":\"http://localhost:3000\",\"generation\":0,\"event\":");
+
+            var loaded = new RamndAnalyticsFileQueue(dir, gateway).Load();
+            Assert.That(loaded.Count, Is.EqualTo(1));
+            Assert.That(loaded[0]["event_id"].ToString(), Is.EqualTo(row["event_id"]));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    public void FileQueue_LegacySnapshotWithoutGeneration_AcceptsAppendedEvents()
+    {
+        string dir = CreateTempDir();
+        try
+        {
+            const string gateway = "http://localhost:3000";
+            string legacyId = "44444444-4444-4444-8444-444444444444";
+            File.WriteAllText(
+                Path.Combine(dir, RamndAnalyticsFileQueue.FileName),
+                "{\"gateway\":\"" + gateway + "\",\"events\":[{\"event_id\":\"" + legacyId +
+                "\",\"event_name\":\"app_session_start\",\"event_timestamp\":\"2026-09-28T12:00:00.000Z\"}]}");
+
+            var otherGateway = new RamndAnalyticsFileQueue(dir, "http://prod.example");
+            Assert.That(otherGateway.Load().Count, Is.EqualTo(0));
+            Assert.That(File.Exists(Path.Combine(dir, RamndAnalyticsFileQueue.FileName)), Is.True);
+
+            var store = new RamndAnalyticsFileQueue(dir, gateway);
+            var loaded = store.Load();
+            Assert.That(loaded.Count, Is.EqualTo(1));
+
+            var extra = EventRow("55555555-5555-4555-8555-555555555555");
+            var combined = new List<Dictionary<string, object>>(loaded) { extra };
+            store.Save(combined);
+
+            var again = new RamndAnalyticsFileQueue(dir, gateway).Load();
+            Assert.That(again.Count, Is.EqualTo(2));
+            Assert.That(again[0]["event_id"].ToString(), Is.EqualTo(legacyId));
+            Assert.That(again[1]["event_id"].ToString(), Is.EqualTo(extra["event_id"]));
         }
         finally
         {
@@ -282,14 +699,33 @@ public class RamndAnalyticsTests
         Assert.That(new RamndIngestResult(400, "{}").IsSuccess, Is.False);
     }
 
-    static RamndAnalyticSystem CreateSystem(IRamndAnalyticsTransport transport, IRamndAnalyticsQueueStore store) =>
+    static RamndAnalyticSystem CreateSystem(
+        IRamndAnalyticsTransport transport,
+        IRamndAnalyticsQueueStore store,
+        TimeSpan? flushInterval = null,
+        Func<TimeSpan, CancellationToken, Task> delay = null,
+        int maxBatchSize = 500,
+        Func<bool> isOnline = null) =>
         new RamndAnalyticSystem(
-            new RamndAnalyticsConfig("http://localhost:3000", "dev-maze-key"),
+            new RamndAnalyticsConfig(
+                "http://localhost:3000",
+                "dev-maze-key",
+                maxBatchSize,
+                flushInterval ?? TimeSpan.Zero),
             transport,
             "install-test",
             "EDITOR",
             "p1",
-            store);
+            store,
+            delay,
+            isOnline ?? (() => true));
+
+    static async Task WaitUntil(Func<bool> condition)
+    {
+        for (int i = 0; i < 100 && !condition(); i++)
+            await Task.Delay(10);
+        Assert.That(condition(), Is.True);
+    }
 
     static string EventIdOf(string body) =>
         JObject.Parse(body)["events"]![0]!["event_id"]!.Value<string>();
@@ -310,6 +746,26 @@ public class RamndAnalyticsTests
         }
 
         return false;
+    }
+
+    static Dictionary<string, object> EventRow(string eventId) =>
+        new Dictionary<string, object>
+        {
+            ["event_id"] = eventId,
+            ["event_name"] = "app_session_start",
+            ["event_timestamp"] = "2026-09-28T12:00:00.000Z",
+        };
+
+    static int JournalLineCount(string path)
+    {
+        int count = 0;
+        foreach (string line in File.ReadAllText(path).Split('\n'))
+        {
+            if (!string.IsNullOrWhiteSpace(line))
+                count++;
+        }
+
+        return count;
     }
 
     static string CreateTempDir()
@@ -340,7 +796,62 @@ public class RamndAnalyticsTests
                 return Task.FromResult(new RamndIngestResult(400, body));
             }
 
-            return Task.FromResult(new RamndIngestResult(200, "{\"accepted\":1}"));
+            return Task.FromResult(new RamndIngestResult(200, "{\"accepted\":1,\"rejected\":[]}"));
+        }
+    }
+
+    sealed class PartialAcceptTransport : IRamndAnalyticsTransport
+    {
+        public readonly List<string> Bodies = new List<string>();
+
+        public Task<RamndIngestResult> PostEventsAsync(
+            string jsonBody,
+            CancellationToken cancellationToken = default)
+        {
+            Bodies.Add(jsonBody);
+            var events = (JArray)JObject.Parse(jsonBody)["events"];
+            if (events.Count < 2)
+                return Task.FromResult(new RamndIngestResult(200, "{\"accepted\":1,\"rejected\":[]}"));
+
+            string badId = events[0]!["event_id"]!.Value<string>();
+            string body = JsonConvert.SerializeObject(new
+            {
+                accepted = 1,
+                duplicates = 0,
+                rejected = new[]
+                {
+                    new { eventId = badId, index = 0, reason = "unknown_event_name:missing" },
+                },
+            });
+            return Task.FromResult(new RamndIngestResult(207, body));
+        }
+    }
+
+    sealed class ScriptedDelay
+    {
+        readonly Queue<TaskCompletionSource<bool>> _pending = new Queue<TaskCompletionSource<bool>>();
+        public readonly List<TimeSpan> Delays = new List<TimeSpan>();
+        public int Started => Delays.Count;
+
+        public Task Wait(TimeSpan delay, CancellationToken cancellationToken)
+        {
+            var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            cancellationToken.Register(() => gate.TrySetCanceled(cancellationToken));
+            lock (_pending)
+            {
+                Delays.Add(delay);
+                _pending.Enqueue(gate);
+            }
+
+            return gate.Task;
+        }
+
+        public void ReleaseOne()
+        {
+            TaskCompletionSource<bool> gate;
+            lock (_pending)
+                gate = _pending.Dequeue();
+            gate.TrySetResult(true);
         }
     }
 }
