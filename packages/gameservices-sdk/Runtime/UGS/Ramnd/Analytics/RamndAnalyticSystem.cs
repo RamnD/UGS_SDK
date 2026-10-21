@@ -337,30 +337,25 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
             return false;
         }
 
-        lock (_gate)
+        int dropCount = 0;
+        foreach (string id in IdsOf(batch))
         {
-            var acceptedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string id in IdsOf(batch))
-            {
-                if (!dropIds.Contains(id))
-                    acceptedIds.Add(id);
-            }
-
-            RemoveIdsUnlocked(dropIds);
-            RemoveIdsUnlocked(acceptedIds);
-            PersistUnlocked();
+            if (dropIds.Contains(id))
+                dropCount++;
         }
 
-        if (dropIds.Count > 0)
+        Acknowledge(batch);
+
+        if (dropCount > 0)
         {
             AppLog.Warn(
                 "Analytics",
-                $"Ramnd ingest dropped {dropIds.Count} rejected event(s) (HTTP 207).");
+                $"Ramnd ingest dropped {dropCount} rejected event(s) (HTTP 207).");
         }
 
         AppLog.Info(
             "Analytics",
-            $"Ramnd ingest partial ({batch.Count - dropIds.Count} confirmed, {dropIds.Count} rejected, HTTP 207)");
+            $"Ramnd ingest partial ({batch.Count - dropCount} confirmed, {dropCount} rejected, HTTP 207)");
         NoteSuccess();
         return true;
     }
