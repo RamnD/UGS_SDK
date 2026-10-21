@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- **Ramnd analytics delivery during a session.** A non-empty queue is flushed every 15 seconds while online. A failed ingest is retried with backoff and jitter (2s up to 60s) instead of waiting for pause or the next launch. A full batch uses that same backoff and does not send while offline or before the retry is due. HTTP 207 with a `rejected` list drops those envelopes and confirms the rest. A 207 without that list stays queued. Pause, quit, and network return still send immediately.
+
 ## [2.4.0] - 2026-10-06
 
 ### Added

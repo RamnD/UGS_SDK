@@ -13,7 +13,11 @@ public readonly struct RamndIngestResult
         Body = body ?? string.Empty;
     }
 
-    /// <summary>Gateway treats 200 and 207 as successful acceptance of the batch.</summary>
+    /// <summary>
+    /// 200 and 207 mean the gateway handled the batch.
+    /// 200 stored or deduped every event. 207 is partial: read <see cref="Body"/>
+    /// <c>rejected</c> before dropping envelopes. Other codes leave the batch queued.
+    /// </summary>
     public bool IsSuccess => StatusCode == 200 || StatusCode == 207;
 }
 

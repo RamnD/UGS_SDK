@@ -11,7 +11,7 @@ Exposed via `GameServicesLocator.Services?.Analytics` (nullable — may be null 
 | Method | Description |
 |--------|-------------|
 | `LogEvent<T>(T payload)` | Records a typed event. Fields marked `[AnalyticsKey]` become event parameters. |
-| `Flush()` | Immediately sends queued events to the server. Call on pause / quit. |
+| `Flush()` | Immediately sends queued events. RamnD also flushes every 15 seconds while online. Still call this on pause / quit so the last few seconds are not left for the timer. |
 
 ---
 
@@ -99,9 +99,13 @@ await new UGSServicesBuilder()
 | `Ramnd` | Gateway only (`POST /v1/analytics/events` with `X-Api-Key`) |
 | `Both` | Fan-out; failures are independent |
 
-RamnD events include envelope fields (`event_id`, `event_timestamp`, `user_id`, `platform`, optional `player_id`) plus `[AnalyticsKey]` parameters. `user_id` is a stable install Guid in PlayerPrefs. `event_id` and `event_timestamp` are fixed when the event is queued. HTTP **200** and **207** remove the batch from the client queue. The gateway dedupes a replayed `event_id`.
+RamnD events include envelope fields (`event_id`, `event_timestamp`, `user_id`, `platform`, optional `player_id`) plus `[AnalyticsKey]` parameters. `user_id` is a stable install Guid in PlayerPrefs. `event_id` and `event_timestamp` are fixed when the event is queued. The gateway dedupes a replayed `event_id`.
 
-Pending RamnD envelopes are stored in `ramnd-analytics-queue.json` under `Application.persistentDataPath`, stamped with the gateway base URL. A file written for a different gateway is not sent. The queue survives process exit, so an offline session or a dead gateway is retried on the next launch, when `NetworkStatus` comes back online, and on `Flush()` (pause / quit). One failed attempt ends that drain; there is no tight retry loop. The cap is 500 events; older events past the cap are dropped. HTTP **400** with a `rejected` list drops those envelopes. A **400** without that list (unknown app, bad body), **401**, **429**, and **5xx** stay queued.
+HTTP **200** removes the batch. HTTP **207** is partial: events listed in `rejected` are dropped (unknown event, bad envelope, duplicate id in the batch) and the rest of that batch is confirmed. A **207** without a `rejected` list stays queued and is retried; the gateway dedupes anything it already stored. HTTP **400** with a `rejected` list drops those envelopes. A **400** without that list (unknown app, bad body), **401**, **429**, and **5xx** stay queued.
+
+Pending RamnD envelopes are checkpointed under `Application.persistentDataPath` before `LogEvent` returns. The snapshot file is `ramnd-analytics-queue.json`, stamped with the gateway base URL. New envelopes are appended to `ramnd-analytics-queue.journal.jsonl` on the calling thread, so logging an event does not rewrite the whole queue. The snapshot is compacted when events are accepted, rejected, or trimmed. A file written for a different gateway is not sent. The checkpoint survives process exit, including a force-kill before `Dispose`; a failed POST keeps the events queued.
+
+While online, a non-empty queue is sent every 15 seconds (`RamndAnalyticsConfig.FlushInterval`; `TimeSpan.Zero` turns the timer off), on the next launch, when `NetworkStatus` comes back online, and on `Flush()` (pause / quit). A failed attempt ends that drain and schedules a retry with a base delay of 2 seconds up to 60 seconds, with ±25% jitter. Filling the batch does not skip that wait or send while offline. Pause, quit, and network return still send immediately. The cap is 500 events; older events past the cap are dropped and a warning is logged.
 
 `WithCachedAnalytics()` still applies only to the UGS leg. It is not replayed into RamnD.
 
@@ -109,7 +113,7 @@ Pending RamnD envelopes are stored in `ramnd-analytics-queue.json` under `Applic
 
 ## Flushing events
 
-UGS Analytics auto-flushes periodically. Call `Flush()` explicitly on app pause / quit so events aren't lost:
+UGS Analytics auto-flushes on its own schedule. RamnD flushes every 15 seconds while online, and again after a failed ingest using backoff. Reaching the batch size does not flush during that backoff. Call `Flush()` on app pause / quit so the newest events are not left waiting for that timer:
 
 ```csharp
 private void OnApplicationPause(bool paused)
