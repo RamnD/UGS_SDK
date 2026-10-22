@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.4.2] - 2026-10-22
+
+### Fixed
+- **Unity compilation.** Qualify the analytics retry-jitter generator as `System.Random` to resolve CS0104 when both `System` and `UnityEngine` are imported. Retry behavior and public APIs are unchanged.
+
 ## [2.4.1] - 2026-10-21
 
 ### Fixed
