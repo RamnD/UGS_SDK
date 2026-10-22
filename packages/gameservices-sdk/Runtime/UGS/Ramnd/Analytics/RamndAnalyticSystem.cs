@@ -27,7 +27,7 @@ public sealed class RamndAnalyticSystem : IAnalyticsSystem
     readonly IRamndAnalyticsQueueStore _store;
     readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
     readonly Func<bool> _isOnline;
-    readonly Random _random = new Random();
+    readonly System.Random _random = new System.Random();
     readonly string _userId;
     readonly string _platform;
     readonly object _gate = new object();
