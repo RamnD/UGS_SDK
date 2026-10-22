@@ -1,0 +1,908 @@
+diff --git a/.github/workflows/unity-smoke.yml b/.github/workflows/unity-smoke.yml
+new file mode 100644
+index 0000000..bb485a3
+--- /dev/null
++++ b/.github/workflows/unity-smoke.yml
+@@ -0,0 +1,105 @@
++name: Unity smoke
++
++on:
++  pull_request:
++    branches: [agent/jules, staging, main]
++  push:
++    branches: [agent/jules, staging, main, feature/unity-cloud-smoke-tests]
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++concurrency:
++  group: unity-smoke-${{ github.event.pull_request.number || github.ref }}
++  cancel-in-progress: true
++
++jobs:
++  layout:
++    name: Smoke project layout
++    runs-on: ubuntu-latest
++    timeout-minutes: 5
++    steps:
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
++        with:
++          ref: ${{ github.event.pull_request.head.sha || github.sha }}
++          persist-credentials: false
++      - run: python3 tests/unity-smoke/validate-project.py
++
++  unity:
++    name: Unity EditMode and PlayMode
++    needs: layout
++    # License credentials are available only for trusted same-repository branches.
++    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
++    runs-on: ubuntu-latest
++    timeout-minutes: 45
++    permissions:
++      contents: read
++      checks: write
++    steps:
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
++        with:
++          ref: ${{ github.event.pull_request.head.sha || github.sha }}
++          persist-credentials: false
++
++      - name: Validate Unity license configuration
++        shell: bash
++        env:
++          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
++          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
++          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
++          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
++          UNITY_LICENSING_SERVER: ${{ secrets.UNITY_LICENSING_SERVER }}
++        run: |
++          set -euo pipefail
++          if [[ -n "${UNITY_LICENSING_SERVER}" ]]; then
++            exit 0
++          fi
++          if [[ -z "${UNITY_EMAIL}" || -z "${UNITY_PASSWORD}" ]]; then
++            echo "::error::Configure Unity CI activation secrets. See TestProject/README.md; local SDK installation is not required."
++            exit 1
++          fi
++          if [[ -z "${UNITY_SERIAL}" && -z "${UNITY_LICENSE}" ]]; then
++            echo "::error::Set UNITY_SERIAL for a supported paid license, UNITY_LICENSE for a supported license file, or UNITY_LICENSING_SERVER. Missing activation is a failure, not a passed test."
++            exit 1
++          fi
++
++      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
++        with:
++          path: TestProject/Library
++          key: unity-smoke-${{ runner.os }}-6000.3.8f1-${{ hashFiles('TestProject/Assets/**', 'TestProject/Packages/**', 'TestProject/ProjectSettings/**', 'packages/**') }}
++          restore-keys: unity-smoke-${{ runner.os }}-6000.3.8f1-
++
++      - name: Run Unity tests
++        id: tests
++        uses: game-ci/unity-test-runner@32e57712352b500e17974b245a6dce9e11a73213 # v4
++        env:
++          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
++          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
++          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
++          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
++        with:
++          cliVersion: v0.1.72
++          projectPath: TestProject
++          testMode: all
++          coverageEnabled: false
++          artifactsPath: artifacts/unity-smoke
++          githubToken: ${{ github.token }}
++          checkName: Unity smoke test results
++          unityLicensingServer: ${{ secrets.UNITY_LICENSING_SERVER }}
++
++      - name: Require actual EditMode and PlayMode results
++        if: always() && !cancelled() && steps.tests.outcome != 'skipped'
++        shell: bash
++        run: python3 tests/unity-smoke/verify-results.py artifacts/unity-smoke >> "$GITHUB_STEP_SUMMARY"
++
++      - name: Upload Unity results and logs
++        if: always() && !cancelled()
++        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
++        with:
++          name: unity-smoke-${{ github.event.pull_request.head.sha || github.sha }}
++          path: |
++            artifacts/unity-smoke
++            TestProject/Logs
++          if-no-files-found: warn
++          retention-days: 14
+diff --git a/TestProject/.gitignore b/TestProject/.gitignore
+new file mode 100644
+index 0000000..091d2a5
+--- /dev/null
++++ b/TestProject/.gitignore
+@@ -0,0 +1,7 @@
++/Library/
++/Temp/
++/Logs/
++/Obj/
++/UserSettings/
++/Builds/
++/Packages/packages-lock.json
+diff --git a/TestProject/Assets/Scenes.meta b/TestProject/Assets/Scenes.meta
+new file mode 100644
+index 0000000..4150df3
+--- /dev/null
++++ b/TestProject/Assets/Scenes.meta
+@@ -0,0 +1,8 @@
++fileFormatVersion: 2
++guid: 6879e158ed2c4203906199c4f493bc40
++folderAsset: yes
++DefaultImporter:
++  externalObjects: {}
++  userData:
++  assetBundleName:
++  assetBundleVariant:
+diff --git a/TestProject/Assets/Scenes/SdkSmoke.unity b/TestProject/Assets/Scenes/SdkSmoke.unity
+new file mode 100644
+index 0000000..445fec7
+--- /dev/null
++++ b/TestProject/Assets/Scenes/SdkSmoke.unity
+@@ -0,0 +1,51 @@
++%YAML 1.1
++%TAG !u! tag:unity3d.com,2011:
++--- !u!1 &1000
++GameObject:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  serializedVersion: 6
++  m_Component:
++  - component: {fileID: 1001}
++  - component: {fileID: 1002}
++  m_Layer: 0
++  m_Name: SDK Smoke Bootstrap
++  m_TagString: Untagged
++  m_Icon: {fileID: 0}
++  m_NavMeshLayer: 0
++  m_StaticEditorFlags: 0
++  m_IsActive: 1
++--- !u!4 &1001
++Transform:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 1000}
++  serializedVersion: 2
++  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
++  m_LocalPosition: {x: 0, y: 0, z: 0}
++  m_LocalScale: {x: 1, y: 1, z: 1}
++  m_ConstrainProportionsScale: 0
++  m_Children: []
++  m_Father: {fileID: 0}
++  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
++--- !u!114 &1002
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 1000}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 807ac4df4c3f4c0f9e726d36170eada4, type: 3}
++  m_Name:
++  m_EditorClassIdentifier:
++--- !u!1660057539 &9223372036854775807
++SceneRoots:
++  m_ObjectHideFlags: 0
++  m_Roots:
++  - {fileID: 1001}
+diff --git a/TestProject/Assets/Scenes/SdkSmoke.unity.meta b/TestProject/Assets/Scenes/SdkSmoke.unity.meta
+new file mode 100644
+index 0000000..4fb7c65
+--- /dev/null
++++ b/TestProject/Assets/Scenes/SdkSmoke.unity.meta
+@@ -0,0 +1,7 @@
++fileFormatVersion: 2
++guid: 364c17199d6a4b63bb45c0ba8c72f30c
++DefaultImporter:
++  externalObjects: {}
++  userData:
++  assetBundleName:
++  assetBundleVariant:
+diff --git a/TestProject/Assets/Smoke.meta b/TestProject/Assets/Smoke.meta
+new file mode 100644
+index 0000000..9f63717
+--- /dev/null
++++ b/TestProject/Assets/Smoke.meta
+@@ -0,0 +1,8 @@
++fileFormatVersion: 2
++guid: 4a391f6ee9624e75b9ae2f6020548842
++folderAsset: yes
++DefaultImporter:
++  externalObjects: {}
++  userData:
++  assetBundleName:
++  assetBundleVariant:
+diff --git a/TestProject/Assets/Smoke/RamnD.SdkSmoke.asmdef b/TestProject/Assets/Smoke/RamnD.SdkSmoke.asmdef
+new file mode 100644
+index 0000000..c5ecd6c
+--- /dev/null
++++ b/TestProject/Assets/Smoke/RamnD.SdkSmoke.asmdef
+@@ -0,0 +1,6 @@
++{
++  "name": "RamnD.SdkSmoke",
++  "rootNamespace": "RamnD.SdkSmoke",
++  "references": ["RamnD.GameServices.Core", "RamnD.GameServices.UGS"],
++  "autoReferenced": true
++}
+diff --git a/TestProject/Assets/Smoke/RamnD.SdkSmoke.asmdef.meta b/TestProject/Assets/Smoke/RamnD.SdkSmoke.asmdef.meta
+new file mode 100644
+index 0000000..eeeeb7f
+--- /dev/null
++++ b/TestProject/Assets/Smoke/RamnD.SdkSmoke.asmdef.meta
+@@ -0,0 +1,7 @@
++fileFormatVersion: 2
++guid: 2b8fc76b9d1e46d79561a31150c70583
++AssemblyDefinitionImporter:
++  externalObjects: {}
++  userData:
++  assetBundleName:
++  assetBundleVariant:
+diff --git a/TestProject/Assets/Smoke/SdkSmokeBootstrap.cs b/TestProject/Assets/Smoke/SdkSmokeBootstrap.cs
+new file mode 100644
+index 0000000..8892d8f
+--- /dev/null
++++ b/TestProject/Assets/Smoke/SdkSmokeBootstrap.cs
+@@ -0,0 +1,39 @@
++using System;
++using System.Collections;
++using UnityEngine;
++
++namespace RamnD.SdkSmoke
++{
++    public sealed class SdkSmokeBootstrap : MonoBehaviour
++    {
++        RamndAnalyticSystem _analytics;
++        public bool Completed { get; private set; }
++        public SmokeTransport Transport { get; private set; }
++
++        IEnumerator Start()
++        {
++            SmokeEnvironment.ResetQueue();
++            Transport = new SmokeTransport();
++            _analytics = SmokeEnvironment.CreateSystem(Transport, TimeSpan.Zero);
++            _analytics.LogEvent(new SmokeEvent("scene-smoke"));
++            var flush = _analytics.FlushAsync();
++            float deadline = Time.realtimeSinceStartup + 10f;
++            while (!flush.IsCompleted && Time.realtimeSinceStartup < deadline)
++                yield return null;
++
++            if (!flush.IsCompleted)
++                throw new TimeoutException("Scene analytics flush did not complete within 10 seconds.");
++            flush.GetAwaiter().GetResult();
++            if (Transport.Bodies.Count == 0)
++                throw new InvalidOperationException("Scene bootstrap did not send an analytics event.");
++            Completed = true;
++            Debug.Log("SDK smoke scene completed using the local transport.");
++        }
++
++        void OnDestroy()
++        {
++            _analytics?.Dispose();
++            _analytics = null;
++        }
++    }
++}
+diff --git a/TestProject/Assets/Smoke/SdkSmokeBootstrap.cs.meta b/TestProject/Assets/Smoke/SdkSmokeBootstrap.cs.meta
+new file mode 100644
+index 0000000..40c5f55
+--- /dev/null
++++ b/TestProject/Assets/Smoke/SdkSmokeBootstrap.cs.meta
+@@ -0,0 +1,11 @@
++fileFormatVersion: 2
++guid: 807ac4df4c3f4c0f9e726d36170eada4
++MonoImporter:
++  externalObjects: {}
++  serializedVersion: 2
++  defaultReferences: []
++  executionOrder: 0
++  icon: {instanceID: 0}
++  userData:
++  assetBundleName:
++  assetBundleVariant:
+diff --git a/TestProject/Assets/Smoke/SmokeEnvironment.cs b/TestProject/Assets/Smoke/SmokeEnvironment.cs
+new file mode 100644
+index 0000000..81292fa
+--- /dev/null
++++ b/TestProject/Assets/Smoke/SmokeEnvironment.cs
+@@ -0,0 +1,42 @@
++using System;
++using System.IO;
++using UnityEngine;
++
++namespace RamnD.SdkSmoke
++{
++    public static class SmokeEnvironment
++    {
++        public const string ProductName = "UGS SDK Smoke Tests";
++
++        public static RamndAnalyticsConfig CreateConfig(TimeSpan interval) =>
++            new RamndAnalyticsConfig("https://sdk-smoke.invalid", "smoke-only", 500, interval);
++
++        public static RamndAnalyticSystem CreateSystem(SmokeTransport transport, TimeSpan interval) =>
++            new RamndAnalyticSystem(CreateConfig(interval), transport, "smoke-install", "EDITOR", "smoke-player");
++
++        public static void ResetQueue()
++        {
++            // The public SDK constructor uses persistentDataPath. Never clean a consuming game's data.
++            if (!string.Equals(Application.productName, ProductName, StringComparison.Ordinal))
++                throw new InvalidOperationException("Run the smoke harness only from TestProject.");
++
++            Directory.CreateDirectory(Application.persistentDataPath);
++            foreach (string name in new[] { "ramnd-analytics-queue.json", "ramnd-analytics-queue.journal.jsonl" })
++            {
++                string path = Path.Combine(Application.persistentDataPath, name);
++                if (File.Exists(path))
++                    File.Delete(path);
++                if (File.Exists(path + ".tmp"))
++                    File.Delete(path + ".tmp");
++            }
++        }
++    }
++
++    public readonly struct SmokeEvent : IAnalyticsEvent
++    {
++        public string EventName => "app_session_start";
++        [AnalyticsKey("build_version")] public readonly string BuildVersion;
++
++        public SmokeEvent(string buildVersion) => BuildVersion = buildVersion;
++    }
++}
+diff --git a/TestProject/Assets/Smoke/SmokeEnvironment.cs.meta b/TestProject/Assets/Smoke/SmokeEnvironment.cs.meta
+new file mode 100644
+index 0000000..da2e90f
+--- /dev/null
++++ b/TestProject/Assets/Smoke/SmokeEnvironment.cs.meta
+@@ -0,0 +1,11 @@
++fileFormatVersion: 2
++guid: e5f61fb098234677abfcd8066c4817eb
++MonoImporter:
++  externalObjects: {}
++  serializedVersion: 2
++  defaultReferences: []
++  executionOrder: 0
++  icon: {instanceID: 0}
++  userData:
++  assetBundleName:
++  assetBundleVariant:
+diff --git a/TestProject/Assets/Smoke/SmokeTransport.cs b/TestProject/Assets/Smoke/SmokeTransport.cs
+new file mode 100644
+index 0000000..ac9714c
+--- /dev/null
++++ b/TestProject/Assets/Smoke/SmokeTransport.cs
+@@ -0,0 +1,28 @@
++using System.Collections.Generic;
++using System.Threading;
++using System.Threading.Tasks;
++
++namespace RamnD.SdkSmoke
++{
++    public sealed class SmokeTransport : IRamndAnalyticsTransport
++    {
++        public List<string> Bodies { get; } = new List<string>();
++        public int FailuresRemaining { get; set; }
++
++        public async Task<RamndIngestResult> PostEventsAsync(
++            string jsonBody, CancellationToken cancellationToken = default)
++        {
++            // Resume through Unity's real synchronization context instead of completing inline.
++            await Task.Yield();
++            cancellationToken.ThrowIfCancellationRequested();
++            Bodies.Add(jsonBody);
++            if (FailuresRemaining > 0)
++            {
++                FailuresRemaining--;
++                return new RamndIngestResult(503, "{\"error\":\"smoke-test transient failure\"}");
++            }
++
++            return new RamndIngestResult(200, "{\"accepted\":1,\"rejected\":[]}");
++        }
++    }
++}
+diff --git a/TestProject/Assets/Smoke/SmokeTransport.cs.meta b/TestProject/Assets/Smoke/SmokeTransport.cs.meta
+new file mode 100644
+index 0000000..29e4af6
+--- /dev/null
++++ b/TestProject/Assets/Smoke/SmokeTransport.cs.meta
+@@ -0,0 +1,11 @@
++fileFormatVersion: 2
++guid: 9a7d52db9544415fa7a5f256c068afd1
++MonoImporter:
++  externalObjects: {}
++  serializedVersion: 2
++  defaultReferences: []
++  executionOrder: 0
++  icon: {instanceID: 0}
++  userData:
++  assetBundleName:
++  assetBundleVariant:
+diff --git a/TestProject/Assets/Tests.meta b/TestProject/Assets/Tests.meta
+new file mode 100644
+index 0000000..ff71ad3
+--- /dev/null
++++ b/TestProject/Assets/Tests.meta
+@@ -0,0 +1,8 @@
++fileFormatVersion: 2
++guid: e1b15399ede2457da766413c596b0257
++folderAsset: yes
++DefaultImporter:
++  externalObjects: {}
++  userData:
++  assetBundleName:
++  assetBundleVariant:
+diff --git a/TestProject/Assets/Tests/PlayMode.meta b/TestProject/Assets/Tests/PlayMode.meta
+new file mode 100644
+index 0000000..5d33f15
+--- /dev/null
++++ b/TestProject/Assets/Tests/PlayMode.meta
+@@ -0,0 +1,8 @@
++fileFormatVersion: 2
++guid: 1e4399e6acc743edb959bdc0478686a9
++folderAsset: yes
++DefaultImporter:
++  externalObjects: {}
++  userData:
++  assetBundleName:
++  assetBundleVariant:
+diff --git a/TestProject/Assets/Tests/PlayMode/AnalyticsSmokeTests.cs b/TestProject/Assets/Tests/PlayMode/AnalyticsSmokeTests.cs
+new file mode 100644
+index 0000000..b95fa66
+--- /dev/null
++++ b/TestProject/Assets/Tests/PlayMode/AnalyticsSmokeTests.cs
+@@ -0,0 +1,123 @@
++using System;
++using System.Collections;
++using System.Threading.Tasks;
++using Newtonsoft.Json.Linq;
++using NUnit.Framework;
++using RamnD.SdkSmoke;
++using UnityEngine;
++using UnityEngine.SceneManagement;
++using UnityEngine.TestTools;
++
++public sealed class AnalyticsSmokeTests
++{
++    RamndAnalyticSystem _analytics;
++    SmokeTransport _transport;
++    bool _wasOffline;
++    Scene _scene;
++
++    [SetUp]
++    public void SetUp()
++    {
++        Assert.That(LogAssert.ignoreFailingMessages, Is.False, "Unexpected Unity errors must fail tests.");
++        _wasOffline = NetworkStatus.ForceOffline;
++        NetworkStatus.ForceOffline = true;
++        SmokeEnvironment.ResetQueue();
++        _transport = new SmokeTransport();
++    }
++
++    [UnityTearDown]
++    public IEnumerator TearDown()
++    {
++        _analytics?.Dispose();
++        _analytics = null;
++        if (_scene.IsValid() && _scene.isLoaded)
++        {
++            var unload = SceneManager.UnloadSceneAsync(_scene);
++            yield return Until(() => unload.isDone);
++        }
++        yield return null;
++        SmokeEnvironment.ResetQueue();
++        NetworkStatus.ForceOffline = _wasOffline;
++    }
++
++    [UnityTest]
++    public IEnumerator SmokeScene_BootstrapsAndSendsEvent()
++    {
++        var load = SceneManager.LoadSceneAsync("Assets/Scenes/SdkSmoke.unity", LoadSceneMode.Additive);
++        yield return Until(() => load.isDone);
++        _scene = SceneManager.GetSceneByPath("Assets/Scenes/SdkSmoke.unity");
++        SdkSmokeBootstrap bootstrap = null;
++        foreach (var root in _scene.GetRootGameObjects())
++        {
++            bootstrap = root.GetComponentInChildren<SdkSmokeBootstrap>();
++            if (bootstrap != null)
++                break;
++        }
++        Assert.That(bootstrap, Is.Not.Null);
++        yield return Until(() => bootstrap.Completed);
++        Assert.That(Events(bootstrap.Transport.Bodies[0])[0]["build_version"].Value<string>(), Is.EqualTo("scene-smoke"));
++    }
++
++    [UnityTest]
++    public IEnumerator PeriodicFlush_SendsWithoutExplicitFlush()
++    {
++        NetworkStatus.ForceOffline = false;
++        Assert.That(NetworkStatus.IsOnline, Is.True, "Automatic delivery needs a reachable network interface, but never calls a backend.");
++        _analytics = SmokeEnvironment.CreateSystem(_transport, TimeSpan.FromMilliseconds(100));
++        _analytics.LogEvent(new SmokeEvent("periodic-smoke"));
++        yield return Until(() => _transport.Bodies.Count == 1);
++        Assert.That(Events(_transport.Bodies[0])[0]["build_version"].Value<string>(), Is.EqualTo("periodic-smoke"));
++        yield return Complete(_analytics.FlushAsync());
++        Assert.That(_transport.Bodies.Count, Is.EqualTo(1), "Accepted events must leave the queue.");
++    }
++
++    [UnityTest]
++    public IEnumerator TransientFailure_AutomaticallyRetriesSameEnvelope()
++    {
++        NetworkStatus.ForceOffline = false;
++        Assert.That(NetworkStatus.IsOnline, Is.True);
++        _transport.FailuresRemaining = 1;
++        _analytics = SmokeEnvironment.CreateSystem(_transport, TimeSpan.Zero);
++        _analytics.LogEvent(new SmokeEvent("retry-smoke"));
++        _analytics.Flush();
++        yield return Until(() => _transport.Bodies.Count >= 2);
++        Assert.That(_transport.Bodies.Count, Is.EqualTo(2));
++        Assert.That(EventId(_transport.Bodies[1]), Is.EqualTo(EventId(_transport.Bodies[0])));
++        yield return Complete(_analytics.FlushAsync());
++        Assert.That(_transport.Bodies.Count, Is.EqualTo(2));
++    }
++
++    [UnityTest]
++    public IEnumerator PendingEvent_SurvivesDisposeAndRecreation()
++    {
++        _analytics = SmokeEnvironment.CreateSystem(_transport, TimeSpan.Zero);
++        _analytics.LogEvent(new SmokeEvent("restart-smoke"));
++        yield return null;
++        Assert.That(_transport.Bodies, Is.Empty, "Offline events must stay queued.");
++        _analytics.Dispose();
++        _analytics = SmokeEnvironment.CreateSystem(_transport, TimeSpan.Zero);
++        yield return Complete(_analytics.FlushAsync());
++        Assert.That(_transport.Bodies.Count, Is.EqualTo(1));
++        Assert.That(Events(_transport.Bodies[0]).Count, Is.EqualTo(1));
++        Assert.That(Events(_transport.Bodies[0])[0]["build_version"].Value<string>(), Is.EqualTo("restart-smoke"));
++        yield return Complete(_analytics.FlushAsync());
++        Assert.That(_transport.Bodies.Count, Is.EqualTo(1));
++    }
++
++    static JArray Events(string body) => (JArray)JObject.Parse(body)["events"];
++    static string EventId(string body) => Events(body)[0]["event_id"].Value<string>();
++
++    static IEnumerator Complete(Task task)
++    {
++        yield return Until(() => task.IsCompleted);
++        task.GetAwaiter().GetResult();
++    }
++
++    static IEnumerator Until(Func<bool> condition)
++    {
++        float deadline = Time.realtimeSinceStartup + 10f;
++        while (!condition() && Time.realtimeSinceStartup < deadline)
++            yield return null;
++        Assert.That(condition(), Is.True, "Smoke operation timed out after 10 seconds.");
++    }
++}
+diff --git a/TestProject/Assets/Tests/PlayMode/AnalyticsSmokeTests.cs.meta b/TestProject/Assets/Tests/PlayMode/AnalyticsSmokeTests.cs.meta
+new file mode 100644
+index 0000000..fdb144e
+--- /dev/null
++++ b/TestProject/Assets/Tests/PlayMode/AnalyticsSmokeTests.cs.meta
+@@ -0,0 +1,11 @@
++fileFormatVersion: 2
++guid: bc6e93bc394a402dacd493ef31cfc314
++MonoImporter:
++  externalObjects: {}
++  serializedVersion: 2
++  defaultReferences: []
++  executionOrder: 0
++  icon: {instanceID: 0}
++  userData:
++  assetBundleName:
++  assetBundleVariant:
+diff --git a/TestProject/Assets/Tests/PlayMode/RamnD.SdkSmoke.PlayMode.asmdef b/TestProject/Assets/Tests/PlayMode/RamnD.SdkSmoke.PlayMode.asmdef
+new file mode 100644
+index 0000000..7e64044
+--- /dev/null
++++ b/TestProject/Assets/Tests/PlayMode/RamnD.SdkSmoke.PlayMode.asmdef
+@@ -0,0 +1,16 @@
++{
++  "name": "RamnD.SdkSmoke.PlayMode",
++  "references": [
++    "RamnD.SdkSmoke",
++    "RamnD.GameServices.Core",
++    "RamnD.GameServices.UGS",
++    "Newtonsoft.Json",
++    "UnityEngine.TestRunner",
++    "UnityEditor.TestRunner"
++  ],
++  "overrideReferences": true,
++  "precompiledReferences": ["nunit.framework.dll"],
++  "autoReferenced": false,
++  "defineConstraints": ["UNITY_INCLUDE_TESTS"],
++  "optionalUnityReferences": ["TestAssemblies"]
++}
+diff --git a/TestProject/Assets/Tests/PlayMode/RamnD.SdkSmoke.PlayMode.asmdef.meta b/TestProject/Assets/Tests/PlayMode/RamnD.SdkSmoke.PlayMode.asmdef.meta
+new file mode 100644
+index 0000000..1bcfcd6
+--- /dev/null
++++ b/TestProject/Assets/Tests/PlayMode/RamnD.SdkSmoke.PlayMode.asmdef.meta
+@@ -0,0 +1,7 @@
++fileFormatVersion: 2
++guid: df660ebfe79a4ef797eb90b5726347e9
++AssemblyDefinitionImporter:
++  externalObjects: {}
++  userData:
++  assetBundleName:
++  assetBundleVariant:
+diff --git a/TestProject/Packages/manifest.json b/TestProject/Packages/manifest.json
+new file mode 100644
+index 0000000..eb94eba
+--- /dev/null
++++ b/TestProject/Packages/manifest.json
+@@ -0,0 +1,28 @@
++{
++  "dependencies": {
++    "com.ramnd.gameservices-sdk": "file:../../packages/gameservices-sdk",
++    "com.ramnd.core-logging": "file:../../packages/core-logging",
++    "com.ramnd.service-fault": "file:../../packages/service-fault",
++    "com.ramnd.gameservices-servicefault": "file:../../packages/gameservices-servicefault",
++    "com.unity.test-framework": "1.6.0",
++    "com.unity.modules.animation": "1.0.0",
++    "com.unity.modules.audio": "1.0.0",
++    "com.unity.modules.imageconversion": "1.0.0",
++    "com.unity.modules.imgui": "1.0.0",
++    "com.unity.modules.jsonserialize": "1.0.0",
++    "com.unity.modules.particlesystem": "1.0.0",
++    "com.unity.modules.physics": "1.0.0",
++    "com.unity.modules.physics2d": "1.0.0",
++    "com.unity.modules.ui": "1.0.0",
++    "com.unity.modules.uielements": "1.0.0",
++    "com.unity.modules.unityanalytics": "1.0.0",
++    "com.unity.modules.unitywebrequest": "1.0.0",
++    "com.unity.modules.unitywebrequestassetbundle": "1.0.0",
++    "com.unity.modules.unitywebrequestaudio": "1.0.0",
++    "com.unity.modules.unitywebrequesttexture": "1.0.0",
++    "com.unity.modules.unitywebrequestwww": "1.0.0"
++  },
++  "testables": [
++    "com.ramnd.gameservices-sdk"
++  ]
++}
+diff --git a/TestProject/ProjectSettings/EditorBuildSettings.asset b/TestProject/ProjectSettings/EditorBuildSettings.asset
+new file mode 100644
+index 0000000..eca5793
+--- /dev/null
++++ b/TestProject/ProjectSettings/EditorBuildSettings.asset
+@@ -0,0 +1,11 @@
++%YAML 1.1
++%TAG !u! tag:unity3d.com,2011:
++--- !u!1045 &1
++EditorBuildSettings:
++  m_ObjectHideFlags: 0
++  serializedVersion: 2
++  m_Scenes:
++  - enabled: 1
++    path: Assets/Scenes/SdkSmoke.unity
++    guid: 364c17199d6a4b63bb45c0ba8c72f30c
++  m_configObjects: {}
+diff --git a/TestProject/ProjectSettings/ProjectSettings.asset b/TestProject/ProjectSettings/ProjectSettings.asset
+new file mode 100644
+index 0000000..d8aec35
+--- /dev/null
++++ b/TestProject/ProjectSettings/ProjectSettings.asset
+@@ -0,0 +1,12 @@
++%YAML 1.1
++%TAG !u! tag:unity3d.com,2011:
++--- !u!129 &1
++PlayerSettings:
++  m_ObjectHideFlags: 0
++  serializedVersion: 28
++  companyName: RamnD
++  productName: UGS SDK Smoke Tests
++  applicationIdentifier:
++    Standalone: games.ramnd.sdk.smoke
++  runInBackground: 1
++  activeInputHandler: 0
+diff --git a/TestProject/ProjectSettings/ProjectVersion.txt b/TestProject/ProjectSettings/ProjectVersion.txt
+new file mode 100644
+index 0000000..4d38f60
+--- /dev/null
++++ b/TestProject/ProjectSettings/ProjectVersion.txt
+@@ -0,0 +1 @@
++m_EditorVersion: 6000.3.8f1
+diff --git a/TestProject/README.md b/TestProject/README.md
+new file mode 100644
+index 0000000..215f92e
+--- /dev/null
++++ b/TestProject/README.md
+@@ -0,0 +1,53 @@
++# SDK Unity smoke harness
++
++This is a development-only Unity project outside all UPM package directories. Games installing `?path=packages/gameservices-sdk` do not import this project's scene, settings or tests. No package version or release tag is needed to test a commit.
++
++## Cloud operation
++
++The `Unity smoke` GitHub Actions workflow checks out the exact PR head, validates the project layout, imports all four RamnD packages through local folder dependencies, and runs Unity Test Framework EditMode and PlayMode suites in a GameCI container. Unity is pinned to **6000.3.8f1** in `ProjectSettings/ProjectVersion.txt`; this job does not certify the package's minimum supported Unity 2022.3 or mobile players.
++
++After one-time licensing setup, PRs into `agent/jules`, `staging` and `main`, pushes to those branches, and manual workflow dispatch run without opening Unity locally. The initial feature branch also runs on push, so the first cloud attempt can happen before merge. An existing run does not pick up later YAML edits: start a new run at the new commit.
++
++Results are attached to the Actions run as `unity-smoke-<head-sha>`: NUnit XML and available Unity logs. Missing/empty results, missing required smoke scenarios, failed tests, compilation failures and missing activation fail the job. `Smoke project layout` passing alone is not evidence that Unity ran.
++
++## One-time Unity activation
++
++An organization maintainer must provide a valid Unity activation method in repository Actions secrets. There are no game or backend credentials in this harness.
++
++| Activation method | Repository secrets |
++| --- | --- |
++| Supported serial-based paid license | `UNITY_EMAIL`, `UNITY_PASSWORD`, `UNITY_SERIAL` |
++| Supported Unity license file | `UNITY_EMAIL`, `UNITY_PASSWORD`, `UNITY_LICENSE` (license file contents) |
++| Existing reachable floating-license server | `UNITY_LICENSING_SERVER` |
++
++Use the method supported by your Unity entitlement and chosen Editor version. See [GameCI activation](https://game.ci/docs/github/activation/) and [test runner configuration](https://game.ci/docs/github/test-runner/). A Personal license file may require a one-time Unity Hub activation; this repository does not generate or bypass Unity licenses. Serial/server activation can keep project setup and test execution entirely in the cloud. License expiration, account policy changes and Unity upgrades may require maintainer intervention.
++
++The workflow does not use the Jules handoff PAT. Unity code executes in a regular `pull_request`/`push` workflow, never a privileged `pull_request_target` checkout. Fork PRs receive layout validation only; a skipped Unity job does not validate their runtime. All same-repository branches that receive license secrets must be trusted. Review before copying external changes to such a branch.
++
++## Covered behavior
++
++| Suite | Checks |
++| --- | --- |
++| SDK EditMode | Existing `RamndAnalyticsTests` exposed through `manifest.json` `testables` |
++| PlayMode scene bootstrap | Load the committed scene, create analytics via its public constructor, deliver an event, unload and dispose |
++| PlayMode timer | Deliver below a full batch without explicit flush |
++| PlayMode retry | HTTP 503 followed by automatic retry preserves the event ID |
++| PlayMode persistence | An offline event survives disposal and a new system instance, then drains once |
++
++The PlayMode cases use the real SDK assemblies, Unity synchronization context, timer and disk queue. Only HTTP ingest is replaced by an asynchronous local transport. Automatic-delivery cases require Unity to report a reachable network interface but never send an HTTP request. Tests have bounded waits and retain Unity Test Framework's unexpected-error handling.
++
++The two existing corrupted-snapshot EditMode tests explicitly expect their known error log using `LogAssert.Expect`. Unexpected errors remain failures; logging is not disabled globally.
++
++`SmokeEnvironment.ResetQueue` deletes only the analytics queue files in this test application's persistent-data directory and refuses to run under another product name. The project uses a dedicated product name and standalone identifier; do not copy the harness into a game.
++
++This is not full facade initialization or live UGS integration. Authentication, purchases, ads, platform plugins, IL2CPP and device behavior require additional targeted suites. Existing package import/assembly errors are intentionally visible; the harness does not patch or stub third-party assemblies to make imports pass.
++
++## Optional local use
++
++Open `TestProject` with its pinned Unity version and run `Assets/Scenes/SdkSmoke.unity`, or use Test Runner. CI is the supported way to verify the project without a local Unity installation. Generated `Library`, logs and the initially resolved package lock are ignored; direct SDK dependencies remain as declared by the checked-out packages. After the first successful import, review and commit a generated package lock if reproducible transitive resolution is required.
++
++## Adding a regression
++
++Add a focused PlayMode case under `Assets/Tests/PlayMode` that reproduces the observed runtime failure, asserts the expected result and disposes created services. Keep it independent of production accounts and services. Run the cloud workflow against the fix branch before promotion. New assets require committed `.meta` files.
++
++Recommended release classification: `release:none` for this infrastructure change.
+diff --git a/packages/gameservices-sdk/Tests/Editor/RamndAnalyticsTests.cs b/packages/gameservices-sdk/Tests/Editor/RamndAnalyticsTests.cs
+index bf37cf6..1b5c6ef 100644
+--- a/packages/gameservices-sdk/Tests/Editor/RamndAnalyticsTests.cs
++++ b/packages/gameservices-sdk/Tests/Editor/RamndAnalyticsTests.cs
+@@ -2,6 +2,9 @@ using System;
+ using System.Collections.Generic;
+ using System.IO;
+ using System.Threading;
++using System.Text.RegularExpressions;
++using UnityEngine;
++using UnityEngine.TestTools;
+ using System.Threading.Tasks;
+ using Newtonsoft.Json;
+ using Newtonsoft.Json.Linq;
+@@ -290,6 +293,7 @@ public class RamndAnalyticsTests
+         {
+             File.WriteAllText(Path.Combine(dir, RamndAnalyticsFileQueue.FileName), "{not json");
+             var store = new RamndAnalyticsFileQueue(dir, "http://localhost:3000");
++            LogAssert.Expect(LogType.Error, new Regex("Ramnd queue file is unreadable and will be replaced on the next save:"));
+             Assert.That(store.Load().Count, Is.EqualTo(0));
+         }
+         finally
+@@ -548,6 +552,7 @@ public class RamndAnalyticsTests
+             File.WriteAllText(Path.Combine(dir, RamndAnalyticsFileQueue.FileName), "{not json");
+
+             var recovered = new RamndAnalyticsFileQueue(dir, gateway);
++            LogAssert.Expect(LogType.Error, new Regex("Ramnd queue file is unreadable and will be replaced on the next save:"));
+             var loaded = recovered.Load();
+             Assert.That(loaded.Count, Is.EqualTo(1));
+             Assert.That(loaded[0]["event_id"].ToString(), Is.EqualTo(row["event_id"]));
+diff --git a/tests/unity-smoke/validate-project.py b/tests/unity-smoke/validate-project.py
+new file mode 100644
+index 0000000..1a557b3
+--- /dev/null
++++ b/tests/unity-smoke/validate-project.py
+@@ -0,0 +1,50 @@
++#!/usr/bin/env python3
++"""Validate the committed smoke project without installing Unity."""
++import json
++import re
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[2]
++PROJECT = ROOT / "TestProject"
++manifest = json.loads((PROJECT / "Packages/manifest.json").read_text())
++packages = {
++    "com.ramnd.gameservices-sdk": "gameservices-sdk",
++    "com.ramnd.core-logging": "core-logging",
++    "com.ramnd.service-fault": "service-fault",
++    "com.ramnd.gameservices-servicefault": "gameservices-servicefault",
++}
++for name, folder in packages.items():
++    value = manifest["dependencies"][name]
++    assert value == "file:../../packages/" + folder, (name, value)
++    package = (PROJECT / "Packages" / value.removeprefix("file:")).resolve()
++    assert package == ROOT / "packages" / folder
++    assert json.loads((package / "package.json").read_text())["name"] == name
++assert "com.ramnd.gameservices-sdk" in manifest["testables"]
++assert re.fullmatch(r"m_EditorVersion: \d+\.\d+\.\d+f\d+\n?", (PROJECT / "ProjectSettings/ProjectVersion.txt").read_text())
++
++guids = {}
++assets = PROJECT / "Assets"
++for path in assets.rglob("*"):
++    if path.suffix == ".meta":
++        continue
++    meta = path.with_name(path.name + ".meta")
++    assert meta.is_file(), f"Missing {meta}"
++    match = re.search(r"^guid: ([0-9a-f]{32})$", meta.read_text(), re.M)
++    assert match, meta
++    guid = match[1]
++    assert guid not in guids, f"Duplicate GUID: {guid}"
++    guids[guid] = path
++for meta in assets.rglob("*.meta"):
++    assert meta.with_suffix("").exists(), f"Orphan meta: {meta}"
++for path in assets.rglob("*.asmdef"):
++    json.loads(path.read_text())
++scene = assets / "Scenes/SdkSmoke.unity"
++bootstrap_meta = assets / "Smoke/SdkSmokeBootstrap.cs.meta"
++bootstrap_guid = re.search(r"^guid: ([0-9a-f]{32})$", bootstrap_meta.read_text(), re.M)[1]
++assert "guid: " + bootstrap_guid in scene.read_text()
++scene_guid = re.search(r"^guid: ([0-9a-f]{32})$", scene.with_suffix(".unity.meta").read_text(), re.M)[1]
++build_settings = (PROJECT / "ProjectSettings/EditorBuildSettings.asset").read_text()
++assert "Assets/Scenes/SdkSmoke.unity" in build_settings and scene_guid in build_settings
++assert "productName: UGS SDK Smoke Tests" in (PROJECT / "ProjectSettings/ProjectSettings.asset").read_text()
++assert not list((ROOT / "packages").glob("*/TestProject"))
++print("Smoke project layout, local package bindings, scene references and asset metadata are valid.")
+diff --git a/tests/unity-smoke/verify-results.py b/tests/unity-smoke/verify-results.py
+new file mode 100644
+index 0000000..da3ef6e
+--- /dev/null
++++ b/tests/unity-smoke/verify-results.py
+@@ -0,0 +1,47 @@
++#!/usr/bin/env python3
++"""Reject missing, empty, failed or incomplete Unity test reports."""
++import sys
++import xml.etree.ElementTree as ET
++from pathlib import Path
++
++SMOKE_TESTS = {
++    "SmokeScene_BootstrapsAndSendsEvent",
++    "PeriodicFlush_SendsWithoutExplicitFlush",
++    "TransientFailure_AutomaticallyRetriesSameEnvelope",
++    "PendingEvent_SurvivesDisposeAndRecreation",
++}
++
++
++def verify(directory):
++    cases = []
++    failures = []
++    for path in sorted(Path(directory).rglob("*.xml")):
++        root = ET.parse(path).getroot()
++        if root.tag not in ("test-run", "test-results"):
++            continue
++        cases.extend(root.iter("test-case"))
++        if root.get("result") in ("Failed", "Failure", "Cancelled") or int(root.get("failed", "0")) > 0:
++            failures.append(str(path))
++    if not cases:
++        raise ValueError("No Unity test cases were reported. Import, compilation or licensing may have failed.")
++    smoke = {case.get("name") for case in cases if case.get("fullname", "").startswith("AnalyticsSmokeTests.") and case.get("result") == "Passed"}
++    missing = SMOKE_TESTS - smoke
++    if missing:
++        raise ValueError("Missing or unsuccessful PlayMode scenarios: " + ", ".join(sorted(missing)))
++    editor = [case for case in cases if case.get("fullname", "").startswith("RamndAnalyticsTests.") and case.get("result") == "Passed"]
++    if not editor:
++        raise ValueError("Existing SDK EditMode tests were not executed successfully. Check manifest testables.")
++    failed_cases = [case.get("fullname", case.get("name", "unknown")) for case in cases if case.get("result") not in ("Passed", "Skipped", "Ignored", "Inconclusive")]
++    if failures or failed_cases:
++        raise ValueError("Unity test failures: " + ", ".join(failures + failed_cases))
++    print("### Unity smoke results\n")
++    print(f"Passed all {len(SMOKE_TESTS)} required PlayMode scenarios and {len(editor)} SDK EditMode tests.")
++    print(f"Total reported test cases: {len(cases)}. See the unity-smoke artifact for XML results and logs.")
++
++
++if __name__ == "__main__":
++    try:
++        verify(sys.argv[1])
++    except (ValueError, OSError, ET.ParseError) as error:
++        print(f"Unity result validation failed: {error}", file=sys.stderr)
++        sys.exit(1)
