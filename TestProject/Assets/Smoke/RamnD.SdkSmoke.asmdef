@@ -1,0 +1,6 @@
+{
+  "name": "RamnD.SdkSmoke",
+  "rootNamespace": "RamnD.SdkSmoke",
+  "references": ["RamnD.GameServices.Core", "RamnD.GameServices.UGS"],
+  "autoReferenced": true
+}

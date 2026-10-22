@@ -2,6 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
+using System.Text.RegularExpressions;
+using UnityEngine;
+using UnityEngine.TestTools;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -290,6 +293,7 @@ public class RamndAnalyticsTests
         {
             File.WriteAllText(Path.Combine(dir, RamndAnalyticsFileQueue.FileName), "{not json");
             var store = new RamndAnalyticsFileQueue(dir, "http://localhost:3000");
+            LogAssert.Expect(LogType.Error, new Regex("Ramnd queue file is unreadable and will be replaced on the next save:"));
             Assert.That(store.Load().Count, Is.EqualTo(0));
         }
         finally
@@ -548,6 +552,7 @@ public class RamndAnalyticsTests
             File.WriteAllText(Path.Combine(dir, RamndAnalyticsFileQueue.FileName), "{not json");
 
             var recovered = new RamndAnalyticsFileQueue(dir, gateway);
+            LogAssert.Expect(LogType.Error, new Regex("Ramnd queue file is unreadable and will be replaced on the next save:"));
             var loaded = recovered.Load();
             Assert.That(loaded.Count, Is.EqualTo(1));
             Assert.That(loaded[0]["event_id"].ToString(), Is.EqualTo(row["event_id"]));
