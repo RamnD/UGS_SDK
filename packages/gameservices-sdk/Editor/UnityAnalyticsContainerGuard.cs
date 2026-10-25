@@ -22,8 +22,10 @@ namespace RamnD.GameServices.Editor
 
         static UnityAnalyticsContainerGuard()
         {
+            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
             // Also schedule below, in case this constructor ran after the event.
+            AssemblyReloadEvents.afterAssemblyReload -= ScheduleCleanupAfterRestore;
             AssemblyReloadEvents.afterAssemblyReload += ScheduleCleanupAfterRestore;
             ScheduleCleanupAfterRestore();
         }
@@ -61,6 +63,7 @@ namespace RamnD.GameServices.Editor
             // surviving container. The first editor tick can still be that early, so
             // sweep once per tick across two ticks. A live service is left alone.
             s_RestoreSweepPassesLeft = RestoreSweepPasses;
+            EditorApplication.delayCall -= DeactivateRestoredContainers;
             EditorApplication.delayCall += DeactivateRestoredContainers;
             EditorApplication.update -= DeactivateOnEditorUpdate;
             EditorApplication.update += DeactivateOnEditorUpdate;
