@@ -17,6 +17,15 @@ permissions:
   issues: read
   pull-requests: read
 
+concurrency:
+  group: >-
+    codex-cursor-${{ github.repository }}-${{
+      github.event.pull_request.number ||
+      github.event.issue.number ||
+      inputs.pull_request
+    }}
+  cancel-in-progress: false
+
 jobs:
   request-codex-after-cursor:
     name: Request Codex after Cursor push
@@ -28,6 +37,7 @@ jobs:
       PR_NUMBER: ${{ github.event.pull_request.number }}
       CURRENT_SHA: ${{ github.event.pull_request.head.sha }}
       HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+      HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
     steps:
       - name: Request review for a Cursor handoff result
         shell: bash
@@ -42,6 +52,12 @@ jobs:
             echo "Codex re-review is limited to valid same-repository pull-request heads."
             exit 0
           fi
+          case "${HEAD_BRANCH}" in
+            main|staging|agent/jules)
+              echo "Cursor automation must not write to protected head branch ${HEAD_BRANCH}."
+              exit 0
+              ;;
+          esac
 
           comments="$(gh api --paginate --slurp \
             "repos/${GH_REPO}/issues/${PR_NUMBER}/comments?per_page=100" \
@@ -144,8 +160,9 @@ jobs:
             exit 1
           fi
 
-          pr_json="$(gh pr view "${pr_number}" --repo "${GH_REPO}" --json state,headRefOid,headRepository)"
+          pr_json="$(gh pr view "${pr_number}" --repo "${GH_REPO}" --json state,headRefName,headRefOid,headRepository)"
           pr_state="$(jq -r '.state' <<<"${pr_json}")"
+          head_branch="$(jq -r '.headRefName' <<<"${pr_json}")"
           current_sha="$(jq -r '.headRefOid' <<<"${pr_json}")"
           head_repo="$(jq -r '.headRepository.nameWithOwner // empty' <<<"${pr_json}")"
           if [[ "${pr_state}" != "OPEN" || "${current_sha}" != "${reviewed_sha}" ]]; then
@@ -156,6 +173,12 @@ jobs:
             echo "Cursor handoff is limited to same-repository pull requests." >&2
             exit 1
           fi
+          case "${head_branch}" in
+            main|staging|agent/jules)
+              echo "Cursor automation must not write to protected head branch ${head_branch}."
+              exit 0
+              ;;
+          esac
 
           marker="<!-- codex-cursor-handoff:v1 sha=${reviewed_sha} -->"
           comments="$(gh api --paginate --slurp \
