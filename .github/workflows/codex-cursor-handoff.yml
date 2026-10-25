@@ -5,12 +5,6 @@ on:
     types: [created, edited]
   pull_request_target:
     types: [synchronize]
-  workflow_dispatch:
-    inputs:
-      pull_request:
-        description: Open pull request number to reprocess
-        required: true
-        type: number
 
 permissions:
   contents: read
@@ -21,8 +15,7 @@ concurrency:
   group: >-
     codex-cursor-${{ github.repository }}-${{ github.event_name }}-${{
       github.event.comment.id ||
-      github.event.pull_request.number ||
-      inputs.pull_request
+      github.event.pull_request.number
     }}
   cancel-in-progress: false
 
@@ -94,19 +87,14 @@ jobs:
   handoff:
     name: Ask Cursor to address Codex findings
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event.issue.pull_request &&
-        github.event.comment.user.login == 'chatgpt-codex-connector[bot]' &&
-        contains(github.event.comment.body, '<!-- codex-pull-request-review-summary -->')
-      )
+      github.event.issue.pull_request &&
+      github.event.comment.user.login == 'chatgpt-codex-connector[bot]' &&
+      contains(github.event.comment.body, '<!-- codex-pull-request-review-summary -->')
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.JULES_HANDOFF_TOKEN }}
       GH_REPO: ${{ github.repository }}
-      EVENT_NAME: ${{ github.event_name }}
       EVENT_PR_NUMBER: ${{ github.event.issue.number }}
-      DISPATCH_PR_NUMBER: ${{ inputs.pull_request }}
       EVENT_COMMENT_BODY: ${{ github.event.comment.body }}
       MAX_CURSOR_HANDOFFS: "3"
     steps:
@@ -120,22 +108,8 @@ jobs:
             exit 1
           fi
 
-          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
-            pr_number="${DISPATCH_PR_NUMBER}"
-            review_body="$(gh api --paginate --slurp \
-              "repos/${GH_REPO}/issues/${pr_number}/comments?per_page=100" --jq '
-              [
-                .[][]
-                | select(.user.login == "chatgpt-codex-connector[bot]")
-                | select(.body | contains("<!-- codex-pull-request-review-summary -->"))
-              ]
-              | last
-              | .body // empty
-            ')"
-          else
-            pr_number="${EVENT_PR_NUMBER}"
-            review_body="${EVENT_COMMENT_BODY}"
-          fi
+          pr_number="${EVENT_PR_NUMBER}"
+          review_body="${EVENT_COMMENT_BODY}"
 
           if [[ ! "${pr_number}" =~ ^[0-9]+$ || -z "${review_body}" ]]; then
             echo "No Codex review summary was found for an open pull request." >&2
