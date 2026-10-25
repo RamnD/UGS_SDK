@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.4.2] - 2026-10-22
+
+### Fixed
+- **`com.ramnd.gameservices-sdk`:** qualify the analytics retry-jitter generator as `System.Random` to resolve Unity compilation error CS0104 caused by the `UnityEngine.Random` name collision. SDK package version: 2.4.2. Other package versions remain 2.0.4.
+
+## [2.4.1] - 2026-10-21
+
+### Fixed
+- **`com.ramnd.gameservices-sdk`:** periodic analytics delivery, bounded retry backoff, durable journal checkpoints and restart recovery, batch-scoped HTTP 207 acknowledgement, and constructor binary compatibility. SDK package version: 2.4.1. Other package versions remain 2.0.4.
+- **Jules review hand-off:** explicit GitHub repository context, visible operation failures, clean/blocking/unknown verdicts, and correction mapping that rejects stale or ambiguous results. Trusted workflow updates become active after merge into `main`.
+
 ## [2.2.1] - 2026-08-27
 
 ### Fixed
