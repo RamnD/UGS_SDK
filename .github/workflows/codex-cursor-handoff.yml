@@ -19,9 +19,9 @@ permissions:
 
 concurrency:
   group: >-
-    codex-cursor-${{ github.repository }}-${{
+    codex-cursor-${{ github.repository }}-${{ github.event_name }}-${{
+      github.event.comment.id ||
       github.event.pull_request.number ||
-      github.event.issue.number ||
       inputs.pull_request
     }}
   cancel-in-progress: false
