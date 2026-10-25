@@ -24,7 +24,7 @@ jobs:
       )
     runs-on: ubuntu-latest
     env:
-      GH_TOKEN: ${{ secrets.JULES_HANDOFF_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       CORRECTION_BASE: ${{ github.event.pull_request.base.ref }}
       CORRECTION_NUMBER: ${{ github.event.pull_request.number }}
