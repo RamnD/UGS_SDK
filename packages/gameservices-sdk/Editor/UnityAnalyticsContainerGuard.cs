@@ -113,7 +113,8 @@ namespace RamnD.GameServices.Editor
 
             foreach (UnityEngine.Object container in Resources.FindObjectsOfTypeAll(containerType))
             {
-                if (container is not Behaviour behaviour || EditorUtility.IsPersistent(behaviour))
+                Behaviour behaviour = container as Behaviour;
+                if (behaviour == null || EditorUtility.IsPersistent(behaviour))
                     continue;
                 if (serviceField.GetValue(behaviour) != null || !behaviour.gameObject.activeSelf)
                     continue;
