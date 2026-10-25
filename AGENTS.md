@@ -125,5 +125,7 @@ Use explicit GitHub checks or labels such as `jules:requested`, `jules:complete`
 
 - On a task pull request, a clean Jules verdict for the current head SHA can mark the draft ready. That makes the pull request eligible for the repository's Codex GitHub integration. It does not mean Codex has reviewed that SHA. `jules:complete` alone is not that hand-off.
 - On the promotion pull request (`agent/jules` → `staging`), request Codex for the exact head SHA that completed Jules and CI. A task-branch hand-off does not request or complete that promotion review. A new commit clears completion and approval state.
-- These workflows do not call a Codex API. Whether marking a pull request ready starts Codex depends on the Codex GitHub app or rules configured for the repository. Those settings are outside the workflow files.
+- These workflows do not call a Codex API. Whether marking a pull request ready or pushing a new commit starts Codex depends on the Codex GitHub app settings configured for the repository.
+- `codex-cursor-handoff.yml` watches the machine-readable Codex review summary. For a completed review with unresolved findings on the current head SHA, it posts one `@cursoragent` request through the maintainer-bound `JULES_HANDOFF_TOKEN`. It refuses stale, closed, forked, duplicate, or malformed hand-offs and stops after three Cursor iterations with `codex:needs-human`.
+- To complete the loop after Cursor pushes a fix, configure the Codex GitHub integration to review every new pull-request commit. Each Codex review must name the current SHA; a previous review never approves a later Cursor commit.
 - Automated approvals never replace the required human review. Automation must not merge `agent/jules`, `staging`, or `main`.

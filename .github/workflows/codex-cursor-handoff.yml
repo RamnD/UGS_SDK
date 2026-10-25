@@ -1,0 +1,126 @@
+name: Codex to Cursor handoff
+
+on:
+  issue_comment:
+    types: [created, edited]
+  workflow_dispatch:
+    inputs:
+      pull_request:
+        description: Open pull request number to reprocess
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  handoff:
+    name: Ask Cursor to address Codex findings
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.issue.pull_request &&
+        github.event.comment.user.login == 'chatgpt-codex-connector[bot]' &&
+        contains(github.event.comment.body, '<!-- codex-pull-request-review-summary -->')
+      )
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.JULES_HANDOFF_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      EVENT_NAME: ${{ github.event_name }}
+      EVENT_PR_NUMBER: ${{ github.event.issue.number }}
+      DISPATCH_PR_NUMBER: ${{ inputs.pull_request }}
+      EVENT_COMMENT_BODY: ${{ github.event.comment.body }}
+      MAX_CURSOR_HANDOFFS: "3"
+    steps:
+      - name: Validate Codex review and request Cursor
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "JULES_HANDOFF_TOKEN is required so Cursor receives the mention from the maintainer identity." >&2
+            exit 1
+          fi
+
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            pr_number="${DISPATCH_PR_NUMBER}"
+            review_body="$(gh api --paginate "repos/${GH_REPO}/issues/${pr_number}/comments" --jq '
+              [
+                .[]
+                | select(.user.login == "chatgpt-codex-connector[bot]")
+                | select(.body | contains("<!-- codex-pull-request-review-summary -->"))
+              ]
+              | last
+              | .body // empty
+            ')"
+          else
+            pr_number="${EVENT_PR_NUMBER}"
+            review_body="${EVENT_COMMENT_BODY}"
+          fi
+
+          if [[ ! "${pr_number}" =~ ^[0-9]+$ || -z "${review_body}" ]]; then
+            echo "No Codex review summary was found for an open pull request." >&2
+            exit 1
+          fi
+
+          state_json="$(sed -n 's/^<!-- codex-review-state:v1 \(.*\) -->$/\1/p' <<<"${review_body}" | head -n 1)"
+          if [[ -z "${state_json}" ]]; then
+            echo "Codex summary has no machine-readable review state yet."
+            exit 0
+          fi
+
+          reviewed_sha="$(jq -r '.code_review.commit_sha // empty' <<<"${state_json}")"
+          review_status="$(jq -r '.code_review.status // empty' <<<"${state_json}")"
+          unresolved="$(jq -r '.code_review.has_unresolved_findings // false' <<<"${state_json}")"
+          if [[ "${review_status}" != "completed" || "${unresolved}" != "true" ]]; then
+            echo "Codex review is not a completed review with unresolved findings."
+            exit 0
+          fi
+          if [[ ! "${reviewed_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Codex review does not identify a full commit SHA." >&2
+            exit 1
+          fi
+
+          pr_json="$(gh pr view "${pr_number}" --repo "${GH_REPO}" --json state,headRefOid,headRepository)"
+          pr_state="$(jq -r '.state' <<<"${pr_json}")"
+          current_sha="$(jq -r '.headRefOid' <<<"${pr_json}")"
+          head_repo="$(jq -r '.headRepository.nameWithOwner // empty' <<<"${pr_json}")"
+          if [[ "${pr_state}" != "OPEN" || "${current_sha}" != "${reviewed_sha}" ]]; then
+            echo "Codex review is stale or the pull request is no longer open; Cursor was not requested."
+            exit 0
+          fi
+          if [[ "${head_repo}" != "${GH_REPO}" ]]; then
+            echo "Cursor handoff is limited to same-repository pull requests." >&2
+            exit 1
+          fi
+
+          marker="<!-- codex-cursor-handoff:v1 sha=${reviewed_sha} -->"
+          comments="$(gh api --paginate "repos/${GH_REPO}/issues/${pr_number}/comments" --jq '.[].body')"
+          if grep -Fq "${marker}" <<<"${comments}"; then
+            echo "Cursor was already requested for ${reviewed_sha}."
+            exit 0
+          fi
+
+          handoff_count="$(grep -Fc '<!-- codex-cursor-handoff:v1 ' <<<"${comments}" || true)"
+          if (( handoff_count >= MAX_CURSOR_HANDOFFS )); then
+            gh label create "codex:needs-human" \
+              --repo "${GH_REPO}" \
+              --color "B60205" \
+              --description "Automated Codex to Cursor loop reached its safety limit" \
+              >/dev/null 2>&1 || true
+            gh pr edit "${pr_number}" --repo "${GH_REPO}" --add-label "codex:needs-human"
+            gh pr comment "${pr_number}" --repo "${GH_REPO}" --body "The automated Codex → Cursor loop reached ${MAX_CURSOR_HANDOFFS} iterations. A maintainer must review the remaining findings."
+            exit 0
+          fi
+
+          gh pr comment "${pr_number}" --repo "${GH_REPO}" --body "$(cat <<EOF
+          @cursoragent Address every unresolved Codex review finding for the current pull request head `${reviewed_sha}`.
+
+          Work only on the existing pull request head branch. Re-read AGENTS.md and the inline Codex findings, make the smallest complete fix, run the relevant validation, commit, and push. Do not merge the pull request, change its base, weaken tests, or ignore a finding without explaining why.
+
+          ${marker}
+          EOF
+          )"
