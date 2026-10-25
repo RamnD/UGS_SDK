@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.5.0] - 2026-10-25
+
+### Fixed
+- **`com.ramnd.gameservices-sdk`:** in the Unity Editor, deactivate a reloaded `AnalyticsContainer` whose service reference was cleared, so `Update` and `OnApplicationPause` do not throw every frame after a script reload in Play Mode. The next `UnityServices.InitializeAsync` creates a fresh container. Player builds are unchanged. SDK package version: 2.5.0. Other package versions remain 2.0.4.
+
 ## [2.4.2] - 2026-10-22
 
 ### Fixed
