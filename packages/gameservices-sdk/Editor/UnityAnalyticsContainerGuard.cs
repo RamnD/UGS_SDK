@@ -28,12 +28,6 @@ namespace RamnD.GameServices.Editor
             ScheduleCleanupAfterRestore();
         }
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void SilenceAfterDomainReload()
-        {
-            DeactivateContainersWithoutService();
-        }
-
         /// <summary>
         /// Script recompile while Play Mode stays active does not raise
         /// <see cref="PlayModeStateChange.ExitingEditMode"/> and does not run
