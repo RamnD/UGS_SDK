@@ -3,6 +3,8 @@ name: Codex to Cursor handoff
 on:
   issue_comment:
     types: [created, edited]
+  pull_request_target:
+    types: [synchronize]
   workflow_dispatch:
     inputs:
       pull_request:
@@ -16,6 +18,63 @@ permissions:
   pull-requests: read
 
 jobs:
+  request-codex-after-cursor:
+    name: Request Codex after Cursor push
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.JULES_HANDOFF_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      CURRENT_SHA: ${{ github.event.pull_request.head.sha }}
+      HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+    steps:
+      - name: Request review for a Cursor handoff result
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "JULES_HANDOFF_TOKEN is required to request the next Codex review." >&2
+            exit 1
+          fi
+          if [[ "${HEAD_REPO}" != "${GH_REPO}" || ! "${CURRENT_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Codex re-review is limited to valid same-repository pull-request heads."
+            exit 0
+          fi
+
+          comments="$(gh api --paginate --slurp \
+            "repos/${GH_REPO}/issues/${PR_NUMBER}/comments?per_page=100" \
+            --jq '.[][] | .body')"
+          request_marker="<!-- codex-review-request:v1 sha=${CURRENT_SHA} -->"
+          if grep -Fq "${request_marker}" <<<"${comments}"; then
+            echo "Codex review was already requested for ${CURRENT_SHA}."
+            exit 0
+          fi
+
+          parent_shas="$(gh api "repos/${GH_REPO}/commits/${CURRENT_SHA}" --jq '.parents[].sha')"
+          matched_handoff="false"
+          while IFS= read -r parent_sha; do
+            if grep -Fq "<!-- codex-cursor-handoff:v1 sha=${parent_sha} -->" <<<"${comments}"; then
+              matched_handoff="true"
+              break
+            fi
+          done <<<"${parent_shas}"
+
+          if [[ "${matched_handoff}" != "true" ]]; then
+            echo "The new head is not a direct result of a recorded Cursor handoff; Codex was not requested."
+            exit 0
+          fi
+
+          gh pr comment "${PR_NUMBER}" --repo "${GH_REPO}" --body "$(cat <<EOF
+          @codex review
+
+          Please review the current head ${CURRENT_SHA}; it follows the automated Cursor handoff for its parent commit.
+
+          ${request_marker}
+          EOF
+          )"
+
   handoff:
     name: Ask Cursor to address Codex findings
     if: >-
@@ -47,9 +106,10 @@ jobs:
 
           if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
             pr_number="${DISPATCH_PR_NUMBER}"
-            review_body="$(gh api --paginate "repos/${GH_REPO}/issues/${pr_number}/comments" --jq '
+            review_body="$(gh api --paginate --slurp \
+              "repos/${GH_REPO}/issues/${pr_number}/comments?per_page=100" --jq '
               [
-                .[]
+                .[][]
                 | select(.user.login == "chatgpt-codex-connector[bot]")
                 | select(.body | contains("<!-- codex-pull-request-review-summary -->"))
               ]
@@ -98,7 +158,9 @@ jobs:
           fi
 
           marker="<!-- codex-cursor-handoff:v1 sha=${reviewed_sha} -->"
-          comments="$(gh api --paginate "repos/${GH_REPO}/issues/${pr_number}/comments" --jq '.[].body')"
+          comments="$(gh api --paginate --slurp \
+            "repos/${GH_REPO}/issues/${pr_number}/comments?per_page=100" \
+            --jq '.[][] | .body')"
           if grep -Fq "${marker}" <<<"${comments}"; then
             echo "Cursor was already requested for ${reviewed_sha}."
             exit 0
@@ -117,7 +179,7 @@ jobs:
           fi
 
           gh pr comment "${pr_number}" --repo "${GH_REPO}" --body "$(cat <<EOF
-          @cursoragent Address every unresolved Codex review finding for the current pull request head `${reviewed_sha}`.
+          @cursoragent Address every unresolved Codex review finding for the current pull request head ${reviewed_sha}.
 
           Work only on the existing pull request head branch. Re-read AGENTS.md and the inline Codex findings, make the smallest complete fix, run the relevant validation, commit, and push. Do not merge the pull request, change its base, weaken tests, or ignore a finding without explaining why.
 
