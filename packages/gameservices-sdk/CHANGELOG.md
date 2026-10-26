@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.5.0] - 2026-10-25
+
+### Fixed
+- **Editor Unity Analytics after script reload.** `UnityAnalyticsContainerGuard` deactivates a reloaded `AnalyticsContainer` whose service reference was cleared, so `Update` and `OnApplicationPause` do not throw every frame while Play Mode stays active. The next `UnityServices.InitializeAsync` creates a fresh container. Player builds are unchanged.
+
 ## [2.4.2] - 2026-10-22
 
 ### Fixed

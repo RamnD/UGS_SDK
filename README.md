@@ -2,7 +2,7 @@
 
 Unity UPM monorepo for RamnD foundation packages and the Game Services SDK.
 
-All packages share repository version **2.0.4**.
+`com.ramnd.gameservices-sdk` is **2.5.0**. The other packages remain **2.0.4**.
 
 ## Packages
 
@@ -20,7 +20,7 @@ Install individual packages via `?path=`:
 ```json
 {
   "dependencies": {
-    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git?path=packages/gameservices-sdk#v2.0.4",
+    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git?path=packages/gameservices-sdk#v2.5.0",
     "com.ramnd.core-logging": "https://github.com/RamnD/UGS_SDK.git?path=packages/core-logging#v2.0.4",
     "com.ramnd.service-fault": "https://github.com/RamnD/UGS_SDK.git?path=packages/service-fault#v2.0.4",
     "com.ramnd.gameservices-servicefault": "https://github.com/RamnD/UGS_SDK.git?path=packages/gameservices-servicefault#v2.0.4"

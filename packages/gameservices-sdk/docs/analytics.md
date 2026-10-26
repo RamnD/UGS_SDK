@@ -150,6 +150,10 @@ If the game is compiled with `UGS_ENV_PRODUCTION` **and** running in the Unity E
 
 The guard covers desktop because those builds are dev/QA machines: before it existed they landed in the production dataset as `PC_CLIENT` / `LINUX_CLIENT` sessions and skewed every per-user KPI.
 
+### Editor script reload
+
+Unity's `AnalyticsContainer` can survive a script recompile while Play Mode stays active, after its service reference has been cleared. `Update` then throws every frame, and `OnApplicationPause` still runs. The Editor-only `UnityAnalyticsContainerGuard` turns that container's GameObject off. The next `UnityServices.InitializeAsync` creates a new container. Player builds do not include this guard.
+
 ### Environment isolation of the offline queue
 
 UGS uploads buffered events to whatever environment the **current** session initialized with — events do not remember the environment they were recorded against. The disk-backed `PendingAnalyticsQueue` is therefore stamped with the resolved environment name. On load, a queue written under a different environment is dropped with a warning rather than replayed, so switching Build Profiles between runs cannot flush staging events into production.
