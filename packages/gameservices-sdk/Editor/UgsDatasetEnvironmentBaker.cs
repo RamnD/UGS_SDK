@@ -24,8 +24,17 @@ namespace RamnD.GameServices.Editor
 
         static UgsDatasetEnvironmentBaker()
         {
-            CompilationPipeline.compilationFinished += _ => EditorApplication.delayCall += Bake;
+            CompilationPipeline.compilationFinished -= OnCompilationFinished;
+            CompilationPipeline.compilationFinished += OnCompilationFinished;
+            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+            EditorApplication.delayCall -= Bake;
+            EditorApplication.delayCall += Bake;
+        }
+
+        static void OnCompilationFinished(object _)
+        {
+            EditorApplication.delayCall -= Bake;
             EditorApplication.delayCall += Bake;
         }
 
