@@ -182,7 +182,10 @@ namespace RamnD.GameServices.Editor
 
                 string directory = Path.GetDirectoryName(path);
                 if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                {
                     Directory.CreateDirectory(directory);
+                    AssetDatabase.ImportAsset(directory);
+                }
 
                 asset = ScriptableObject.CreateInstance<UgsDatasetEnvironment>();
                 AssetDatabase.CreateAsset(asset, path);
