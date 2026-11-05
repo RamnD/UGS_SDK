@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.6.0] - 2026-11-05
+
+### Added
+- **`com.ramnd.gameservices-sdk`:** a project `UgsEnvironmentNameMap` can map an extra scripting define to a Unity dashboard environment name. Tier symbols still choose logs, ads debug, and the production analytics guard. `development`, `staging`, and `production` stay the dataset names when no row matches. The editor writes the chosen name to a `UgsDatasetEnvironment` asset in `Assets/Resources` before Play and before a player build. Auth, Cloud Save, Economy, Remote Config, and UGS Analytics share that name. SDK package version: 2.6.0. Other package versions remain 2.0.4.
+
 ## [2.5.0] - 2026-10-25
 
 ### Fixed
