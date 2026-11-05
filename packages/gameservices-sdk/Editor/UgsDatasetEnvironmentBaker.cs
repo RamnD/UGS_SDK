@@ -184,6 +184,7 @@ namespace RamnD.GameServices.Editor
                 if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
                 {
                     Directory.CreateDirectory(directory);
+                    directory = directory.Replace('\\', '/');
                     AssetDatabase.ImportAsset(directory);
                 }
 
