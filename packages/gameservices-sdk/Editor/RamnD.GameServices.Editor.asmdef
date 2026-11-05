@@ -1,7 +1,9 @@
 {
   "name": "RamnD.GameServices.Editor",
   "rootNamespace": "RamnD.GameServices.Editor",
-  "references": [],
+  "references": [
+    "RamnD.GameServices.UGS"
+  ],
   "includePlatforms": [
     "Editor"
   ],
