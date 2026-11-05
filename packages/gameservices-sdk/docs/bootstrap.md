@@ -187,15 +187,21 @@ Also see [README — Threading / PlayerPrefs](../README.md#threading--playerpref
 
 ## Environments
 
-`UGSServicesBuilder` resolves the UGS environment name through `UGSEnvironmentResolver` and applies it with `InitializationOptions.SetEnvironmentName` before `UnityServices.InitializeAsync`. After init it reads `IEnvironments.Current`; if that does not match the build symbol, Analytics is left as a no-op so events cannot land in the wrong dataset.
+`UGSServicesBuilder` resolves the UGS environment name through `UGSEnvironmentResolver` and applies it with `InitializationOptions.SetEnvironmentName` before `UnityServices.InitializeAsync`. After init it reads `IEnvironments.Current`; if that does not match the resolved name, Analytics is left as a no-op so events cannot land in the wrong dataset.
 
 Without `SetEnvironmentName`, Core falls back to the baked Editor Environment Selector value in `UnityServicesProjectConfiguration.json` (usually `production`) — that is how staging builds previously polluted production Analytics.
 
-Priority:
+Tier symbols choose behavior and the default dataset name:
 
-1. `UGS_ENV_PRODUCTION`
-2. `UGS_ENV_STAGING`
-3. `UGS_ENV_DEVELOPMENT`
+1. `UGS_ENV_PRODUCTION` → `production`
+2. `UGS_ENV_STAGING` → `staging`
+3. `UGS_ENV_DEVELOPMENT` → `development`
 4. fallback: `development`
 
-If more than one `UGS_ENV_*` symbol is defined, the SDK logs an error and still applies the priority list above.
+An optional dataset name overrides only the string passed to Unity Services. Logs, ads debug, and the production analytics guard still follow the tier symbol.
+
+Add the name on a `UgsEnvironmentNameMap` asset (`RamnD → UGS Environment Names`): one row is a scripting define and the dashboard environment it selects. Put that define on the Build Profile next to the tier symbol. The earliest matching row wins. One Unity Services initialization means Auth, Cloud Save, Economy, Remote Config, and UGS Analytics share that name. A new environment is a new row and a new profile define. The string must match the dashboard exactly.
+
+The editor resolves the list against the active profile and writes the `UgsDatasetEnvironment` asset in `Assets/Resources` before Play and before a player build. That asset is generated. Do not edit it by hand.
+
+If more than one tier symbol is defined, the SDK logs a warning and keeps production ahead of staging. If more than one dataset row matches, it logs a warning and keeps the earliest row. A dataset name that does not equal the tier and does not start with `{tier}-` also logs a warning; the custom name is still sent.
