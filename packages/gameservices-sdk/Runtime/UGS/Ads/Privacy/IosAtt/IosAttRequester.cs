@@ -1,9 +1,9 @@
 using System.Threading;
 using System.Threading.Tasks;
+using UnityEngine;
 using UnityEngine.Scripting;
 #if UNITY_IOS
 using Unity.Advertisement.IosSupport;
-using UnityEngine;
 #endif
 
 // Optional ATT assembly is entered only from RuntimeInitializeOnLoadMethod.
