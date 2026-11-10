@@ -24,11 +24,20 @@ Local development (sibling folder):
 "com.ramnd.gameservices-sdk": "file:../UGS_SDK/packages/gameservices-sdk"
 ```
 
-After install, Unity pulls UGS / LevelPlay dependencies from this package's `package.json` automatically.
+After install, Unity pulls the UGS dependencies listed in this package's `package.json`. **LevelPlay and iOS ATT are not among them.** A desktop or premium build with no ads does not need those packages and will not receive LevelPlay's Android advertising-id permission.
+
+Install them in the game project only when that game shows ads:
+
+```json
+"com.unity.services.levelplay": "9.4.1",
+"com.unity.ads.ios-support": "1.2.0"
+```
+
+`LevelPlayAdsManager` lives in `RamnD.GameServices.UGS.LevelPlay` and is compiled only when LevelPlay is installed. `Assembly-CSharp` sees it automatically. A custom asmdef that constructs `LevelPlayAdsManager` must reference `RamnD.GameServices.UGS.LevelPlay`.
 
 **Android Google Play sign-in** also requires [Google Play Games Plugin](#android--google-play-games-plugin-for-unity) in the consuming project (`Google.Play.Games` assembly). iOS Sign in with Apple plugin is optional until you wire `NativeAppleSignIn` (see [docs/auth.md](docs/auth.md)).
 
-Optional sample: **Package Manager → RamnD Game Services SDK → Samples → Import Bootstrap**.
+Optional sample: **Package Manager → RamnD Game Services SDK → Samples → Import Bootstrap**. The sample assembly compiles only when the game installs LevelPlay.
 
 ---
 
@@ -189,11 +198,13 @@ Install Apple.Core / Apple.GameKit / Apple Sign-In as **UPM packages** (tarball 
 |------|------|----------|
 | Contracts, exceptions, locator | `Runtime/Core` | `RamnD.GameServices.Core` (`.asmdef`) |
 | Mocks | `Runtime/Mock` | `RamnD.GameServices.Mock` (references Core + Newtonsoft.Json) |
-| UGS implementations | `Runtime/UGS` | `RamnD.GameServices.UGS` (references Core, UGS packages, LevelPlay; GPGS/GameKit via versionDefines) |
+| UGS implementations | `Runtime/UGS` | `RamnD.GameServices.UGS` (references Core and UGS packages; GPGS/GameKit via versionDefines) |
+| LevelPlay ads | `Runtime/UGS/Ads/LevelPlay` | `RamnD.GameServices.UGS.LevelPlay` (only when `com.unity.services.levelplay` is installed) |
+| iOS ATT | `Runtime/UGS/Ads/Privacy/IosAtt` | `RamnD.GameServices.UGS.IosAtt` (only when `com.unity.ads.ios-support` is installed) |
 
-**Note:** `Google.Play.Games` must be present in the consuming project for Android auth (see below). Legacy Unity Ads (`UnityAdsManager`) compiles only with scripting define `RAMND_LEGACY_UNITY_ADS` plus `com.unity.ads` in the host project.
+**Note:** `Google.Play.Games` must be present in the consuming project for Android auth (see below). Legacy Unity Ads (`UnityAdsManager`) compiles only with scripting define `RAMND_LEGACY_UNITY_ADS` plus `com.unity.ads` in the host project. LevelPlay and the iOS ATT package are optional and are not dependencies of this package.
 
-Dependencies are listed in `package.json` (Newtonsoft, Authentication, Economy, Cloud Save, Leaderboards, Achievements via Cloud Save, Analytics, Remote Config, Ads / LevelPlay).
+Dependencies are listed in `package.json` (Newtonsoft, Authentication, Economy, Cloud Save, Leaderboards, Achievements via Cloud Save, Analytics, Remote Config, Unity IAP).
 Unity IAP is also included for portable real-money purchase flows redeemed through Economy.
 
 ---

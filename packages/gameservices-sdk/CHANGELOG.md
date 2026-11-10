@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- **Ads SDKs are optional.** `com.unity.services.levelplay` and `com.unity.ads.ios-support` are no longer dependencies of this package. A game without ads (desktop, premium) compiles without them and does not receive LevelPlay's Android `AD_ID` permission.
+- **`LevelPlayAdsManager` / `LevelPlayAdsOptions`** compile in `RamnD.GameServices.UGS.LevelPlay` only when the game installs LevelPlay. `Assembly-CSharp` still sees those types. A custom asmdef that constructs them must reference `RamnD.GameServices.UGS.LevelPlay`.
+- **ATT** compiles in `RamnD.GameServices.UGS.IosAtt` (Editor and iOS only) when the game installs `com.unity.ads.ios-support`. Otherwise `AppTrackingTransparencyGate` is a no-op.
+- **LevelPlay COPPA / GDPR** are applied only when that assembly is present. Google UMP no longer references `Unity.LevelPlay` itself; it still calls `AdsPrivacyPipeline.SetLevelPlayGdprConsent`, which no-ops without LevelPlay.
+
+### Migration
+Games that show ads must add the packages to their own `Packages/manifest.json` (they are no longer pulled in transitively):
+
+```json
+"com.unity.services.levelplay": "9.4.1",
+"com.unity.ads.ios-support": "1.2.0"
+```
+
+Projects that already list them keep compiling. After upgrading, a no-ads project must also delete LevelPlay's External Dependency Manager outputs (`Assets/LevelPlay`, the `play-services-ads-identifier` / `ads-mediation` lines in `mainTemplate.gradle`, and `ProjectSettings/AndroidResolverDependencies.xml`) or the advertising-id permission stays in the AAB.
+
 ## [2.4.2] - 2026-10-22
 
 ### Fixed
