@@ -1,9 +1,12 @@
 # Changelog
 
-## [Unreleased]
+## [2.6.1] - 2026-11-11
 
 ### Changed
-- **`com.ramnd.gameservices-sdk`:** LevelPlay and iOS ATT are no longer package dependencies. `LevelPlayAdsManager` compiles only when the game installs `com.unity.services.levelplay`; ATT compiles only when the game installs `com.unity.ads.ios-support`. A desktop or premium project can omit both and will not pick up LevelPlay's Android advertising-id permission. Custom asmdefs that construct `LevelPlayAdsManager` must reference `RamnD.GameServices.UGS.LevelPlay`. Games that already list those packages in their own manifest keep the current ads behavior.
+- **`com.ramnd.gameservices-sdk`:** LevelPlay and iOS ATT are no longer package dependencies. `LevelPlayAdsManager` compiles only when the game installs `com.unity.services.levelplay`; ATT compiles only when the game installs `com.unity.ads.ios-support`. A desktop or premium project can omit both and will not pick up LevelPlay's Android advertising-id permission. Custom asmdefs that construct `LevelPlayAdsManager` must reference `RamnD.GameServices.UGS.LevelPlay`. Games that already list those packages in their own manifest keep the current ads behavior. SDK package version: 2.6.1. Other package versions remain 2.0.4.
+
+### Fixed
+- **`com.ramnd.gameservices-sdk`:** normalize the generated `UgsDatasetEnvironment` folder path to forward slashes before `AssetDatabase.ImportAsset`, so Unity creates the directory meta on Windows.
 
 ## [2.6.0] - 2026-11-05
 

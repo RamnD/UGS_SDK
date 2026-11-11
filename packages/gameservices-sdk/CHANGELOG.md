@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.6.1] - 2026-11-11
 
 ### Changed
 - **Ads SDKs are optional.** `com.unity.services.levelplay` and `com.unity.ads.ios-support` are no longer dependencies of this package. A game without ads (desktop, premium) compiles without them and does not receive LevelPlay's Android `AD_ID` permission.
@@ -17,6 +17,9 @@ Games that show ads must add the packages to their own `Packages/manifest.json` 
 ```
 
 Projects that already list them keep compiling. After upgrading, a no-ads project must also delete LevelPlay's External Dependency Manager outputs (`Assets/LevelPlay`, the `play-services-ads-identifier` / `ads-mediation` lines in `mainTemplate.gradle`, and `ProjectSettings/AndroidResolverDependencies.xml`) or the advertising-id permission stays in the AAB.
+
+### Fixed
+- **Windows dataset folder import.** `UgsDatasetEnvironmentBaker` normalizes the generated folder path to forward slashes before `AssetDatabase.ImportAsset`, so Unity creates the directory `.meta` on Windows.
 
 ## [2.6.0] - 2026-11-05
 
