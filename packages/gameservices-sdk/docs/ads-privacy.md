@@ -8,9 +8,9 @@
 
 Before `LevelPlay.Init`, run the shared privacy pipeline:
 
-1. **ATT** (iOS) — App Tracking Transparency  
-2. **CMP** — consent form (Google UMP **or** InMobi Choice)  
-3. **COPPA / GDPR flags** on LevelPlay (`SetCOPPA`; GDPR via `SetGDPRConsent` on LevelPlay 9.5+, or `LevelPlay.SetConsent` on 9.4.x)
+1. **ATT** (iOS) — App Tracking Transparency, when the game installs `com.unity.ads.ios-support`. Without that package the step is a no-op.
+2. **CMP** — consent form (Google UMP **or** InMobi Choice)
+3. **COPPA / GDPR flags** on LevelPlay, when the game installs `com.unity.services.levelplay` (`SetCOPPA`; GDPR via `SetGDPRConsent` on LevelPlay 9.5+, or `LevelPlay.SetConsent` on 9.4.x). Without LevelPlay the flags are skipped.
 
 Age-gate UI stays in the game. Pass `IsChildDirected` into the pipeline.
 
@@ -47,7 +47,7 @@ The pipeline uses a pluggable `IAdsUmpConsentGate`. Two built-in options:
 
 If both are present, **InMobi Choice wins** (registers after Google UMP bootstrap).
 
-Without any CMP: ATT + COPPA still run; consent form is a logged no-op (fail-open).
+Without any CMP: ATT (if installed) and COPPA (if LevelPlay is installed) still run; the consent form is a logged no-op (fail-open).
 
 ### InMobi Choice
 
@@ -86,9 +86,9 @@ When GMA **8.5.0+** is present, optional assembly `RamnD.GameServices.UGS.Google
 
 When `IsChildDirected == true`:
 
-- ATT is skipped  
-- CMP form is not shown  
-- `LevelPlayPrivacySettings.SetCOPPA(true)` and GDPR consent false (9.5 `SetGDPRConsent`, 9.4 `LevelPlay.SetConsent`)
+- ATT is skipped
+- CMP form is not shown
+- If LevelPlay is installed: `LevelPlayPrivacySettings.SetCOPPA(true)` and GDPR consent false (9.5 `SetGDPRConsent`, 9.4 `LevelPlay.SetConsent`)
 
 ## Testing
 

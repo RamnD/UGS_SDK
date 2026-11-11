@@ -4,6 +4,7 @@
   "references": [
     "RamnD.GameServices.Core",
     "RamnD.GameServices.UGS",
+    "RamnD.GameServices.UGS.LevelPlay",
     "RamnD.Core.Logging"
   ],
   "includePlatforms": [],
@@ -12,7 +13,15 @@
   "overrideReferences": false,
   "precompiledReferences": [],
   "autoReferenced": true,
-  "defineConstraints": [],
-  "versionDefines": [],
+  "defineConstraints": [
+    "RAMND_HAS_LEVELPLAY"
+  ],
+  "versionDefines": [
+    {
+      "name": "com.unity.services.levelplay",
+      "expression": "1.0.0",
+      "define": "RAMND_HAS_LEVELPLAY"
+    }
+  ],
   "noEngineReferences": false
 }

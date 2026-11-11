@@ -3,6 +3,7 @@ using UnityEngine;
 
 /// <summary>
 /// Minimal bootstrap sample. Import via Package Manager → Samples → Bootstrap.
+/// Compiles only when the game project installs <c>com.unity.services.levelplay</c>.
 /// Replace app key / auth credentials and wire economy / cloud save in OnAuthenticated.
 /// </summary>
 public sealed class ServicesBootstrapSample : MonoBehaviour

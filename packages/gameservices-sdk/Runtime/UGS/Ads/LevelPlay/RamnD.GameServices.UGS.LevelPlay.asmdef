@@ -1,0 +1,32 @@
+{
+  "name": "RamnD.GameServices.UGS.LevelPlay",
+  "rootNamespace": "",
+  "references": [
+    "RamnD.GameServices.Core",
+    "RamnD.GameServices.UGS",
+    "RamnD.Core.Logging",
+    "Unity.LevelPlay"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [
+    "RAMND_HAS_LEVELPLAY"
+  ],
+  "versionDefines": [
+    {
+      "name": "com.unity.services.levelplay",
+      "expression": "1.0.0",
+      "define": "RAMND_HAS_LEVELPLAY"
+    },
+    {
+      "name": "com.unity.services.levelplay",
+      "expression": "9.5.0",
+      "define": "RAMND_LEVELPLAY_GDPR_BOOL"
+    }
+  ],
+  "noEngineReferences": false
+}

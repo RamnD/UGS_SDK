@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- **`com.ramnd.gameservices-sdk`:** LevelPlay and iOS ATT are no longer package dependencies. `LevelPlayAdsManager` compiles only when the game installs `com.unity.services.levelplay`; ATT compiles only when the game installs `com.unity.ads.ios-support`. A desktop or premium project can omit both and will not pick up LevelPlay's Android advertising-id permission. Custom asmdefs that construct `LevelPlayAdsManager` must reference `RamnD.GameServices.UGS.LevelPlay`. Games that already list those packages in their own manifest keep the current ads behavior.
+
 ## [2.4.2] - 2026-10-22
 
 ### Fixed
