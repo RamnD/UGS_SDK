@@ -1,9 +1,22 @@
 # Changelog
 
-## [Unreleased]
+## [2.6.1] - 2026-11-11
 
 ### Changed
-- **`com.ramnd.gameservices-sdk`:** LevelPlay and iOS ATT are no longer package dependencies. `LevelPlayAdsManager` compiles only when the game installs `com.unity.services.levelplay`; ATT compiles only when the game installs `com.unity.ads.ios-support`. A desktop or premium project can omit both and will not pick up LevelPlay's Android advertising-id permission. Custom asmdefs that construct `LevelPlayAdsManager` must reference `RamnD.GameServices.UGS.LevelPlay`. Games that already list those packages in their own manifest keep the current ads behavior.
+- **`com.ramnd.gameservices-sdk`:** LevelPlay and iOS ATT are no longer package dependencies. `LevelPlayAdsManager` compiles only when the game installs `com.unity.services.levelplay`; ATT compiles only when the game installs `com.unity.ads.ios-support`. A desktop or premium project can omit both and will not pick up LevelPlay's Android advertising-id permission. Custom asmdefs that construct `LevelPlayAdsManager` must reference `RamnD.GameServices.UGS.LevelPlay`. Games that already list those packages in their own manifest keep the current ads behavior. SDK package version: 2.6.1. Other package versions remain 2.0.4.
+
+### Fixed
+- **`com.ramnd.gameservices-sdk`:** normalize the generated `UgsDatasetEnvironment` folder path to forward slashes before `AssetDatabase.ImportAsset`, so Unity creates the directory meta on Windows.
+
+## [2.6.0] - 2026-11-05
+
+### Added
+- **`com.ramnd.gameservices-sdk`:** a project `UgsEnvironmentNameMap` can map an extra scripting define to a Unity dashboard environment name. Tier symbols still choose logs, ads debug, and the production analytics guard. `development`, `staging`, and `production` stay the dataset names when no row matches. The editor writes the chosen name to a `UgsDatasetEnvironment` asset in `Assets/Resources` before Play and before a player build. Auth, Cloud Save, Economy, Remote Config, and UGS Analytics share that name. SDK package version: 2.6.0. Other package versions remain 2.0.4.
+
+## [2.5.0] - 2026-10-25
+
+### Fixed
+- **`com.ramnd.gameservices-sdk`:** in the Unity Editor, deactivate a reloaded `AnalyticsContainer` whose service reference was cleared, so `Update` and `OnApplicationPause` do not throw every frame after a script reload in Play Mode. The next `UnityServices.InitializeAsync` creates a fresh container. Player builds are unchanged. SDK package version: 2.5.0. Other package versions remain 2.0.4.
 
 ## [2.4.2] - 2026-10-22
 

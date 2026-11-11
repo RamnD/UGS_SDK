@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.6.1] - 2026-11-11
 
 ### Changed
 - **Ads SDKs are optional.** `com.unity.services.levelplay` and `com.unity.ads.ios-support` are no longer dependencies of this package. A game without ads (desktop, premium) compiles without them and does not receive LevelPlay's Android `AD_ID` permission.
@@ -17,6 +17,19 @@ Games that show ads must add the packages to their own `Packages/manifest.json` 
 ```
 
 Projects that already list them keep compiling. After upgrading, a no-ads project must also delete LevelPlay's External Dependency Manager outputs (`Assets/LevelPlay`, the `play-services-ads-identifier` / `ads-mediation` lines in `mainTemplate.gradle`, and `ProjectSettings/AndroidResolverDependencies.xml`) or the advertising-id permission stays in the AAB.
+
+### Fixed
+- **Windows dataset folder import.** `UgsDatasetEnvironmentBaker` normalizes the generated folder path to forward slashes before `AssetDatabase.ImportAsset`, so Unity creates the directory `.meta` on Windows.
+
+## [2.6.0] - 2026-11-05
+
+### Added
+- **Custom UGS dataset names.** A `UgsEnvironmentNameMap` asset maps a scripting define to a dashboard environment name. Tier symbols still choose logs, ads debug, and the production analytics guard. `development`, `staging`, and `production` stay the dataset names when no row matches. The editor writes the chosen name to a `UgsDatasetEnvironment` asset in `Assets/Resources` before Play and before a player build. Auth, Cloud Save, Economy, Remote Config, and UGS Analytics share that name.
+
+## [2.5.0] - 2026-10-25
+
+### Fixed
+- **Editor Unity Analytics after script reload.** `UnityAnalyticsContainerGuard` deactivates a reloaded `AnalyticsContainer` whose service reference was cleared, so `Update` and `OnApplicationPause` do not throw every frame while Play Mode stays active. The next `UnityServices.InitializeAsync` creates a fresh container. Player builds are unchanged.
 
 ## [2.4.2] - 2026-10-22
 
