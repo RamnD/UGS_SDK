@@ -15,10 +15,8 @@
     "Unity.Services.CloudSave",
     "Unity.Services.Leaderboards",
     "Unity.Services.RemoteConfig",
-    "Unity.LevelPlay",
     "Newtonsoft.Json",
     "Unity.Purchasing",
-    "Unity.Advertisement.IosSupport",
     "Apple.Core",
     "Apple.GameKit",
     "AppleAuth",
@@ -32,11 +30,6 @@
   "autoReferenced": true,
   "defineConstraints": [],
   "versionDefines": [
-    {
-      "name": "com.unity.ads.ios-support",
-      "expression": "1.0.0",
-      "define": "RAMND_HAS_IOS_ATT"
-    },
     {
       "name": "com.google.ads.mobile",
       "expression": "8.5.0",
@@ -66,11 +59,6 @@
       "name": "com.lupidan.apple-signin-unity",
       "expression": "1.0.0",
       "define": "RAMND_HAS_APPLE_SIGNIN"
-    },
-    {
-      "name": "com.unity.services.levelplay",
-      "expression": "9.5.0",
-      "define": "RAMND_LEVELPLAY_GDPR_BOOL"
     }
   ],
   "noEngineReferences": false
