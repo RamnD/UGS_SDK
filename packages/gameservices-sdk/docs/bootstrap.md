@@ -42,7 +42,7 @@ private async void Start()
         // .WithProfanityFilter("badword1", "badword2")            // alternative: inline list
         // .WithProfanityFilter(new Regex(@"bad\w+"))              // alternative: regex
         // ── Ads ───────────────────────────────────────────────────────
-        .WithAds(new LevelPlayAdsManager("YOUR_APP_KEY")) // LevelPlay mediation (Pangle optional)
+        .WithAds(new LevelPlayAdsManager("YOUR_APP_KEY")) // requires com.unity.services.levelplay in the game
         // ── Optional portable modules ─────────────────────────────────
         .WithAchievements()
         // ── Post-auth hook: create project-specific services ──────────
@@ -84,7 +84,7 @@ private async void Start()
 | `WithNameValidator(NameValidatorConfig)` | Full validator config (words + regex). Overrides `WithProfanityFilter`. Convert game ScriptableObjects via `ToValidatorConfig()` in the consuming project. |
 | `WithProfanityFilter(string[])` | Banned words list only |
 | `WithProfanityFilter(Regex)` | Banned pattern only |
-| `WithAds(IAdsManager)` | Ads manager (LevelPlay, TestAds, optional Unity Ads; Pangle via LevelPlay mediation) |
+| `WithAds(IAdsManager)` | Ads manager. `LevelPlayAdsManager` needs `com.unity.services.levelplay` in the game; `TestAdsManager` does not. |
 | `WithCachedAnalytics(bool)` | Disk-backed offline analytics queue, stamped with the resolved environment so a profile switch drops it instead of cross-uploading. Ignored in Editor / Standalone / WebGL when `UGS_ENV_PRODUCTION` is set (analytics is a no-op, collection never starts). |
 | `WithRemoteConfig(bool)` | UGS Remote Config fetch after auth + PlayerPrefs cache |
 | `WithAchievements(bool)` | Portable achievement module backed by UGS Cloud Save |

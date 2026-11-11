@@ -1,0 +1,29 @@
+{
+  "name": "RamnD.GameServices.UGS.IosAtt",
+  "rootNamespace": "RamnD.GameServices.Ads.Privacy",
+  "references": [
+    "RamnD.GameServices.UGS",
+    "RamnD.Core.Logging",
+    "Unity.Advertisement.IosSupport"
+  ],
+  "includePlatforms": [
+    "Editor",
+    "iOS"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [
+    "RAMND_HAS_IOS_ATT"
+  ],
+  "versionDefines": [
+    {
+      "name": "com.unity.ads.ios-support",
+      "expression": "1.0.0",
+      "define": "RAMND_HAS_IOS_ATT"
+    }
+  ],
+  "noEngineReferences": false
+}

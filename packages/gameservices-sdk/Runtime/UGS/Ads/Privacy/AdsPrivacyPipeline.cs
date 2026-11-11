@@ -1,18 +1,32 @@
 using System.Threading;
 using System.Threading.Tasks;
-using Unity.Services.LevelPlay;
-using UnityEngine;
 
 namespace RamnD.GameServices.Ads.Privacy
 {
     /// <summary>
+    /// LevelPlay COPPA / GDPR target. The LevelPlay assembly registers an implementation
+    /// when <c>com.unity.services.levelplay</c> is installed. Otherwise flags are skipped.
+    /// </summary>
+    public interface IAdsSdkPrivacyBridge
+    {
+        /// <summary>False for the built-in no-op used when LevelPlay is not installed.</summary>
+        bool IsActive { get; }
+
+        void ApplyCoppa(bool isChildDirected);
+
+        void SetGdprConsent(bool consent);
+    }
+
+    /// <summary>
     /// Shared ads privacy flow: ATT (iOS) → UMP consent → LevelPlay COPPA / GDPR flags.
     /// Call before <c>LevelPlay.Init</c>. Age-gate UI stays in the game; pass <see cref="AdsPrivacyOptions.IsChildDirected"/>.
+    /// Without LevelPlay, ATT and CMP still run and the SDK flags are skipped.
     /// </summary>
     public static class AdsPrivacyPipeline
     {
         static readonly object GateLock = new();
         static IAdsUmpConsentGate _umpGate = new NullAdsUmpConsentGate();
+        static IAdsSdkPrivacyBridge _sdkPrivacy = NullAdsSdkPrivacyBridge.Instance;
         static bool _completed;
         static bool _inFlight;
         static Task _inFlightTask = Task.CompletedTask;
@@ -44,6 +58,18 @@ namespace RamnD.GameServices.Ads.Privacy
             }
 
             AppLog.Info("AdsPrivacy", "CMP consent gate registered.");
+        }
+
+        /// <summary>
+        /// Register the ads SDK that receives COPPA / GDPR (LevelPlay, when that package is installed).
+        /// </summary>
+        public static void RegisterSdkPrivacyBridge(IAdsSdkPrivacyBridge bridge)
+        {
+            if (bridge == null)
+                return;
+
+            _sdkPrivacy = bridge;
+            AppLog.Info("AdsPrivacy", $"SDK privacy bridge registered: {bridge.GetType().FullName}");
         }
 
         /// <summary>
@@ -128,7 +154,13 @@ namespace RamnD.GameServices.Ads.Privacy
 
         static void ApplyLevelPlayPrivacyFlags(bool isChildDirected)
         {
-            LevelPlayPrivacySettings.SetCOPPA(isChildDirected);
+            if (!_sdkPrivacy.IsActive)
+            {
+                AppLog.Info("AdsPrivacy", "LevelPlay is not installed — COPPA/GDPR flags skipped.");
+                return;
+            }
+
+            _sdkPrivacy.ApplyCoppa(isChildDirected);
 
             // GDPR: children are not given a consent form; treat as no personalized consent.
             // When UMP ran, the Google gate may also have set GDPR — re-apply COPPA last and
@@ -142,14 +174,26 @@ namespace RamnD.GameServices.Ads.Privacy
 
         /// <summary>
         /// GDPR flag for LevelPlay. 9.5+ uses <c>SetGDPRConsent(bool)</c>; 9.4.x uses global <c>LevelPlay.SetConsent</c>.
+        /// No-op when LevelPlay is not installed.
         /// </summary>
         public static void SetLevelPlayGdprConsent(bool consent)
         {
-#if RAMND_LEVELPLAY_GDPR_BOOL
-            LevelPlayPrivacySettings.SetGDPRConsent(consent);
-#else
-            LevelPlay.SetConsent(consent);
-#endif
+            _sdkPrivacy.SetGdprConsent(consent);
+        }
+
+        sealed class NullAdsSdkPrivacyBridge : IAdsSdkPrivacyBridge
+        {
+            public static readonly NullAdsSdkPrivacyBridge Instance = new();
+
+            public bool IsActive => false;
+
+            public void ApplyCoppa(bool isChildDirected)
+            {
+            }
+
+            public void SetGdprConsent(bool consent)
+            {
+            }
         }
     }
 }

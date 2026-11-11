@@ -12,6 +12,16 @@ This SDK doesn’t know individual ad networks (AdMob, Pangle, etc.) directly. I
 
 For new projects the recommended path is `LevelPlayAdsManager`, which wraps **Unity LevelPlay** SDK.
 
+LevelPlay is **not** a dependency of this package. Add it to the game's `Packages/manifest.json` or the manager type is not compiled and no LevelPlay Android libraries (including `com.google.android.gms.permission.AD_ID`) are pulled in:
+
+```json
+"com.unity.services.levelplay": "9.4.1"
+```
+
+iOS App Tracking Transparency additionally needs `com.unity.ads.ios-support` (see [ads privacy](ads-privacy.md)). Desktop and premium (no-ads) builds should omit both.
+
+`LevelPlayAdsManager` and `LevelPlayAdsOptions` are in assembly `RamnD.GameServices.UGS.LevelPlay`. `Assembly-CSharp` references it automatically. A game asmdef that calls them must add that reference.
+
 **Privacy / EU consent:** run [Ads privacy (ATT → UMP → COPPA)](ads-privacy.md) before `LevelPlay.Init`.
 
 Cast `GameServicesLocator.Services.Ads` to `ILevelPlayAdsController` for preload, ready checks, and privacy-deferred init. Mock / `TestAdsManager` do not implement this interface.
