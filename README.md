@@ -49,8 +49,9 @@ From **2.0.0+**, use the `packages/gameservices-sdk` path (see above).
 
 ## Versioning
 
-- One git tag (for example `v2.0.4`) covers all packages in this repo
-- Each package `package.json` uses the same version number
+Package versions are independent. `com.ramnd.gameservices-sdk` is **2.6.1**. The other three packages are **2.0.4**. A release tag names the repository snapshot for the package that changed. It does not move every `package.json`.
+
+Install each package at the tag in the manifest block above. Planned SDK minors are in [packages/gameservices-sdk/docs/ROADMAP.md](packages/gameservices-sdk/docs/ROADMAP.md). The only open epic is **2.7.0**. Do not reuse a 1.x number for it: changelog 1.12.0 already shipped as auth.
 
 ## Changelog
 

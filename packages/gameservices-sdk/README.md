@@ -62,7 +62,7 @@ Optional sample: **Package Manager → RamnD Game Services SDK → Samples → I
 | App update (Play Immediate) | [docs/app-update.md](docs/app-update.md) |
 | Analytics | [docs/analytics.md](docs/analytics.md) |
 | Remote Config | [docs/remote-config.md](docs/remote-config.md) |
-| Roadmap (`1.N.0` epics) | [docs/ROADMAP.md](docs/ROADMAP.md) |
+| Roadmap (next minor is 2.7.0) | [docs/ROADMAP.md](docs/ROADMAP.md) |
 | Bug reports (dated hotfixes) | [docs/bug-reports/](docs/bug-reports/README.md) |
 | Security & credentials | [below](#security--credentials) |
 
