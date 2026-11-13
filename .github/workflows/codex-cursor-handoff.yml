@@ -31,6 +31,7 @@ jobs:
       CURRENT_SHA: ${{ github.event.pull_request.head.sha }}
       HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
       HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+      BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
     steps:
       - name: Request review for a Cursor handoff result
         shell: bash
@@ -45,8 +46,12 @@ jobs:
             echo "Codex re-review is limited to valid same-repository pull-request heads."
             exit 0
           fi
+          if [[ "${BASE_BRANCH}" != "staging" ]]; then
+            echo "Codex re-review is limited to promotion pull requests into staging."
+            exit 0
+          fi
           case "${HEAD_BRANCH}" in
-            main|staging|agent/jules)
+            main|staging|dev)
               echo "Cursor automation must not write to protected head branch ${HEAD_BRANCH}."
               exit 0
               ;;
@@ -134,8 +139,9 @@ jobs:
             exit 1
           fi
 
-          pr_json="$(gh pr view "${pr_number}" --repo "${GH_REPO}" --json state,headRefName,headRefOid,headRepository)"
+          pr_json="$(gh pr view "${pr_number}" --repo "${GH_REPO}" --json state,baseRefName,headRefName,headRefOid,headRepository)"
           pr_state="$(jq -r '.state' <<<"${pr_json}")"
+          base_branch="$(jq -r '.baseRefName' <<<"${pr_json}")"
           head_branch="$(jq -r '.headRefName' <<<"${pr_json}")"
           current_sha="$(jq -r '.headRefOid' <<<"${pr_json}")"
           head_repo="$(jq -r '.headRepository.nameWithOwner // empty' <<<"${pr_json}")"
@@ -143,12 +149,16 @@ jobs:
             echo "Codex review is stale or the pull request is no longer open; Cursor was not requested."
             exit 0
           fi
+          if [[ "${base_branch}" != "staging" ]]; then
+            echo "Cursor handoff is limited to promotion pull requests into staging."
+            exit 0
+          fi
           if [[ "${head_repo}" != "${GH_REPO}" ]]; then
             echo "Cursor handoff is limited to same-repository pull requests." >&2
             exit 1
           fi
           case "${head_branch}" in
-            main|staging|agent/jules)
+            main|staging|dev)
               echo "Cursor automation must not write to protected head branch ${head_branch}."
               exit 0
               ;;
