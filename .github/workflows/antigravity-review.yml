@@ -96,7 +96,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || vars.ANTIGRAVITY_ALLOW_PRIVATE_DIFF == 'true'
         run: |
           set -euo pipefail
-          curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir "${HOME}/.local/bin" --skip-path
+          curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir "${HOME}/.local/bin"
           echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
           "${HOME}/.local/bin/agy" --version
 
