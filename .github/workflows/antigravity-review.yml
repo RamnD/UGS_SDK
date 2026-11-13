@@ -1,0 +1,140 @@
+# Trusted workflow from the default branch. It checks out that branch only.
+# The pull request diff is downloaded through the GitHub API and is not executed.
+# The model step has no GitHub token. The publish step writes the comment and status.
+name: Antigravity review
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    branches:
+      - dev
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Review a built-in public diff. Repository code is not sent.
+        required: true
+        default: public-fixture
+        type: choice
+        options:
+          - public-fixture
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: antigravity-review-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Antigravity review
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      REVIEW_PROFILE: unity
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Fetch the pull request diff
+        if: github.event_name == 'pull_request_target'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          ALLOW_PRIVATE_DIFF: ${{ vars.ANTIGRAVITY_ALLOW_PRIVATE_DIFF }}
+        run: |
+          set -euo pipefail
+          state="${RUNNER_TEMP}/fetch-state"
+          diff="${RUNNER_TEMP}/pr.diff"
+          gh pr edit "${PR_NUMBER}" --repo "${GH_REPO}" \
+            --remove-label "antigravity:clean,antigravity:remarks,antigravity:quota,antigravity:failed" \
+            >/dev/null 2>&1 || true
+          if [[ "${ALLOW_PRIVATE_DIFF}" != "true" ]]; then
+            echo disabled > "${state}"
+            exit 0
+          fi
+          current="$(gh pr view "${PR_NUMBER}" --repo "${GH_REPO}" --json headRefOid --jq .headRefOid)"
+          if [[ "${current}" != "${HEAD_SHA}" ]]; then
+            echo stale > "${state}"
+            exit 0
+          fi
+          if ! gh api -H "Accept: application/vnd.github.diff" \
+            "repos/${GH_REPO}/pulls/${PR_NUMBER}" > "${diff}"; then
+            echo missing > "${state}"
+            rm -f "${diff}"
+            exit 0
+          fi
+          if [[ ! -s "${diff}" ]]; then
+            echo missing > "${state}"
+            exit 0
+          fi
+          echo ready > "${state}"
+          gh api --method POST "repos/${GH_REPO}/statuses/${HEAD_SHA}" \
+            -f state=pending \
+            -f context=antigravity-review \
+            -f description="Antigravity review in progress" \
+            >/dev/null
+          echo "diff_bytes=$(wc -c < "${diff}" | tr -d ' ')"
+
+      - name: Install Antigravity CLI
+        if: github.event_name == 'workflow_dispatch' || vars.ANTIGRAVITY_ALLOW_PRIVATE_DIFF == 'true'
+        run: |
+          set -euo pipefail
+          curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir "${HOME}/.local/bin" --skip-path
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+          "${HOME}/.local/bin/agy" --version
+
+      - name: Review the diff
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ANTIGRAVITY_ALLOW_PRIVATE_DIFF: ${{ vars.ANTIGRAVITY_ALLOW_PRIVATE_DIFF }}
+          ANTIGRAVITY_MODEL: ${{ vars.ANTIGRAVITY_MODEL }}
+          GH_TOKEN: ""
+          GITHUB_TOKEN: ""
+          REVIEW_MODE: ${{ github.event_name == 'pull_request_target' && 'pr' || 'fixture' }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          args=(
+            run
+            --mode "${REVIEW_MODE}"
+            --profile "${REVIEW_PROFILE}"
+            --out "${RUNNER_TEMP}/antigravity"
+          )
+          if [[ "${REVIEW_MODE}" == "pr" ]]; then
+            args+=(--sha "${HEAD_SHA}" --diff "${RUNNER_TEMP}/pr.diff" --fetch-state "${RUNNER_TEMP}/fetch-state")
+          fi
+          .github/scripts/antigravity-review.sh "${args[@]}"
+
+      - name: Publish the review
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REVIEW_EVENT: ${{ github.event_name }}
+          GEMINI_API_KEY: ""
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          args=(publish --out "${RUNNER_TEMP}/antigravity")
+          if [[ "${REVIEW_EVENT}" == "pull_request_target" ]]; then
+            args+=(--repo "${GH_REPO}" --pr "${PR_NUMBER}")
+          fi
+          .github/scripts/antigravity-review.sh "${args[@]}"
