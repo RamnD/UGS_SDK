@@ -365,11 +365,16 @@ fi
 if [[ -e "${root}/.github/workflows/jules-audit.yml" || -e "${root}/.github/workflows/jules-fix-ready.yml" ]]; then
   fail "Jules workflows are still present"
 fi
-if grep 'agent/jules' "${root}/AGENTS.md" | grep -v 'retired `agent/jules' >/dev/null; then
-  fail "AGENTS.md still targets an agent branch"
+grep -q 'Read `agents/instructions/PROJECT.md` first' "${root}/AGENTS.md"
+if grep -q 'antigravity-review' "${root}/AGENTS.md"; then
+  fail "custom review instructions belong in PROJECT.md"
 fi
-grep -q 'antigravity-review' "${root}/AGENTS.md"
-grep -q 'feat/<id>-<slug>' "${root}/AGENTS.md"
+project="${root}/agents/instructions/PROJECT.md"
+if grep 'agent/jules' "$project" | grep -v 'retired `agent/jules' >/dev/null; then
+  fail "PROJECT.md still targets an agent branch"
+fi
+grep -q 'antigravity-review' "$project"
+grep -q 'feat/<id>-<slug>' "${root}/agents/instructions/vcs/git.md"
 
 if [[ -f "${root}/.github/workflows/codex-cursor-handoff.yml" ]]; then
   if grep -q 'agent/jules' "${root}/.github/workflows/codex-cursor-handoff.yml"; then

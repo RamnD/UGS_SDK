@@ -1,0 +1,5 @@
+*.unity
+*.prefab
+*.asset
+*.csproj
+*.sln

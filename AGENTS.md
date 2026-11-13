@@ -1,110 +1,47 @@
-# Agent guide (UGS_SDK)
+﻿# Code instructions
 
-Entrypoint for AI coding agents working on this Unity UPM monorepo. Read this file and the affected package documentation before editing.
+Reply in the user's language. Instruction files stay English; repository text languages follow the last shared rule below.
 
-## Repository purpose
+Standard: v1. The changelog is `CHANGELOG.md` in the standards repository and is not copied into a project. Sync overwrites this file and `agents/instructions`, except `agents/instructions/PROJECT.md`. Sync does not touch `.cursorignore` or `.cursorindexingignore`: copy them once from `agents/instructions/cursorignore/` for the selected stack. Project-specific lines stay in those files.
 
-This repository contains reusable RamnD Unity packages:
+Read `agents/instructions/PROJECT.md` first when it exists. Where it explicitly differs, it wins over the shared documents.
 
-| Path | Package |
-| --- | --- |
-| `packages/gameservices-sdk` | `com.ramnd.gameservices-sdk` |
-| `packages/core-logging` | `com.ramnd.core-logging` |
-| `packages/service-fault` | `com.ramnd.service-fault` |
-| `packages/gameservices-servicefault` | `com.ramnd.gameservices-servicefault` |
+Read only the documents selected below and their explicitly required sections. A reference link alone does not require reading another document.
 
-The packages are consumed through Unity Package Manager. Preserve package boundaries, public API compatibility, Unity serialization behavior, and stable asset GUIDs.
+Version control:
 
-## Source and package rules
+- both `.git` and `.plastic` are present → `PROJECT.md` chooses which document to read
+- `.git` → `agents/instructions/vcs/common.md`, then `agents/instructions/vcs/git.md`
+- `.plastic` → `agents/instructions/vcs/common.md`, then `agents/instructions/vcs/plastic.md`
 
-1. Keep runtime code independent from `UnityEditor` APIs. Editor-only code belongs under an Editor folder and an Editor-only assembly definition.
-2. Preserve optional integrations through their existing assembly definitions, `versionDefines`, `defineConstraints`, and platform guards. A consumer without an optional third-party package must still compile.
-3. Do not introduce a hard dependency on a game project, scene, Resources asset, or project-specific singleton.
-4. Treat public interfaces, serialized fields, package IDs, assembly names, UPM paths, and persistence keys as compatibility contracts.
-5. Avoid Unity-unsupported language/runtime APIs unless the repository's Unity version and assembly settings demonstrably support them.
-6. Keep asynchronous flows explicit about cancellation, timeout, duplicate callbacks, retries, and late completion. Do not turn an indeterminate purchase/auth result into a false success or a destructive failure.
-7. Preserve `.meta` files and GUIDs. Add the matching `.meta` file for committed Unity assets when the workflow requires it; never regenerate unrelated GUIDs.
-8. Do not edit generated, vendored, or third-party content unless the task explicitly targets it.
-9. Never commit credentials, service-account files, signing material, store secrets, or project-specific production identifiers.
+Choose the stack from the directory the task changes. When a repository contains several stacks, `PROJECT.md` holds a path → document map. Without that map, a marker from another directory does not apply to this task. A path the map lists as a UPM package uses `agents/instructions/stack/unity-package.md` even when its `package.json` has no `"unity"` field. A UPM package inside a TypeScript workspace does not switch the other directories to Unity rules.
 
-## Documentation and compatibility
+- a directory with `ProjectSettings/ProjectVersion.txt` → `agents/instructions/stack/unity.md`
+- a directory whose `package.json` has a `"unity"` field, or a path `PROJECT.md` lists as a UPM package → `agents/instructions/stack/unity-package.md`
+- a TypeScript directory: root `package.json` plus root `tsconfig.json` or `tsconfig.base.json`, or a `tsconfig.json` in a package listed in `pnpm-workspace.yaml` → `agents/instructions/stack/typescript.md`, plus the line that applies, if any:
+  - the directory depends on `vue` → `agents/instructions/stack/vue.md`
+  - a browser client without `vue` → `agents/instructions/stack/web-client.md`
+  - a server that handles HTTP requests → `agents/instructions/stack/node-api.md`
+- Vue without `tsconfig.json` → `PROJECT.md` sets the rules. `vue.md` assumes `lang="ts"` and does not apply
 
-- Read the affected package README and changelog before changing a public contract.
-- Update documentation when installation, configuration, public behavior, or migration requirements change.
-- Document breaking changes and provide a migration path; do not silently remove or rename public APIs.
-- Keep package dependency declarations consistent with actual assembly references.
-- Repository version information must come from the current package manifests, tags, and `CHANGELOG.md`; do not trust a version copied into an agent prompt or stale prose.
+For a TypeScript task only:
 
-## Versioning and releases
+- dependencies, versions, CI, linter, formatting, hooks → `agents/instructions/stack/js-tooling.md`
+- new project setup, `tsconfig`, Vite config, application scripts, environment variables, workspace layout → `agents/instructions/stack/new-project.md`; for a new project, also `js-tooling.md`
+- a function needed by a second application → `agents/instructions/stack/utilities.md`
 
-- Treat each current package manifest and the changelog as authoritative. Package versions already differ; do not normalize unrelated package versions merely because older README prose describes a shared version.
-- Feature work does not bump package versions and does not create tags. Apply exactly one `release:major`, `release:minor`, `release:patch`, or `release:none` label when known.
-- Version and changelog changes belong to a release PR from `staging` to `main`.
-- A release PR updates only the affected package versions under the maintainer's selected release policy and describes user-visible changes and migrations. Changes to the repository-wide versioning policy require explicit human approval.
-- Create a release tag only after the human maintainer approves and merges the release PR into `main`.
-- Agents must not push directly to `staging` or `main`, merge PRs, create release tags before merge, or bypass branch protection.
+Nothing matched → ask once and propose text for `PROJECT.md`. The write is its own commit or changeset, not part of the current task. The next task reads the file and does not ask again. A JavaScript project without `tsconfig.json` is the same case: TypeScript rules do not apply.
 
-## Integration
+Shared rules:
 
-Tasks follow `feat/<id>-<slug>` → `dev` → `staging` → `main`. The same shape applies to `fix/`, `docs/`, and `chore/` branches. There is no permanent branch named after an agent. Do not create one. Do not open pull requests against the retired `agent/jules` branch.
-
-- `dev` is the protected integration branch. A task branch starts from current `dev` after confirming that `dev` contains current `staging`. Its draft pull request targets `dev`.
-- A human merges a task pull request into `dev`. Agents do not merge it, approve it, or mark it ready.
-- Promotion is one pull request, head `dev`, base `staging`. Codex reviews that promotion diff for the exact head SHA. Antigravity does not replace that review.
-- Release is a pull request from `staging` to `main`. Only a human maintainer merges promotion and release. Create a release tag only after that merge into `main`.
-- If `dev` does not exist, or it does not contain current `staging`, finish the safe local work and report the blocker. Do not fall back to `staging` or `main`.
-- Prefer a merge commit for promotion, or sync `staging` back into `dev` through a reviewed pull request. Do not force-reset `dev`.
-
-## Cursor branch workflow
-
-Cursor must establish the correct branch before editing files:
-
-1. Inspect the current branch, working-tree status, configured remotes, and whether the branch already has an open pull request.
-2. Never implement a feature directly on `dev`, `main`, or `staging`. Never commit or push directly to those branches.
-3. Reuse the current branch only when it is an unprotected task branch and its name and existing diff clearly match the user's current task.
-4. Otherwise, before making changes, create a focused branch from the latest `dev` (after confirming it contains current `staging`) using a descriptive prefix such as `feature/`, `fix/`, `refactor/`, `docs/`, or `chore/`.
-5. Do not silently move, overwrite, stash, reset, or mix pre-existing uncommitted work. If unrelated changes prevent a safe branch switch, stop and ask the user how to preserve or separate them.
-6. Keep one logical task per branch. If the user's request materially changes scope, create a separate branch rather than accumulating unrelated changes.
-
-When the user asks Cursor to push the completed task branch, that request also authorizes this hand-off:
-
-1. Run the required repository checks and report any failures.
-2. Commit the task changes on the unprotected task branch if they are not committed yet.
-3. Push that task branch to `origin` with upstream tracking. Never force-push unless the user explicitly requests it and the target is an unprotected task branch.
-4. Create a draft pull request with base `dev` and head set to the pushed task branch. If a pull request for that pair already exists, update it.
-5. Give the pull request a clear title and a body containing a summary, validation performed, known limitations, and one release-label recommendation when labels are available.
-6. Do not claim Antigravity or Codex has run until a check or review exists for the current head SHA.
-7. Return the draft pull request URL. Do not mark it ready, approve it, merge it, push to `dev`, `staging`, or `main`, or continue into Codex or release.
-
-## Pull request review
-
-Antigravity performs the primary review of a same-repository task pull request into `dev`. Codex performs the final review of the promotion pull request into `staging`, and reviews the release pull request from `staging` to `main`. A review of an older SHA is not a review of a newer commit. A failed agent, a missing result, or an exhausted quota is not a successful review.
-
-### Antigravity
-
-`.github/workflows/antigravity-review.yml` is a trusted `pull_request_target` workflow. GitHub reads it from `main`. Merging it only into `dev` does not activate it. The job checks out the default branch, downloads the pull request diff through the GitHub API, and does not run code from the pull request. The model step receives `GEMINI_API_KEY` and an empty GitHub token. A later step publishes the comment and the `antigravity-review` commit status.
-
-The workflow reviews the head SHA from the triggering event. When a model run starts, it posts `pending` on that SHA and removes `antigravity:clean`, `antigravity:remarks`, `antigravity:quota`, and `antigravity:failed`. Those labels are not the required check. The required check is the commit status context `antigravity-review` on the current head SHA. A status on an older SHA does not satisfy it.
-
-`agy` runs in review mode: one `-p` prompt, `--sandbox`, `--mode default`, and deny rules for writes, commands, URLs, and MCP. It does not receive `--dangerously-skip-permissions`. One technical failure may be retried once. Quota exhaustion and timeouts are not retried. Automatic edits are a separate stage.
-
-Outcomes for that SHA:
-
-- `clean` — commit status success. The comment lists no findings.
-- `remarks` — commit status failure. The comment lists findings. The review completed and is not an approval.
-- `quota` — commit status error. The Gemini API quota was exhausted. This is not a code verdict.
-- `failure` — commit status error. The agent did not finish, returned no usable result, or the diff was not sent. This is not a successful review.
-
-Repository diffs are sent only when the repository variable `ANTIGRAVITY_ALLOW_PRIVATE_DIFF` is `true`. Until then a pull request run records a failure and does not call the model. `workflow_dispatch` reviews a built-in public diff and does not read the repository.
-
-Unity and UPM review points: public API and serialization compatibility, `.meta` files and GUIDs, package and assembly dependencies, optional integrations, and platform limits. Do not ask for tests whose only purpose is to raise coverage.
-
-The model is `gemini-3.8-flash-medium` unless the repository variable `ANTIGRAVITY_MODEL` sets another `agy` model slug. With `GEMINI_API_KEY`, requests go to the Gemini API. Quota for that key is shown in [Google AI Studio](https://aistudio.google.com/rate-limit) and documented at <https://ai.google.dev/gemini-api/docs/rate-limits>. The Antigravity `/usage` panel applies to a signed-in Antigravity account, which this workflow does not use. Account model availability is documented at <https://antigravity.google/docs/models/>.
-
-### Codex
-
-Codex reviews the promotion pull request whose head is `dev` and whose base is `staging`, for the exact head SHA. Antigravity does not request Codex and does not mark a pull request ready. Whether opening or marking ready starts Codex depends on the Codex GitHub app settings. Configure that app for pull requests into `staging`, not for task pull requests into `dev`.
-
-`codex-cursor-handoff.yml` requests `@codex review` only after a recorded Cursor handoff on a pull request into `staging`. It does not run for a task pull request into `dev`. It refuses protected heads `dev`, `staging`, and `main`. The loop still stops after three Cursor iterations with `codex:needs-human`. The handoff still uses the maintainer-bound `JULES_HANDOFF_TOKEN`; the secret name is unchanged.
-
-Automated approvals do not replace human review. Automation does not merge `dev`, `staging`, or `main`.
+- An existing project keeps its contracts, layout, and commands, including API consumers, saved data, and exchange formats. A migration is a separate task.
+- A module's role comes from its calls, dependencies, and a few neighboring implementations. A file name or the first example does not set the pattern. Do not scan the whole repository for this.
+- A change fixes the cause in the module, function, or type that owns it. An open file does not receive an unrelated responsibility. A new type appears for its own responsibility.
+- Read the code and the documents this router names before asking. When substantially different product options remain, ask. For a reversible technical choice with small risk, choose one and name the assumption.
+- Verify the changed behavior with the check from the stack document or `PROJECT.md`, within that document's execution limits. The same limits apply throughout the task. Diff reading and static inspection remain available. Reuse relevant results while they still cover the final revision. Check calculations by their results, UI by its state, and saved data by a read/write round trip in test data. Report checks that failed, could not run, or were not authorized.
+- Generated output is changed through its generator or the generator's settings. User-facing text goes through the content mechanism the project already uses. Names of generators and content tables stay in `PROJECT.md`. When the project has no such mechanism, this task does not add one.
+- Fix a failure this task caused, even when the failing file is outside the diff. A failure that already existed stays out of this change and is reported separately.
+- Do not change dependencies, their versions, or the lockfile unless the task asks. Only a version task changes the release number.
+- Do not format files this change does not touch.
+- Do not read or print `.env*`, except `.env.example`.
+- Commit and changeset messages, PR bodies, TODO notes, and ordinary comments use the languages from the `Languages` section of `PROJECT.md`. Without that section, or for a line still set to `<language>`, they are English. Identifiers, branch names, and JSDoc and XML method comments are English.
