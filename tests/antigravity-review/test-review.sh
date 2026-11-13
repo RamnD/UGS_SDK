@@ -48,6 +48,9 @@ for arg in "$@"; do
   if [[ "$previous" == "-p" ]]; then
     prompt="$arg"
   fi
+  if [[ "$previous" == "--print-timeout" ]]; then
+    printf '%s\n' "$arg" >> "${AGY_FLAGS}"
+  fi
   case "$arg" in
     --sandbox|--output-format|--json-schema|--print-timeout|--mode|--model)
       printf '%s\n' "$arg" >> "${AGY_FLAGS}"
@@ -158,6 +161,7 @@ assert_eq "$(jq -r .attempts "${dir}/out/outcome.json")" 1 "clean fixture attemp
 assert_eq "$(cat "${dir}/count")" 1 "clean fixture calls agy once"
 grep -q -- '--sandbox' "${dir}/flags"
 grep -q -- '--mode' "${dir}/flags"
+grep -q '^8m$' "${dir}/flags"
 if grep -q dangerous "${dir}/flags"; then
   fail "agy was allowed to skip permissions"
 fi
@@ -218,6 +222,7 @@ rm -rf "$dir"
 dir="$(new_case)"
 run_review "$dir" down unity pr
 assert_eq "$(jq -r .attempts "${dir}/out/outcome.json")" 2 "technical failure retries once"
+grep -q 'antigravity_error connection reset' "${dir}/stdout"
 assert_eq "$(jq -r .outcome "${dir}/out/outcome.json")" failure "repeated failure stays failure"
 code="$(publish "$dir" "$sha_a")"
 assert_eq "$code" 1 "failure publish exits 1"
@@ -300,9 +305,20 @@ grep -q "$sha_b" "${dir}/out/comment.md"
 rm -rf "$dir"
 
 dir="$(new_case)"
+run_review "$dir" down unity fixture
+assert_eq "$(jq -r .attempts "${dir}/out/outcome.json")" 1 "a fixture connection failure does not retry"
+grep -q '^90s$' "${dir}/flags"
+rm -rf "$dir"
+
+dir="$(new_case)"
 run_review "$dir" remarks unity fixture
 assert_eq "$(jq -r .sha "${dir}/out/outcome.json")" public-fixture "fixture does not use the private SHA"
 assert_eq "$(jq -r .context "${dir}/out/outcome.json")" fixture "fixture context"
+assert_eq "$(jq -r .attempts "${dir}/out/outcome.json")" 1 "a fixture probe does not retry"
+grep -q '^90s$' "${dir}/flags"
+if grep -q '^8m$' "${dir}/flags"; then
+  fail "a fixture probe used the pull request timeout"
+fi
 code="$(publish "$dir" "$sha_a")"
 assert_eq "$code" 0 "a completed fixture review with remarks is a successful probe"
 grep -q 'src/Example.txt' "${dir}/out/work/prompt.txt"
