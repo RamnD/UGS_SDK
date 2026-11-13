@@ -7,6 +7,7 @@ set +x
 MAX_DIFF_BYTES=100000
 MAX_ATTEMPTS=2
 PRINT_TIMEOUT=8m
+FIXTURE_PRINT_TIMEOUT=90s
 DEFAULT_MODEL="gemini-3.8-flash-medium"
 STATUS_CONTEXT="antigravity-review"
 
@@ -252,6 +253,7 @@ call_agy() {
   local prompt_file="$2"
   local envelope="$3"
   local stderr_file="$4"
+  local timeout="$5"
   local model="${ANTIGRAVITY_MODEL:-$DEFAULT_MODEL}"
   if [[ -z "$model" ]]; then
     model="$DEFAULT_MODEL"
@@ -266,10 +268,30 @@ call_agy() {
       --mode default \
       --output-format json \
       --json-schema "${work}/schema.json" \
-      --print-timeout "$PRINT_TIMEOUT" \
+      --print-timeout "$timeout" \
       --sandbox \
       > "$envelope" 2> "$stderr_file"
   ) || true
+}
+
+log_attempt_error() {
+  local envelope="$1"
+  local stderr_file="$2"
+  local detail=""
+  if [[ -s "$envelope" ]] && jq -e . "$envelope" >/dev/null 2>&1; then
+    detail="$(jq -r '.error // empty' "$envelope")"
+  fi
+  if [[ -z "$detail" && -f "$stderr_file" ]]; then
+    detail="$(tr '\n' ' ' < "$stderr_file")"
+  fi
+  detail="$(redact "$detail")"
+  detail="${detail//$'\r'/ }"
+  if [[ ${#detail} -gt 400 ]]; then
+    detail="${detail:0:400}"
+  fi
+  if [[ -n "${detail// }" ]]; then
+    echo "antigravity_error ${detail}"
+  fi
 }
 
 review_diff() {
@@ -279,6 +301,12 @@ review_diff() {
   local diff_source="$4"
   local context="$5"
   local work bytes prompt sanitized attempt parsed outcome summary findings usage retry
+  local timeout="$PRINT_TIMEOUT"
+  local attempts_allowed="$MAX_ATTEMPTS"
+  if [[ "$context" == "fixture" ]]; then
+    timeout="$FIXTURE_PRINT_TIMEOUT"
+    attempts_allowed=1
+  fi
 
   mkdir -p "$out"
   sanitized="${out}/review-input.diff"
@@ -334,17 +362,21 @@ EOF
   build_prompt "$profile" "$sha" "$sanitized" "$prompt"
 
   attempt=1
-  while (( attempt <= MAX_ATTEMPTS )); do
-    call_agy "$work" "$prompt" "${out}/attempt-${attempt}.json" "${out}/attempt-${attempt}.err"
+  while (( attempt <= attempts_allowed )); do
+    call_agy "$work" "$prompt" "${out}/attempt-${attempt}.json" "${out}/attempt-${attempt}.err" "$timeout"
     parsed="${out}/attempt-${attempt}.class.json"
     classify_files "${out}/attempt-${attempt}.json" "${out}/attempt-${attempt}.err" "$parsed"
     outcome="$(jq -r '.outcome' "$parsed")"
     retry="$(jq -r '.retry' "$parsed")"
-    if [[ "$outcome" != "failure" || "$retry" != "yes" || "$attempt" -eq "$MAX_ATTEMPTS" ]]; then
+    if [[ "$outcome" != "failure" || "$retry" != "yes" || "$attempt" -eq "$attempts_allowed" ]]; then
       break
     fi
     attempt=$((attempt + 1))
   done
+
+  if [[ "$outcome" == "failure" || "$outcome" == "quota" ]]; then
+    log_attempt_error "${out}/attempt-${attempt}.json" "${out}/attempt-${attempt}.err"
+  fi
 
   summary="$(jq -r '.summary' "$parsed")"
   findings="$(jq -c '.findings' "$parsed")"
