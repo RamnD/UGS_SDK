@@ -2,7 +2,7 @@
 
 Unity UPM monorepo for RamnD foundation packages and the Game Services SDK.
 
-All packages share repository version **2.0.4**.
+`com.ramnd.gameservices-sdk` is **2.6.1**. The other packages remain **2.0.4**.
 
 ## Packages
 
@@ -20,7 +20,7 @@ Install individual packages via `?path=`:
 ```json
 {
   "dependencies": {
-    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git?path=packages/gameservices-sdk#v2.0.4",
+    "com.ramnd.gameservices-sdk": "https://github.com/RamnD/UGS_SDK.git?path=packages/gameservices-sdk#v2.6.1",
     "com.ramnd.core-logging": "https://github.com/RamnD/UGS_SDK.git?path=packages/core-logging#v2.0.4",
     "com.ramnd.service-fault": "https://github.com/RamnD/UGS_SDK.git?path=packages/service-fault#v2.0.4",
     "com.ramnd.gameservices-servicefault": "https://github.com/RamnD/UGS_SDK.git?path=packages/gameservices-servicefault#v2.0.4"
@@ -49,8 +49,9 @@ From **2.0.0+**, use the `packages/gameservices-sdk` path (see above).
 
 ## Versioning
 
-- One git tag (for example `v2.0.4`) covers all packages in this repo
-- Each package `package.json` uses the same version number
+Package versions are independent. `com.ramnd.gameservices-sdk` is **2.6.1**. The other three packages are **2.0.4**. A release tag names the repository snapshot for the package that changed. It does not move every `package.json`.
+
+Install each package at the tag in the manifest block above. Planned SDK minors are in [packages/gameservices-sdk/docs/ROADMAP.md](packages/gameservices-sdk/docs/ROADMAP.md). The only open epic is **2.7.0**. Do not reuse a 1.x number for it: changelog 1.12.0 already shipped as auth.
 
 ## Changelog
 
