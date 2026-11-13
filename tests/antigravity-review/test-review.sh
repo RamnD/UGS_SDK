@@ -331,6 +331,7 @@ assert "pull_request" not in on
 assert on["workflow_dispatch"]["inputs"]["mode"]["options"] == ["public-fixture"]
 text = open(path).read()
 assert "dangerously-skip-permissions" not in text
+assert "--skip-path" not in text
 assert "agent/jules" not in text
 assert "actions/checkout" in text
 for job in data["jobs"].values():
