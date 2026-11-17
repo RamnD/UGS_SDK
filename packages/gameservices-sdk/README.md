@@ -292,7 +292,7 @@ var services = MockGameServices.CreateDefault();
 
 **Dataset name** — optional. Create a `UgsEnvironmentNameMap` asset (`RamnD → UGS Environment Names`) and add rows of scripting define → dashboard environment name. Put one of those defines on the Build Profile next to the tier symbol. The earliest row whose symbol is defined wins. Auth, Cloud Save, Economy, Remote Config, and UGS Analytics share that single name.
 
-A new dashboard environment is a new row plus a new define on the profile. The name must match the dashboard exactly. The SDK does not grow a constant per environment. Before Play and before a player build, the editor writes the chosen name to the `UgsDatasetEnvironment` asset in `Assets/Resources`. That asset is generated. Do not edit it by hand.
+A new dashboard environment is a new row plus a new define on the profile. The name must match the dashboard exactly. The SDK does not grow a constant per environment. Saving the name map writes the chosen name into the `UgsDatasetEnvironment` asset in `Assets/Resources` and imports it. A player build writes that asset again before Unity packs content, and Play Mode writes it before the domain reload. Play Mode is not required for the name to be included in a build. That asset is generated. Do not edit it by hand.
 
 If more than one tier symbol is defined, the SDK logs a warning and keeps production ahead of staging. If more than one dataset row matches, it logs a warning and keeps the earliest row. A dataset name that does not equal the tier and does not start with `{tier}-` also logs a warning; the custom name is still sent.
 

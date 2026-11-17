@@ -202,6 +202,6 @@ An optional dataset name overrides only the string passed to Unity Services. Log
 
 Add the name on a `UgsEnvironmentNameMap` asset (`RamnD → UGS Environment Names`): one row is a scripting define and the dashboard environment it selects. Put that define on the Build Profile next to the tier symbol. The earliest matching row wins. One Unity Services initialization means Auth, Cloud Save, Economy, Remote Config, and UGS Analytics share that name. A new environment is a new row and a new profile define. The string must match the dashboard exactly.
 
-The editor resolves the list against the active profile and writes the `UgsDatasetEnvironment` asset in `Assets/Resources` before Play and before a player build. That asset is generated. Do not edit it by hand.
+The editor resolves the list against the active profile and writes the `UgsDatasetEnvironment` asset in `Assets/Resources` when the name map is saved, before a player build packs assets, and before Play. Play Mode is not required for a build to pick up the name. That asset is generated. Do not edit it by hand.
 
 If more than one tier symbol is defined, the SDK logs a warning and keeps production ahead of staging. If more than one dataset row matches, it logs a warning and keeps the earliest row. A dataset name that does not equal the tier and does not start with `{tier}-` also logs a warning; the custom name is still sent.
