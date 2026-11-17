@@ -16,11 +16,15 @@ namespace RamnD.GameServices.Editor
     /// Resolves <see cref="UgsEnvironmentNameMap"/> against the active Build Profile
     /// and writes the chosen dashboard name where the player can read it.
     /// Scripting defines are compile-time flags, so a data list cannot be tested with #if.
+    /// The player build copies the already imported asset, so the write happens when the
+    /// map is saved and again before Unity packs player content. Play Mode is not required.
     /// </summary>
     [InitializeOnLoad]
     sealed class UgsDatasetEnvironmentBaker : IPreprocessBuildWithReport
     {
         const string MultipleMapsKey = "RamnD.GameServices.UgsDatasetEnvironment.MultipleMaps";
+
+        private static bool _baking;
 
         static UgsDatasetEnvironmentBaker()
         {
@@ -28,11 +32,16 @@ namespace RamnD.GameServices.Editor
             CompilationPipeline.compilationFinished += OnCompilationFinished;
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
-            EditorApplication.delayCall -= Bake;
-            EditorApplication.delayCall += Bake;
+            ScheduleBake();
         }
 
         static void OnCompilationFinished(object _)
+        {
+            ScheduleBake();
+        }
+
+        /// <summary>Runs <see cref="Bake"/> on the next editor tick, after the current import or domain reload.</summary>
+        internal static void ScheduleBake()
         {
             EditorApplication.delayCall -= Bake;
             EditorApplication.delayCall += Bake;
@@ -51,22 +60,30 @@ namespace RamnD.GameServices.Editor
 
         internal static void Bake()
         {
-            if (EditorApplication.isPlaying)
+            if (_baking || EditorApplication.isPlaying)
                 return;
 
-            List<UgsEnvironmentNameEntry> entries = LoadEntries();
-            HashSet<string> defines = CollectDefines();
-            UgsEnvironmentNameMap.TrySelect(entries, defines, out string environmentName, out int matchCount);
-
-            if (matchCount > 1)
+            _baking = true;
+            try
             {
-                Debug.LogWarning(
-                    "SDK: more than one UGS dataset symbol from UgsEnvironmentNameMap is defined. " +
-                    $"Using '{environmentName}', the earliest row in the list.");
-            }
+                List<UgsEnvironmentNameEntry> entries = LoadEntries();
+                HashSet<string> defines = CollectDefines();
+                UgsEnvironmentNameMap.TrySelect(entries, defines, out string environmentName, out int matchCount);
 
-            WarnUnmapped(entries, defines);
-            WriteDatasetAsset(environmentName);
+                if (matchCount > 1)
+                {
+                    Debug.LogWarning(
+                        "SDK: more than one UGS dataset symbol from UgsEnvironmentNameMap is defined. " +
+                        $"Using '{environmentName}', the earliest row in the list.");
+                }
+
+                WarnUnmapped(entries, defines);
+                WriteDatasetAsset(environmentName);
+            }
+            finally
+            {
+                _baking = false;
+            }
         }
 
         static List<UgsEnvironmentNameEntry> LoadEntries()
@@ -210,9 +227,67 @@ namespace RamnD.GameServices.Editor
 
             EditorUtility.SetDirty(asset);
             AssetDatabase.SaveAssets();
+            // The player build packs the imported artifact. SaveAssets updates the file;
+            // a synchronous import updates the artifact before this call returns.
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
             Debug.Log(next.Length == 0
                 ? "SDK: UGS dataset override cleared. The tier name is used."
                 : $"SDK: UGS dataset override set to '{next}'.");
+        }
+    }
+
+    /// <summary>
+    /// Writes the dataset asset before Unity collects player content.
+    /// <see cref="IPreprocessBuildWithReport"/> runs too late: that build still packs the previous artifact.
+    /// </summary>
+    sealed class UgsDatasetEnvironmentBuildProcessor : BuildPlayerProcessor
+    {
+        /// <summary>Earlier than the default so the imported asset exists for later build processors.</summary>
+        public override int callbackOrder => -1000;
+
+        /// <summary>Writes the active profile's dataset name into <see cref="UgsDatasetEnvironment"/>.</summary>
+        /// <param name="buildPlayerContext">Scheduled player build. The name is resolved from the active Build Profile.</param>
+        public override void PrepareForBuild(BuildPlayerContext buildPlayerContext)
+        {
+            _ = buildPlayerContext;
+            UgsDatasetEnvironmentBaker.Bake();
+        }
+    }
+
+    /// <summary>Keeps the generated dataset asset in step with the name map without entering Play Mode.</summary>
+    sealed class UgsEnvironmentNameMapPostprocessor : AssetPostprocessor
+    {
+        /// <summary>Schedules a dataset write when the name map is imported or moved.</summary>
+        /// <param name="importedAssets">Assets imported by this refresh.</param>
+        /// <param name="deletedAssets">Assets deleted by this refresh.</param>
+        /// <param name="movedAssets">Assets moved by this refresh.</param>
+        /// <param name="movedFromAssetPaths">Former paths of <paramref name="movedAssets"/>.</param>
+        private static void OnPostprocessAllAssets(
+            string[] importedAssets,
+            string[] deletedAssets,
+            string[] movedAssets,
+            string[] movedFromAssetPaths)
+        {
+            if (!ContainsNameMap(importedAssets) &&
+                !ContainsNameMap(deletedAssets) &&
+                !ContainsNameMap(movedAssets) &&
+                !ContainsNameMap(movedFromAssetPaths))
+                return;
+
+            UgsDatasetEnvironmentBaker.ScheduleBake();
+        }
+
+        /// <summary>True when any path is a <see cref="UgsEnvironmentNameMap"/> asset.</summary>
+        /// <param name="paths">Asset paths from the import callback.</param>
+        private static bool ContainsNameMap(string[] paths)
+        {
+            for (int i = 0; i < paths.Length; i++)
+            {
+                if (AssetDatabase.GetMainAssetTypeAtPath(paths[i]) == typeof(UgsEnvironmentNameMap))
+                    return true;
+            }
+
+            return false;
         }
     }
 }
