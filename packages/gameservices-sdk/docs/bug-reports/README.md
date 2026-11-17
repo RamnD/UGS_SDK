@@ -2,7 +2,7 @@
 
 Dated findings and hotfix tracking for the SDK.
 
-**Not** a product roadmap — see [../ROADMAP.md](../ROADMAP.md) for planned `1.N.0` epics (Cloud Code, etc.).
+**Not** a product roadmap — see [../ROADMAP.md](../ROADMAP.md). The only open epic is Cloud Code at **2.7.0**.
 
 ## Naming
 
@@ -20,7 +20,7 @@ Every report starts with:
 |-------|---------|
 | **Found** | Discovery date |
 | **Affects** | Package version(s) where the bug exists (e.g. `1.8.6`) |
-| **Status** | `open` · `in-progress` · `fixed-in 1.8.x` · `wontfix` · `deferred-to 1.N.0` |
+| **Status** | `open` · `in-progress` · `fixed-in 1.8.x` · `wontfix` · `deferred-to 2.N.0` |
 | **Severity** | Critical / High / Medium / Low |
 
 Update **Status** when a fix lands in CHANGELOG; keep the original **Found** date.
