@@ -11,6 +11,8 @@ fix/…  docs/…  chore/…
 
 A short task branch starts from current `dev`; its main PR targets `dev`. An extra branch of the task returns by PR into that task branch, not directly into a permanent branch.
 
+Before the first edit of a fix or feature, read the current branch. When it is `dev`, `staging`, or `main`, create a task branch from current `dev`, switch to it, and edit only there. Do not modify the working tree of `dev`, `staging`, or `main`. A checkout that is already a task branch stays on that branch. Creating the branch does not publish it and does not open a pull request. When `dev` does not exist, stop and report that; do not cut the task branch from `staging` or `main`. An explicit request to change `dev`, `staging`, or `main` itself is the only case that edits one of those branches.
+
 Merge current `dev` into the task branch before integration; do not rewrite its history. Squash the finished task into `dev`, keeping one commit per task. A feature task does not change the release version.
 
 `dev` collects checked tasks and version candidates. A human controls `staging` for acceptance, `main` for release, and release tags. Agents do not promote to those branches.
